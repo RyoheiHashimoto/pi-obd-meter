@@ -208,6 +208,56 @@
   }
   .schedule-item .sch-time { display: block; }
   .schedule-item .sch-pct { display: block; font-size: 13px; margin-top: 2px; }
+
+  /* DTC */
+  .dtc-status {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+  }
+  .dtc-status .mil-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .mil-ok { background: #4caf50; box-shadow: 0 0 6px rgba(76,175,80,0.5); }
+  .mil-on { background: #f44336; box-shadow: 0 0 6px rgba(244,67,54,0.5); }
+  .dtc-item {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .dtc-code {
+    font-weight: bold;
+    font-size: 16px;
+    font-family: monospace;
+  }
+  .dtc-desc {
+    font-size: 13px;
+    color: #888;
+    margin-top: 2px;
+  }
+  .dtc-severity {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 8px;
+    font-weight: bold;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sev-critical { background: #b71c1c; color: #ffcdd2; }
+  .sev-warning  { background: #e65100; color: #ffe0b2; }
+  .sev-info     { background: #0d47a1; color: #bbdefb; }
 </style>
 </head>
 <body>
@@ -239,6 +289,11 @@
 <!-- メンテナンス -->
 <h2>🔧 メンテナンス</h2>
 <div id="maint-list"></div>
+
+<!-- DTC（故障コード） -->
+<h2>⚠ 故障コード (DTC)</h2>
+<div class="dtc-status" id="dtc-status">読み込み中...</div>
+<div id="dtc-list"></div>
 
 <!-- 輝度コントロール -->
 <h2>🔆 画面の明るさ</h2>
@@ -473,12 +528,51 @@ async function fetchBrightness() {
   } catch (e) {}
 }
 
+// --- DTC ---
+async function fetchDTC() {
+  try {
+    const resp = await fetch(`${API}/api/dtc`);
+    const data = await resp.json();
+    const statusEl = document.getElementById('dtc-status');
+    const listEl = document.getElementById('dtc-list');
+
+    if (data.mil) {
+      statusEl.innerHTML = `<span class="mil-dot mil-on"></span>MIL点灯 — ${data.dtc_count}件の故障コード`;
+      statusEl.style.color = '#f44336';
+    } else if (data.dtc_count > 0) {
+      statusEl.innerHTML = `<span class="mil-dot mil-ok"></span>${data.dtc_count}件のコード（MIL消灯）`;
+      statusEl.style.color = '#ff9800';
+    } else {
+      statusEl.innerHTML = `<span class="mil-dot mil-ok"></span>異常なし`;
+      statusEl.style.color = '#4caf50';
+    }
+
+    listEl.innerHTML = '';
+    if (data.codes) {
+      data.codes.forEach(c => {
+        listEl.innerHTML += `
+          <div class="dtc-item">
+            <div>
+              <div class="dtc-code">${c.code}</div>
+              <div class="dtc-desc">${c.description}</div>
+            </div>
+            <span class="dtc-severity sev-${c.severity}">${c.severity}</span>
+          </div>`;
+      });
+    }
+  } catch (e) {
+    document.getElementById('dtc-status').innerHTML = '<span style="color:#666">取得できません</span>';
+  }
+}
+
 // 初期読み込み & 定期更新
 fetchTrip();
 fetchMaintenance();
+fetchDTC();
 fetchBrightness();
 setInterval(fetchTrip, 3000);
 setInterval(fetchMaintenance, 60000);
+setInterval(fetchDTC, 60000);
 setInterval(fetchBrightness, 10000);
 </script>
 </body>

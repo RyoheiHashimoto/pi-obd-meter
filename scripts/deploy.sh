@@ -47,6 +47,21 @@ cmd_setup() {
   # systemd登録を先に行う（deploy 内の restart が成功するように）
   rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
   ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
+  # Chromium翻訳バー無効化
+  echo "Disabling Chromium translate..."
+  ssh "$PI" "python3 -c \"
+import json, os
+p = os.path.expanduser('~/.config/chromium/Default/Preferences')
+if os.path.exists(p):
+    with open(p) as f: d = json.load(f)
+    d['translate'] = {'enabled': False}
+    d['translate_blocked_languages'] = ['ja', 'en']
+    d.setdefault('intl', {})['accept_languages'] = 'ja'
+    with open(p, 'w') as f: json.dump(d, f)
+    print('done')
+else:
+    print('skip: Chromium not yet configured')
+\""
   cmd_deploy
   echo "✓ 初期セットアップ完了"
 }
