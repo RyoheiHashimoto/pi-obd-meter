@@ -1,59 +1,159 @@
 #!/bin/bash
-# pi-obd-meter deploy script
-# Usage: ./scripts/deploy.sh [version]
-# Example: ./scripts/deploy.sh v0.1.0
-#   No args = latest release
+# pi-obd-meter 開発・デプロイスクリプト
+# Usage: ./scripts/deploy.sh <command> [args]
 
 set -euo pipefail
 
-REPO="YOUR_USER/pi-obd-meter"  # ← GitHub ユーザー名に書き換え
-INSTALL_DIR="/opt/pi-obd-meter"
-SERVICE_NAME="pi-obd-meter"
+# --- 設定 ---
+PI="${PI_HOST:-pi@raspberrypi.local}"
+DEST="/opt/pi-obd-meter"
+SERVICE="pi-obd-meter"
+REPO="${GITHUB_REPO:-YOUR_USER/pi-obd-meter}"
 
-# Get version
-if [ -n "${1:-}" ]; then
-  VERSION="$1"
-else
-  echo "Fetching latest release..."
-  VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+# プロジェクトルート
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# --- コマンド ---
+
+cmd_build() {
+  echo "Building for ARM64..."
+  cd "$ROOT"
+  GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
+  GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
+  echo "✓ bin/pi-obd-meter, bin/pi-obd-scanner"
+}
+
+cmd_deploy() {
+  cmd_build
+  echo "Deploying to ${PI}:${DEST}..."
+  rsync -avz "$ROOT/bin/" "${PI}:${DEST}/"
+  rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
+  rsync -avz "$ROOT/configs/" "${PI}:${DEST}/configs/"
+  ssh "$PI" "sudo systemctl restart ${SERVICE}"
+  echo "✓ デプロイ完了"
+}
+
+cmd_deploy_web() {
+  echo "Deploying web UI to ${PI}:${DEST}/web/static/..."
+  rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
+  ssh "$PI" "sudo systemctl restart ${SERVICE}"
+  echo "✓ Web UIのみデプロイ完了"
+}
+
+cmd_setup() {
+  echo "Setting up Raspberry Pi..."
+  ssh "$PI" "sudo mkdir -p ${DEST}/web/static ${DEST}/configs && sudo chown -R pi:pi ${DEST}"
+  cmd_deploy
+  rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
+  ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
+  echo "✓ 初期セットアップ完了"
+}
+
+cmd_ssh()     { ssh "$PI"; }
+cmd_logs()    { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
+cmd_status()  { ssh "$PI" "systemctl status ${SERVICE}"; }
+cmd_restart() { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
+
+cmd_overlay_on() {
+  ssh "$PI" "sudo raspi-config nonint do_overlayfs 0"
+  echo "⚠️  overlayFS有効化予約済み。再起動で有効になる"
+  echo "    ssh ${PI} 'sudo reboot'"
+}
+
+cmd_overlay_off() {
+  ssh "$PI" "sudo raspi-config nonint do_overlayfs 1"
+  echo "⚠️  overlayFS無効化予約済み。再起動で無効になる"
+  echo "    ssh ${PI} 'sudo reboot'"
+}
+
+cmd_release_install() {
+  local VERSION="${1:-}"
   if [ -z "$VERSION" ]; then
-    echo "Error: Could not determine latest version"
-    exit 1
+    echo "Fetching latest release..."
+    VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | cut -d'"' -f4)
+    if [ -z "$VERSION" ]; then
+      echo "Error: Could not determine latest version"
+      exit 1
+    fi
   fi
-fi
 
-echo "Deploying ${VERSION}..."
+  echo "Installing ${VERSION} from GitHub Releases..."
+  local URL="https://github.com/${REPO}/releases/download/${VERSION}/pi-obd-meter-${VERSION}-arm64.tar.gz"
+  local TMPDIR
+  TMPDIR=$(mktemp -d)
 
-# Download
-URL="https://github.com/${REPO}/releases/download/${VERSION}/pi-obd-meter-${VERSION}-arm64.tar.gz"
-TMPDIR=$(mktemp -d)
-echo "Downloading ${URL}..."
-curl -fsSL "$URL" -o "${TMPDIR}/release.tar.gz"
+  echo "Downloading ${URL}..."
+  curl -fsSL "$URL" -o "${TMPDIR}/release.tar.gz"
 
-# Extract
-echo "Extracting..."
-tar xzf "${TMPDIR}/release.tar.gz" -C "${TMPDIR}"
+  echo "Extracting..."
+  tar xzf "${TMPDIR}/release.tar.gz" -C "${TMPDIR}"
 
-# Stop service
-echo "Stopping service..."
-sudo systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+  echo "Stopping service..."
+  sudo systemctl stop "${SERVICE}" 2>/dev/null || true
 
-# Install
-echo "Installing to ${INSTALL_DIR}..."
-mkdir -p "${INSTALL_DIR}"
-cp "${TMPDIR}/pi-obd-meter/pi-obd-meter" "${INSTALL_DIR}/pi-obd-meter"
-cp "${TMPDIR}/pi-obd-meter/pi-obd-scanner" "${INSTALL_DIR}/pi-obd-scanner" 2>/dev/null || true
-chmod +x "${INSTALL_DIR}/pi-obd-meter"
-chmod +x "${INSTALL_DIR}/pi-obd-scanner" 2>/dev/null || true
-cp -r "${TMPDIR}/pi-obd-meter/web/" "${INSTALL_DIR}/web/"
-cp -r "${TMPDIR}/pi-obd-meter/configs/" "${INSTALL_DIR}/configs/" 2>/dev/null || true
+  echo "Installing to ${DEST}..."
+  mkdir -p "${DEST}"
+  cp "${TMPDIR}/pi-obd-meter/pi-obd-meter" "${DEST}/pi-obd-meter"
+  cp "${TMPDIR}/pi-obd-meter/pi-obd-scanner" "${DEST}/pi-obd-scanner" 2>/dev/null || true
+  chmod +x "${DEST}/pi-obd-meter"
+  chmod +x "${DEST}/pi-obd-scanner" 2>/dev/null || true
+  cp -r "${TMPDIR}/pi-obd-meter/web/" "${DEST}/web/"
+  cp -r "${TMPDIR}/pi-obd-meter/configs/" "${DEST}/configs/" 2>/dev/null || true
 
-# Cleanup
-rm -rf "${TMPDIR}"
+  rm -rf "${TMPDIR}"
 
-# Restart service
-echo "Starting service..."
-sudo systemctl start "${SERVICE_NAME}"
+  echo "Starting service..."
+  sudo systemctl start "${SERVICE}"
+  echo "✓ ${VERSION} インストール完了"
+}
 
-echo "Deployed ${VERSION} successfully!"
-echo "Check status: sudo systemctl status ${SERVICE_NAME}"
+cmd_help() {
+  cat <<'HELP'
+Usage: ./scripts/deploy.sh <command> [args]
+
+開発 (Mac上で実行):
+  build            クロスコンパイル (ARM64)
+  deploy           ビルド + rsync転送 + サービス再起動
+  deploy-web       Web UIのみ転送 + 再起動
+
+ラズパイ管理 (Mac上で実行):
+  setup            初回セットアップ (ディレクトリ作成 + systemd登録)
+  ssh              ラズパイにSSH接続
+  logs             リアルタイムログ表示
+  status           サービス状態確認
+  restart          サービス再起動 (転送なし)
+
+overlayFS:
+  overlay-on       overlayFS有効化 (再起動後有効)
+  overlay-off      overlayFS無効化 (再起動後無効)
+
+リリース (ラズパイ上で実行):
+  release-install [version]  GitHub Releasesからインストール
+
+環境変数:
+  PI_HOST          ラズパイのSSH先 (default: pi@raspberrypi.local)
+  GITHUB_REPO      GitHubリポジトリ (default: YOUR_USER/pi-obd-meter)
+HELP
+}
+
+# --- エントリポイント ---
+
+case "${1:-help}" in
+  build)           cmd_build ;;
+  deploy)          cmd_deploy ;;
+  deploy-web)      cmd_deploy_web ;;
+  setup)           cmd_setup ;;
+  ssh)             cmd_ssh ;;
+  logs)            cmd_logs ;;
+  status)          cmd_status ;;
+  restart)         cmd_restart ;;
+  overlay-on)      cmd_overlay_on ;;
+  overlay-off)     cmd_overlay_off ;;
+  release-install) shift; cmd_release_install "$@" ;;
+  help|--help|-h)  cmd_help ;;
+  *)
+    echo "Unknown command: $1"
+    cmd_help
+    exit 1
+    ;;
+esac

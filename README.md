@@ -87,13 +87,13 @@ hdmi_cvt 800 480 60 6 0 0 0
 
 ```bash
 # 初回セットアップ
-make setup-pi
+./scripts/deploy.sh setup
 
 # 普段のデプロイ
-make deploy
+./scripts/deploy.sh deploy
 
 # Web UIだけ更新
-make deploy-web
+./scripts/deploy.sh deploy-web
 ```
 
 ## 車両設定
@@ -163,35 +163,49 @@ pi-obd-meter/
 ├── docs/
 │   ├── deploy-guide.md
 │   └── communication-diagram-v2.svg
+├── scripts/
+│   └── deploy.sh         # 開発・デプロイスクリプト
 ├── CLAUDE.md
-├── Makefile
 └── go.mod
 ```
 
 ## ビルド & デプロイ
 
-### なぜ Makefile なのか
+### ローカルビルド
 
-Task (taskfile.dev) や Just のようなモダンなタスクランナーもあるが、このプロジェクトでは Makefile を採用している。
+```bash
+# ホスト (Mac) 用ビルド
+go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
+go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
 
-- **依存ゼロ**: macOS / Linux に最初から入っている。追加インストール不要
-- **やることが単純**: `go build` → `rsync` → `ssh systemctl restart` の3ステップ。YAMLで定義するほどの複雑さがない
-- **Goの慣習**: Goプロジェクトでは Makefile が今も広く使われている
+# Raspberry Pi (ARM64) 用クロスコンパイル
+GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
+GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
+```
 
-### コマンド一覧
+### deploy.sh コマンド一覧
+
+すべての開発・デプロイ操作は `scripts/deploy.sh` で行う。
+
+```bash
+./scripts/deploy.sh <command>
+```
 
 | コマンド | 用途 |
 |---------|------|
-| `make build` | クロスコンパイル (arm64) |
-| `make deploy` | ビルド + rsync転送 + サービス再起動 |
-| `make deploy-web` | Web UIのみ転送 |
-| `make setup-pi` | 初回セットアップ（ディレクトリ作成 + systemd登録） |
-| `make ssh` | ラズパイにSSH接続 |
-| `make logs` | リアルタイムログ表示 |
-| `make status` | サービス状態確認 |
-| `make restart` | サービス再起動（転送なし） |
-| `make overlay-on` | overlayFS有効化（SD保護モード） |
-| `make overlay-off` | overlayFS無効化（デプロイモード） |
+| `build` | クロスコンパイル (ARM64) |
+| `deploy` | ビルド + rsync転送 + サービス再起動 |
+| `deploy-web` | Web UIのみ転送 |
+| `setup` | 初回セットアップ（ディレクトリ作成 + systemd登録） |
+| `ssh` | ラズパイにSSH接続 |
+| `logs` | リアルタイムログ表示 |
+| `status` | サービス状態確認 |
+| `restart` | サービス再起動（転送なし） |
+| `overlay-on` | overlayFS有効化（SD保護モード） |
+| `overlay-off` | overlayFS無効化（デプロイモード） |
+| `release-install [version]` | GitHub Releasesからインストール（ラズパイ上で実行） |
+
+SSH先を変更する場合は環境変数 `PI_HOST` を設定する（デフォルト: `pi@raspberrypi.local`）。
 
 ### デプロイの仕組み
 
