@@ -26,15 +26,24 @@ until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do
 done
 
 # Chromiumをキオスクモードで起動（800x480 フルスクリーン）
-chromium-browser \
+# Chromium翻訳無効化の設定を配置
+KIOSK_PROFILE="/tmp/chromium-kiosk"
+mkdir -p "${KIOSK_PROFILE}/Default"
+cat > "${KIOSK_PROFILE}/Default/Preferences" << 'EOF'
+{"translate":{"enabled":false},"translate_blocked_languages":["ja","en"],"intl":{"accept_languages":"ja"},"browser":{"enable_spellchecking":false}}
+EOF
+
+chromium \
     --kiosk \
     --noerrdialogs \
     --disable-infobars \
     --disable-translate \
     --no-first-run \
-    --fast \
-    --fast-start \
-    --disable-features=TranslateUI \
+    --disable-features=Translate,TranslateUI \
+    --password-store=basic \
+    --disable-extensions \
+    --user-data-dir="${KIOSK_PROFILE}" \
+    --lang=ja \
     --disk-cache-dir=/dev/null \
     --window-size=800,480 \
     --window-position=0,0 \
