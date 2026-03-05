@@ -14,9 +14,14 @@ xset s noblank
 # マウスカーソル非表示
 unclutter -idle 0.5 -root &
 
+# config.jsonからポート番号を取得
+CONFIG="/opt/pi-obd-meter/configs/config.json"
+PORT=$(grep -o '"local_api_port":[[:space:]]*[0-9]*' "$CONFIG" | grep -o '[0-9]*')
+PORT="${PORT:-9090}"
+
 # pi-obd-meterの起動を待つ
-echo "Waiting for pi-obd-meter API..."
-until curl -s http://localhost:9090/api/realtime > /dev/null 2>&1; do
+echo "Waiting for pi-obd-meter API on port ${PORT}..."
+until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do
     sleep 2
 done
 
@@ -33,4 +38,4 @@ chromium-browser \
     --disk-cache-dir=/dev/null \
     --window-size=800,480 \
     --window-position=0,0 \
-    http://localhost:9090/meter.html
+    "http://localhost:${PORT}/meter.html"

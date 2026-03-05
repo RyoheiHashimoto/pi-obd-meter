@@ -291,7 +291,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const API = `http://${location.hostname}:9090`;
+const API = `${location.origin}`;
 
 function showToast(msg) {
   const t = document.getElementById('toast');
