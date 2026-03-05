@@ -382,6 +382,7 @@ function applyData(d) {
   document.getElementById('v-ld').textContent = load > 0 ? Math.round(load) : '--';
 
   // Alerts from API
+  const prev = alerts.length;
   if (d.alerts && d.alerts.length > 0) {
     alerts = d.alerts.map(a => {
       const r = a.reminder;
@@ -393,6 +394,7 @@ function applyData(d) {
   } else {
     alerts = [];
   }
+  if (alerts.length !== prev) updateAlert();
 }
 
 async function fetchRealtime() {
