@@ -8,7 +8,6 @@
   "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
   "web_static_dir": "/opt/pi-obd-meter/web/static",
   "engine_displacement_cc": 1348,
-  "fuel_method": "map",
   "ve_coefficient": 0.85,
   "redline_rpm": 6500,
   "brightness": {

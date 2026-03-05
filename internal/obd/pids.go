@@ -72,22 +72,37 @@ func NewReader(elm *ELM327, cfg EngineConfig) *Reader {
 	return &Reader{elm: elm, EngineCfg: cfg}
 }
 
-// DetectCapabilities はDYデミオの対応PIDを検出する
+// DetectCapabilities はPID 0x00でサポートPIDをスキャンし、燃費計算方式を自動判定する
 func (r *Reader) DetectCapabilities() error {
-	// MAFセンサーの有無を確認（DYデミオはMAP式の可能性あり）
-	_, err := r.elm.QueryPID(PIDMAF)
-	r.hasMAF = err == nil
+	// PID 0x00 でサポートPID一覧を取得
+	supported, err := r.elm.ScanSupportedPIDs()
+	if err != nil {
+		return fmt.Errorf("サポートPIDスキャン失敗: %w", err)
+	}
+	fmt.Printf("✓ サポートPID: %d 個検出\n", len(supported))
 
+	// サポートPIDからMAF/MAPの有無を判定
+	hasMAP := false
+	hasIAT := false
+	for _, pid := range supported {
+		switch pid {
+		case PIDMAF:
+			r.hasMAF = true
+		case PIDIntakeManifold:
+			hasMAP = true
+		case PIDIntakeAirTemp:
+			hasIAT = true
+		}
+	}
+
+	// 燃費計算方式を決定（MAF優先）
 	if r.hasMAF {
 		fmt.Println("✓ MAFセンサー検出 → MAF方式で燃費計算")
-	} else {
+	} else if hasMAP && hasIAT {
 		fmt.Println("✗ MAFセンサーなし → Speed-Density方式で燃費計算")
-		// MAP + 吸気温度が必要
-		_, err := r.elm.QueryPID(PIDIntakeManifold)
-		if err != nil {
-			return fmt.Errorf("MAPセンサーも取得不可: %w", err)
-		}
-		fmt.Println("✓ MAPセンサー検出")
+		fmt.Println("✓ MAPセンサー + 吸気温度センサー検出")
+	} else {
+		return fmt.Errorf("燃費計算に必要なセンサーが不足: MAF=%v, MAP=%v, IAT=%v", r.hasMAF, hasMAP, hasIAT)
 	}
 
 	// マルチPIDリクエスト対応テスト

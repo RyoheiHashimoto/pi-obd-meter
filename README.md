@@ -103,7 +103,6 @@ hdmi_cvt 800 480 60 6 0 0 0
 ```json
 {
   "engine_displacement_cc": 1348,
-  "fuel_method": "map",
   "ve_coefficient": 0.85,
   "redline_rpm": 6500
 }
@@ -112,21 +111,21 @@ hdmi_cvt 800 480 60 6 0 0 0
 | パラメータ | 説明 | 例 |
 |-----------|------|-----|
 | `engine_displacement_cc` | 排気量 (cc) | ZJ-VE: 1348, ZY-VE: 1498 |
-| `fuel_method` | `"maf"` or `"map"` | PIDスキャン結果で決定 |
 | `ve_coefficient` | 体積効率 (MAP方式時のみ。MAF方式では無視される) | 0.80〜0.90。満タン法で校正 |
 | `redline_rpm` | レッドゾーン開始回転数 | 車種の仕様書を参照 |
 
-### fuel_method の決め方
+### 燃費計算方式の自動判定
 
-`pi-obd-scanner` でPIDスキャンして判断する。
+起動時にPID 0x00でサポートPIDをスキャンし、MAF/MAP方式を自動判定する。設定不要。
+
+- MAFセンサー (PID 0x10) がある → MAF方式。精度が高く、`ve_coefficient` の校正も不要
+- MAPセンサー (PID 0x0B) + 吸気温度 (PID 0x0F) がある → Speed-Density方式。`ve_coefficient` の校正が必要
+
+`pi-obd-scanner` で事前に対応PIDを確認できる:
 
 ```bash
 ./pi-obd-scanner -port /dev/rfcomm0
 ```
-
-- `PID 0x10 (MAF)` が出た → `"maf"` を設定。吸入空気量を直接測定するため精度が高く、`ve_coefficient` の校正も不要
-- `PID 0x0B (MAP)` が出た → `"map"` を設定。圧力と温度から空気量を推定するため、`ve_coefficient` の校正が必要
-- 両方出た → `"maf"` を推奨（精度が高い）
 
 ### VE校正方法（MAP方式の場合）
 

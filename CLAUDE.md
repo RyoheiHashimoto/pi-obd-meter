@@ -109,7 +109,7 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → GAS Webhook → Google Sheets +
 - ECUレスポンスが律速（50-100ms/PID）。BT遅延（20-50ms）は支配的でない
 
 ### 燃費計算
-- `fuel_method` config で `"maf"` / `"map"` を切り替え
+- 起動時に PID 0x00 でサポートPIDをスキャンし、MAF/MAP方式を自動判定（config不要）
 - **MAF方式**: PID 0x10 からMAF値を直接取得。精度高、校正不要。トヨタ・日産・ホンダ等
 - **MAP方式**: MAP + 吸気温度 + RPM + 排気量 → 理想気体の状態方程式で吸入空気量推定。マツダZファミリー等MAFなし車向け
 - 体積効率(VE)は `ve_coefficient` configで車種ごとに校正（満タン法）
@@ -155,7 +155,6 @@ hdmi_cvt 800 480 60 6 0 0 0
 以下はすべてconfig.jsonで設定する。コード内にハードコードしない。
 
 - `engine_displacement_cc`: 排気量 (例: ZJ-VE=1348, ZY-VE=1498)
-- `fuel_method`: `"maf"` or `"map"`（PIDスキャン結果で判断）
 - `ve_coefficient`: 体積効率 (MAP方式時のみ。0.80-0.90、満タン法で校正)
 - `redline_rpm`: レッドゾーン開始回転数 (例: ZJ-VE=6500)
 - 空燃比: 14.7:1（ストイキ、ガソリン車共通）
