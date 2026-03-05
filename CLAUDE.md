@@ -110,8 +110,8 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → GAS Webhook → Google Sheets +
 
 ### 燃費計算
 - 起動時に PID 0x00 でサポートPIDをスキャンし、MAF/MAP方式を自動判定（config不要）
-- **MAF方式**: PID 0x10 からMAF値を直接取得。精度高、校正不要。トヨタ・日産・ホンダ等
-- **MAP方式**: MAP + 吸気温度 + RPM + 排気量 → 理想気体の状態方程式で吸入空気量推定。マツダZファミリー等MAFなし車向け
+- **MAF方式**: PID 0x10 からMAF値を直接取得。精度高、校正不要。エアフロセンサー搭載車（多くの国産車・輸入車）
+- **MAP方式**: MAP + 吸気温度 + RPM + 排気量 → 理想気体の状態方程式で吸入空気量推定。エアフロ非搭載車（一部の小排気量車・軽自動車等）
 - 体積効率(VE)は `ve_coefficient` configで車種ごとに校正（満タン法）
 - 排気量は `engine_displacement_cc` configで設定
 - レッドゾーンは `redline_rpm` configで設定（メーターUI描画に使用）
