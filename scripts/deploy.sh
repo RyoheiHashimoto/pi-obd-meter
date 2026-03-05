@@ -51,10 +51,12 @@ cmd_setup() {
   echo "✓ 初期セットアップ完了"
 }
 
-cmd_ssh()     { ssh "$PI"; }
-cmd_logs()    { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
-cmd_status()  { ssh "$PI" "systemctl status ${SERVICE}"; }
-cmd_restart() { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
+cmd_ssh()      { ssh "$PI"; }
+cmd_logs()     { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
+cmd_status()   { ssh "$PI" "systemctl status ${SERVICE}"; }
+cmd_restart()  { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
+cmd_shutdown() { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
+cmd_reboot()   { ssh "$PI" "sudo reboot"; echo "✓ 再起動中...30秒ほどお待ちください"; }
 
 cmd_overlay_on() {
   ssh "$PI" "sudo raspi-config nonint do_overlayfs 0"
@@ -124,6 +126,8 @@ Usage: ./scripts/deploy.sh <command> [args]
   logs             リアルタイムログ表示
   status           サービス状態確認
   restart          サービス再起動 (転送なし)
+  shutdown         ラズパイを安全にシャットダウン
+  reboot           ラズパイを再起動
 
 overlayFS:
   overlay-on       overlayFS有効化 (再起動後有効)
@@ -149,6 +153,8 @@ case "${1:-help}" in
   logs)            cmd_logs ;;
   status)          cmd_status ;;
   restart)         cmd_restart ;;
+  shutdown)        cmd_shutdown ;;
+  reboot)          cmd_reboot ;;
   overlay-on)      cmd_overlay_on ;;
   overlay-off)     cmd_overlay_off ;;
   release-install) shift; cmd_release_install "$@" ;;
