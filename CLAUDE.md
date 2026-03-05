@@ -40,7 +40,7 @@ go build ./cmd/pi-obd-scanner
 ```
 
 ターゲット: `GOOS=linux GOARCH=arm64`
-デプロイ先: `pi@raspberrypi.local:/opt/pi-obd-meter/`
+デプロイ先: `$PI_HOST:/opt/pi-obd-meter/`（デフォルト: `laurel@pi-obd-meter.local`、`scripts/deploy.sh` で設定）
 
 ## ディレクトリ構成
 

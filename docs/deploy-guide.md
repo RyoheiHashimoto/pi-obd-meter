@@ -9,7 +9,7 @@ Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
 開発は2つのフェーズに分かれる。
 
 **フェーズ1: 開発中（overlayFS OFF）**
-- `make deploy` で自由にコードを転送・再起動できる
+- `./scripts/deploy.sh deploy` で自由にコードを転送・再起動できる
 - SDカードに普通に書き込める状態
 - このフェーズでは電源ブチ切りに注意（でも開発中なので許容）
 
@@ -22,12 +22,26 @@ Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
 
 ---
 
+## 接続設定
+
+ラズパイへのSSH接続先は `scripts/deploy.sh` 内の `PI` 変数で一元管理する。
+環境変数 `PI_HOST` で上書きも可能。
+
+```bash
+# デフォルト接続先の確認
+head -10 scripts/deploy.sh | grep PI=
+```
+
+以下のドキュメントでは `$PI` をラズパイのSSH先として記載する。
+
+---
+
 ## 前提
 
 - Mac に Go がインストール済み
 - ラズパイに Raspberry Pi OS Lite (64bit) を焼いた SD が入っている
 - ラズパイとMacが同じWiFiに接続されている
-- SSH有効化済み（`ssh pi@raspberrypi.local` で入れる状態）
+- SSH有効化済み（`./scripts/deploy.sh ssh` で入れる状態）
 
 ---
 
@@ -38,25 +52,30 @@ Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
 Raspberry Pi Imager で以下を選択：
 - OS: Raspberry Pi OS Lite (64-bit)
 - カスタマイズ:
-  - ホスト名: `raspberrypi`
+  - ホスト名: 任意（`deploy.sh` の `PI` 変数と合わせる）
   - SSH有効化（パスワード認証）
   - WiFi設定（自宅のSSID/パスワード）
-  - ユーザー: `pi` / 任意のパスワード
+  - ユーザー: 任意（`deploy.sh` の `PI` 変数と合わせる）
 
 ### 1-2. SSH鍵を登録（パスワード入力を省略するため）
 
 ```bash
-# Macで実行
-ssh-copy-id pi@raspberrypi.local
+# Macで実行（$PI は deploy.sh の接続先に読み替え）
+ssh-copy-id $(head -10 scripts/deploy.sh | grep -oP '(?<=PI="\$\{PI_HOST:-).+(?=\})')
 ```
 
-以後 `ssh pi@raspberrypi.local` がパスワードなしで通る。
+または手動で:
+```bash
+ssh-copy-id user@hostname.local
+```
+
+以後 `./scripts/deploy.sh ssh` がパスワードなしで通る。
 
 ### 1-3. ラズパイ側の基本設定
 
 ```bash
 # ラズパイにSSHで入って実行
-ssh pi@raspberrypi.local
+./scripts/deploy.sh ssh
 
 # Bluetooth有効化の確認
 sudo systemctl status bluetooth
@@ -67,7 +86,7 @@ sudo apt install -y bluez bluez-tools chromium-browser xserver-xorg xinit
 
 # 自動起動用ディレクトリ作成
 sudo mkdir -p /opt/pi-obd-meter/web/static /opt/pi-obd-meter/configs
-sudo chown -R pi:pi /opt/pi-obd-meter
+sudo chown -R $(whoami):$(whoami) /opt/pi-obd-meter
 ```
 
 ### 1-4. ELM327 Bluetooth ペアリング
@@ -103,7 +122,7 @@ rfcomm bind 0 XX:XX:XX:XX:XX:XX
 
 ```bash
 # Macのプロジェクトルートで実行
-make setup-pi
+./scripts/deploy.sh setup
 ```
 
 これで以下が行われる：
@@ -119,7 +138,7 @@ make setup-pi
 ### コードを変更したら
 
 ```bash
-make deploy
+./scripts/deploy.sh deploy
 ```
 
 やっていること：
@@ -130,7 +149,7 @@ make deploy
 ### Web UI（HTML/CSS/JS）だけ変更したら
 
 ```bash
-make deploy-web
+./scripts/deploy.sh deploy-web
 ```
 
 Goの再ビルドをスキップして、HTMLだけ転送。
@@ -145,10 +164,10 @@ Goの再ビルドをスキップして、HTMLだけ転送。
 ## 4. 便利コマンド
 
 ```bash
-make ssh        # ラズパイにSSHで入る
-make logs       # リアルタイムログ表示
-make status     # サービス状態確認
-make restart    # サービス再起動（ファイル転送なし）
+./scripts/deploy.sh ssh        # ラズパイにSSHで入る
+./scripts/deploy.sh logs       # リアルタイムログ表示
+./scripts/deploy.sh status     # サービス状態確認
+./scripts/deploy.sh restart    # サービス再起動（ファイル転送なし）
 ```
 
 ---
@@ -159,7 +178,7 @@ make restart    # サービス再起動（ファイル転送なし）
 
 **全部動作確認が終わって「もう触らない」状態になったら。**
 
-開発中は絶対にOFFにしておく。理由はシンプルで、overlayFSがONだと `make deploy` で書き込んだファイルが再起動で消える。
+開発中は絶対にOFFにしておく。理由はシンプルで、overlayFSがONだと `deploy` で書き込んだファイルが再起動で消える。
 
 ### 判断の目安
 
@@ -176,12 +195,13 @@ overlayFSをONにしていいタイミング：
 
 ```bash
 # overlayFSを有効にする（SD保護モード）
-make overlay-on
-ssh pi@raspberrypi.local 'sudo reboot'
+./scripts/deploy.sh overlay-on
+# ラズパイを再起動（SSH先は deploy.sh の設定値を使用）
+./scripts/deploy.sh ssh  # 入ったら: sudo reboot
 
 # overlayFSを無効にする（デプロイモード）
-make overlay-off
-ssh pi@raspberrypi.local 'sudo reboot'
+./scripts/deploy.sh overlay-off
+./scripts/deploy.sh ssh  # 入ったら: sudo reboot
 ```
 
 ※ どちらも再起動が必要。`raspi-config` が再起動時に適用する設定を予約する仕組みのため。
@@ -190,21 +210,21 @@ ssh pi@raspberrypi.local 'sudo reboot'
 
 ```bash
 # 1. overlayFS解除
-make overlay-off
-ssh pi@raspberrypi.local 'sudo reboot'
+./scripts/deploy.sh overlay-off
+./scripts/deploy.sh ssh  # 入ったら: sudo reboot
 
 # 2. 再起動を待つ（30秒くらい）
 sleep 30
 
 # 3. デプロイ
-make deploy
+./scripts/deploy.sh deploy
 
 # 4. 動作確認
-make logs
+./scripts/deploy.sh logs
 
 # 5. 問題なければoverlayFS再有効化
-make overlay-on
-ssh pi@raspberrypi.local 'sudo reboot'
+./scripts/deploy.sh overlay-on
+./scripts/deploy.sh ssh  # 入ったら: sudo reboot
 ```
 
 2回の再起動が必要になるが、安定運用に入ったら更新頻度は低いので問題ない。
@@ -213,7 +233,7 @@ ssh pi@raspberrypi.local 'sudo reboot'
 
 | フェーズ | overlayFS | デプロイ | SD保護 |
 |---------|-----------|---------|--------|
-| 開発中 | OFF | `make deploy` だけ | なし（注意して使う） |
+| 開発中 | OFF | `./scripts/deploy.sh deploy` だけ | なし（注意して使う） |
 | 安定運用 | ON | 上記の5ステップ | 電源ブチ切りOK |
 
 ---
@@ -265,14 +285,14 @@ ELM327の電源をONにして実行。ECUに繋がっていなくても `ELM327 
 
 ラズパイのIPを確認して、スマホブラウザで:
 ```
-http://192.168.x.x:9090/control.html
+http://<raspi-ip>:9090/control.html
 ```
 
 ### Step 3: 車でエンジンONテスト
 
 OBD-IIポートにELM327を挿して、エンジンをかけて、ラズパイ起動。
 ```bash
-make logs  # 別ターミナルでリアルタイム監視
+./scripts/deploy.sh logs  # 別ターミナルでリアルタイム監視
 ```
 
 RPM、速度、水温のデータが流れてくればOK。
@@ -305,8 +325,9 @@ pi-obd-meter/
 │   └── webhook.gs             # Google Apps Script
 ├── configs/
 │   └── config.json
+├── scripts/
+│   └── deploy.sh              # 開発・デプロイスクリプト
 ├── docs/
-├── Makefile
 └── go.mod
 
 Raspberry Pi (車載)
@@ -326,8 +347,10 @@ Raspberry Pi (車載)
 
 ### rsyncが繋がらない
 ```bash
-ping raspberrypi.local   # 名前解決の確認
-ssh pi@raspberrypi.local # SSH自体が通るか確認
+# deploy.sh 経由で接続確認
+./scripts/deploy.sh ssh
+# 上記が失敗する場合、PI_HOST を確認
+head -10 scripts/deploy.sh | grep PI=
 ```
 
 ### ELM327にBT接続できない
@@ -339,12 +362,14 @@ bluetoothctl
 
 ### overlayFSの状態確認
 ```bash
-ssh pi@raspberrypi.local 'mount | grep overlay'
+./scripts/deploy.sh ssh
+# ラズパイ上で:
+mount | grep overlay
 # 出力があればoverlayFS有効、なければ無効
 ```
 
 ### サービスが起動しない
 ```bash
-make logs              # エラーログ確認
-ssh pi@raspberrypi.local 'cat /opt/pi-obd-meter/configs/config.json'  # 設定確認
+./scripts/deploy.sh logs     # エラーログ確認
+./scripts/deploy.sh status   # サービス状態確認
 ```

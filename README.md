@@ -202,7 +202,7 @@ GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
 | `overlay-off` | overlayFS無効化（デプロイモード） |
 | `release-install [version]` | GitHub Releasesからインストール（ラズパイ上で実行） |
 
-SSH先を変更する場合は環境変数 `PI_HOST` を設定する（デフォルト: `pi@raspberrypi.local`）。
+SSH先を変更する場合は環境変数 `PI_HOST` を設定する（デフォルトは `scripts/deploy.sh` 内の `PI` 変数を参照）。
 
 ### デプロイの仕組み
 

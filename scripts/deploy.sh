@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # --- 設定 ---
-PI="${PI_HOST:-pi@raspberrypi.local}"
+PI="${PI_HOST:-laurel@pi-obd-meter.local}"
 DEST="/opt/pi-obd-meter"
 SERVICE="pi-obd-meter"
 REPO="${GITHUB_REPO:-YOUR_USER/pi-obd-meter}"
@@ -131,7 +131,7 @@ overlayFS:
   release-install [version]  GitHub Releasesからインストール
 
 環境変数:
-  PI_HOST          ラズパイのSSH先 (default: pi@raspberrypi.local)
+  PI_HOST          ラズパイのSSH先 (default: laurel@pi-obd-meter.local)
   GITHUB_REPO      GitHubリポジトリ (default: YOUR_USER/pi-obd-meter)
 HELP
 }
