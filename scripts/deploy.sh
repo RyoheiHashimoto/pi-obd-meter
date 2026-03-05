@@ -42,10 +42,12 @@ cmd_deploy_web() {
 
 cmd_setup() {
   echo "Setting up Raspberry Pi..."
-  ssh "$PI" "sudo mkdir -p ${DEST}/web/static ${DEST}/configs && sudo chown -R pi:pi ${DEST}"
-  cmd_deploy
+  local REMOTE_USER="${PI%%@*}"
+  ssh "$PI" "sudo mkdir -p ${DEST}/web/static ${DEST}/configs && sudo chown -R ${REMOTE_USER}:${REMOTE_USER} ${DEST}"
+  # systemd登録を先に行う（deploy 内の restart が成功するように）
   rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
   ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
+  cmd_deploy
   echo "✓ 初期セットアップ完了"
 }
 

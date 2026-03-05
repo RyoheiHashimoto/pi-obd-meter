@@ -18,19 +18,21 @@
   }
   .dashboard {
     display: grid;
-    grid-template-rows: 24px 1fr auto 44px;
+    grid-template-rows: 24px auto auto 44px;
+    align-content: center;
     height: 100%;
-    padding: 2px 4px;
+    padding: 0 4px;
   }
   .header {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0 8px;
     font-size: 11px;
     color: #444;
     border-bottom: 1px solid #111;
   }
+  .header > :last-child { text-align: right; }
   .status-dot {
     display: inline-block;
     width: 6px; height: 6px;
@@ -57,12 +59,13 @@
     align-items: center;
     gap: 0;
   }
+  .top-gauges svg { margin: 0 -24px; }
   .mid-gauges {
     display: flex;
     justify-content: center;
     align-items: center;
     gap: 0;
-    margin-top: -14px;
+    margin-top: -6px;
   }
   .sub-strip {
     display: grid;
@@ -232,7 +235,7 @@ function spdCol(v) {
   return '#78909c';
 }
 function rpmCol(v) {
-  if (v >= 6000) return '#f44336';
+  if (v >= 5000) return '#f44336';
   if (v >= 4000) return '#ff9800';
   if (v >= 3000) return '#ffeb3b';
   if (v >= 2000) return '#69f0ae';
