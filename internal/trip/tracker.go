@@ -1,0 +1,235 @@
+package trip
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"sync"
+	"time"
+)
+
+// TripData は1トリップ分の集計データ
+type TripData struct {
+	TripID        string    `json:"trip_id"`
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	DistanceKm    float64   `json:"distance_km"`
+	FuelUsedL     float64   `json:"fuel_used_l"`
+	AvgFuelEconKm float64   `json:"avg_fuel_econ_km_per_l"`
+	MaxSpeedKmh   float64   `json:"max_speed_kmh"`
+	AvgSpeedKmh   float64   `json:"avg_speed_kmh"`
+	DrivingTimeSec float64  `json:"driving_time_sec"`
+	IdleTimeSec   float64   `json:"idle_time_sec"`
+	Samples       int       `json:"samples"`
+}
+
+// Tracker はトリップの走行距離・燃料消費を追跡する
+type Tracker struct {
+	mu sync.Mutex
+
+	// 現在のトリップ
+	current       TripData
+	lastTimestamp time.Time
+	speedSum      float64
+
+	// リセット検知
+	prevDistanceKm  float64
+	resetThreshold  float64 // km - この距離以下になったらリセットと判定
+
+	// 永続化パス
+	statePath string
+
+	// トリップ完了コールバック
+	onTripComplete func(TripData)
+}
+
+// TrackerConfig はトラッカーの設定
+type TrackerConfig struct {
+	ResetThresholdKm float64 // リセット検知閾値 (default: 0.5km)
+	StatePath        string  // 状態保存パス
+	OnTripComplete   func(TripData)
+}
+
+// NewTracker は新しいトラッカーを作成する
+func NewTracker(cfg TrackerConfig) *Tracker {
+	if cfg.ResetThresholdKm <= 0 {
+		cfg.ResetThresholdKm = 0.5
+	}
+	if cfg.StatePath == "" {
+		cfg.StatePath = "/var/lib/pi-obd-meter/trip_state.json"
+	}
+
+	t := &Tracker{
+		resetThreshold: cfg.ResetThresholdKm,
+		statePath:      cfg.StatePath,
+		onTripComplete: cfg.OnTripComplete,
+	}
+
+	// 前回の状態を復元（電源断対応）
+	t.loadState()
+
+	return t
+}
+
+// Update はOBDデータからトリップを更新する
+// speedKmh: 車速, fuelRateLph: 燃料消費率 (L/h)
+func (t *Tracker) Update(speedKmh, fuelRateLph float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := time.Now()
+
+	// 初回
+	if t.lastTimestamp.IsZero() {
+		t.lastTimestamp = now
+		t.current.StartTime = now
+		t.current.TripID = fmt.Sprintf("trip_%d", now.Unix())
+		return
+	}
+
+	dt := now.Sub(t.lastTimestamp).Seconds()
+	if dt <= 0 || dt > 10 { // 10秒以上の空白はスキップ（接続断等）
+		t.lastTimestamp = now
+		return
+	}
+
+	// 走行距離を積分 (km)
+	distanceDelta := (speedKmh / 3600.0) * dt
+	t.current.DistanceKm += distanceDelta
+
+	// 燃料消費を積分 (L)
+	fuelDelta := (fuelRateLph / 3600.0) * dt
+	t.current.FuelUsedL += fuelDelta
+
+	// 統計
+	t.current.Samples++
+	if speedKmh > 1.0 {
+		t.current.DrivingTimeSec += dt
+		t.speedSum += speedKmh
+	} else {
+		t.current.IdleTimeSec += dt
+	}
+	if speedKmh > t.current.MaxSpeedKmh {
+		t.current.MaxSpeedKmh = speedKmh
+	}
+
+	t.lastTimestamp = now
+
+	// 定期的に状態を保存（1分ごと）
+	if t.current.Samples%60 == 0 {
+		t.saveState()
+	}
+}
+
+// CheckReset はトリップリセットを検知する
+// ソフトウェアトリップの距離が閾値を超えた後に急に距離が減った場合にリセットと判断
+// 実際にはManualReset()を呼ぶのが確実
+func (t *Tracker) CheckReset() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 前回より距離が大幅に減少 = リセット
+	if t.prevDistanceKm > 5.0 && t.current.DistanceKm < t.resetThreshold {
+		return true
+	}
+	return false
+}
+
+// ManualReset はトリップを手動リセットする（物理ボタンまたはAPI経由）
+func (t *Tracker) ManualReset() *TripData {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	return t.finalize()
+}
+
+// finalize は現在のトリップを完了させて新しいトリップを開始する
+func (t *Tracker) finalize() *TripData {
+	if t.current.Samples == 0 {
+		return nil
+	}
+
+	// 集計
+	t.current.EndTime = time.Now()
+	if t.current.FuelUsedL > 0 {
+		t.current.AvgFuelEconKm = t.current.DistanceKm / t.current.FuelUsedL
+	}
+	if t.current.DrivingTimeSec > 0 {
+		t.current.AvgSpeedKmh = (t.current.DistanceKm / t.current.DrivingTimeSec) * 3600
+	}
+
+	completed := t.current
+
+	// コールバック
+	if t.onTripComplete != nil {
+		go t.onTripComplete(completed)
+	}
+
+	// 新しいトリップを開始
+	t.prevDistanceKm = t.current.DistanceKm
+	t.current = TripData{
+		TripID:    fmt.Sprintf("trip_%d", time.Now().Unix()),
+		StartTime: time.Now(),
+	}
+	t.speedSum = 0
+	t.lastTimestamp = time.Time{}
+
+	t.saveState()
+
+	return &completed
+}
+
+// GetCurrent は現在のトリップデータを取得する
+func (t *Tracker) GetCurrent() TripData {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	snapshot := t.current
+	if snapshot.FuelUsedL > 0 {
+		snapshot.AvgFuelEconKm = snapshot.DistanceKm / snapshot.FuelUsedL
+	}
+	return snapshot
+}
+
+// --- 永続化 ---
+
+type persistedState struct {
+	Current       TripData `json:"current"`
+	PrevDistance   float64  `json:"prev_distance"`
+	LastTimestamp  int64    `json:"last_timestamp"`
+}
+
+func (t *Tracker) saveState() {
+	state := persistedState{
+		Current:      t.current,
+		PrevDistance:  t.prevDistanceKm,
+		LastTimestamp: t.lastTimestamp.Unix(),
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return
+	}
+	os.WriteFile(t.statePath, data, 0644)
+}
+
+func (t *Tracker) loadState() {
+	data, err := os.ReadFile(t.statePath)
+	if err != nil {
+		return
+	}
+
+	var state persistedState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return
+	}
+
+	t.current = state.Current
+	t.prevDistanceKm = state.PrevDistance
+	if state.LastTimestamp > 0 {
+		t.lastTimestamp = time.Unix(state.LastTimestamp, 0)
+	}
+
+	fmt.Printf("前回のトリップ状態を復元: %.1f km, %.2f L\n",
+		t.current.DistanceKm, t.current.FuelUsedL)
+}

@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, height=480, initial-scale=1.0">
+<title>DYデミオ メーター</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #ccc;
+    font-family: 'Share Tech Mono', 'Courier New', monospace;
+    width: 800px;
+    height: 480px;
+    overflow: hidden;
+    cursor: none;
+  }
+
+  .dashboard {
+    display: grid;
+    grid-template-rows: 26px 1fr auto 50px;
+    height: 100%;
+    padding: 2px 4px;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 6px;
+    font-size: 13px;
+    color: #444;
+    border-bottom: 1px solid #111;
+  }
+  .status-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #f44336;
+    margin-right: 4px;
+  }
+  .status-dot.connected { background: #4caf50; }
+
+  .alert-bar {
+    background: #1a0800;
+    border: 1px solid #ff6600;
+    border-radius: 2px;
+    padding: 1px 8px;
+    font-size: 12px;
+    color: #ff9800;
+    display: none;
+    text-align: center;
+  }
+  .alert-bar.active { display: block; }
+  .alert-bar.dtc-critical {
+    background: #1a0000;
+    border-color: #f44336;
+    color: #f44336;
+    animation: dtc-blink 2s ease-in-out infinite;
+  }
+  .alert-bar.dtc-warning {
+    background: #1a0800;
+    border-color: #ff6600;
+    color: #ff9800;
+  }
+  @keyframes dtc-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Gauge rows */
+  .top-gauges {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+  }
+  .mid-gauges {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    margin-top: -8px;
+  }
+
+  /* Sub info strip */
+  .sub-strip {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    padding: 4px 12px;
+    border-top: 1px solid #111;
+  }
+  .sub-item {
+    text-align: center;
+  }
+  .sub-item .val {
+    font-family: 'Orbitron', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #aaa;
+  }
+  .sub-item .lbl {
+    font-size: 10px;
+    color: #3a3a3a;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .sub-item .unt {
+    font-size: 10px;
+    color: #444;
+  }
+
+  /* Gauge SVG styling */
+  .gauge-track {
+    fill: none;
+    stroke: #181820;
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+  .gauge-value {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    filter: url(#glow);
+    transition: none; /* JS requestAnimationFrameで補間 */
+  }
+  .gauge-redzone {
+    fill: none;
+    stroke: rgba(244, 67, 54, 0.15);
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+  .tick-major {
+    stroke: #444;
+    stroke-width: 1.5;
+  }
+  .tick-minor {
+    stroke: #222;
+    stroke-width: 0.8;
+  }
+  .tick-label {
+    fill: #555;
+    font-family: 'Share Tech Mono', monospace;
+    text-anchor: middle;
+    dominant-baseline: middle;
+  }
+  .gauge-number {
+    fill: #e0e0e0;
+    font-family: 'Orbitron', monospace;
+    font-weight: 900;
+    text-anchor: middle;
+  }
+  .gauge-unit {
+    fill: #555;
+    font-family: 'Share Tech Mono', monospace;
+    text-anchor: middle;
+  }
+  .gauge-label {
+    fill: #333;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    text-anchor: middle;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .gauge-needle {
+    stroke-width: 2;
+    stroke-linecap: round;
+    transition: none; /* JS requestAnimationFrameで補間 */
+  }
+  .gauge-center-dot {
+    fill: #222;
+    stroke: #444;
+    stroke-width: 1;
+  }
+
+  /* Engine off overlay */
+  .engine-off {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #222;
+    font-size: 22px;
+    background: #050508;
+    font-family: 'Orbitron', monospace;
+  }
+  .engine-off.active { display: flex; }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+  <div class="header">
+    <span><span class="status-dot" id="status-dot"></span><span id="status-text">接続中...</span></span>
+    <span id="alert-bar" class="alert-bar"></span>
+    <span><span id="date">----/--/--</span>&nbsp;<span id="clock">--:--</span></span>
+  </div>
+
+  <!-- Top: Speed + RPM (large gauges) -->
+  <div class="top-gauges">
+    <svg id="g-speed" width="370" height="210" viewBox="0 0 370 210"></svg>
+    <svg id="g-rpm" width="370" height="210" viewBox="0 0 370 210"></svg>
+  </div>
+
+  <!-- Mid: Fuel Econ + Power + Torque (small gauges) -->
+  <div class="mid-gauges">
+    <svg id="g-econ" width="240" height="145" viewBox="0 0 240 145"></svg>
+    <svg id="g-power" width="240" height="145" viewBox="0 0 240 145"></svg>
+    <svg id="g-torque" width="240" height="145" viewBox="0 0 240 145"></svg>
+  </div>
+
+  <!-- Bottom: sub info -->
+  <div class="sub-strip">
+    <div class="sub-item">
+      <div class="lbl">平均燃費</div>
+      <div class="val" id="avg-econ">--.-</div>
+      <div class="unt">km/L</div>
+    </div>
+    <div class="sub-item">
+      <div class="lbl">走行距離</div>
+      <div class="val" id="distance">---.-</div>
+      <div class="unt">km</div>
+    </div>
+    <div class="sub-item">
+      <div class="lbl">燃料消費</div>
+      <div class="val" id="fuel-used">--.--</div>
+      <div class="unt">L</div>
+    </div>
+    <div class="sub-item">
+      <div class="lbl">水温</div>
+      <div class="val" id="coolant">--</div>
+      <div class="unt">℃</div>
+    </div>
+    <div class="sub-item">
+      <div class="lbl">負荷</div>
+      <div class="val" id="load">--</div>
+      <div class="unt">%</div>
+    </div>
+  </div>
+</div>
+
+<div class="engine-off" id="engine-off">
+  <div>
+    <div style="font-size:40px; margin-bottom:12px; opacity:0.3">⊘</div>
+    <div>ENGINE OFF</div>
+  </div>
+</div>
+
+<script>
+// === Config ===
+const API_BASE = `http://${location.hostname}:9090`;
+
+// === SVG Gauge Builder ===
+const DEG = Math.PI / 180;
+const START_ANGLE = -135; // 7時半方向（左下）
+const END_ANGLE = 135;    // 4時半方向（右下）
+const SWEEP = END_ANGLE - START_ANGLE; // 270°、開口部は真下
+
+function polarToXY(cx, cy, r, angleDeg) {
+  const rad = angleDeg * DEG;
+  return {
+    x: cx + r * Math.sin(rad),
+    y: cy - r * Math.cos(rad)
+  };
+}
+
+function arcPath(cx, cy, r, startDeg, endDeg) {
+  if (Math.abs(endDeg - startDeg) < 0.1) return '';
+  const p1 = polarToXY(cx, cy, r, startDeg);
+  const p2 = polarToXY(cx, cy, r, endDeg);
+  const sweep = endDeg - startDeg;
+  const large = Math.abs(sweep) > 180 ? 1 : 0;
+  const dir = sweep > 0 ? 1 : 0;
+  return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${r} ${r} 0 ${large} ${dir} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+}
+
+function createSVGElement(tag, attrs) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    el.setAttribute(k, v);
+  }
+  return el;
+}
+
+class Gauge {
+  constructor(svgId, config) {
+    this.svg = document.getElementById(svgId);
+    this.cfg = Object.assign({
+      cx: 185, cy: 110, r: 85,
+      min: 0, max: 100,
+      color: '#42a5f5',
+      label: '', unit: '',
+      majorTicks: 10, minorTicks: 5,
+      tickR: 0, // offset from radius for tick labels
+      numberSize: 32,
+      redZoneStart: null,
+      decimals: 0,
+      formatValue: null,
+    }, config);
+
+    this.value = this.cfg.min;
+    this._build();
+  }
+
+  _build() {
+    const { cx, cy, r, min, max, color, label, unit, majorTicks, minorTicks, numberSize, redZoneStart } = this.cfg;
+
+    // Defs: glow filter
+    if (!document.getElementById('glow-defs')) {
+      const defs = createSVGElement('defs', {});
+      defs.id = 'glow-defs';
+      const filter = createSVGElement('filter', { id: 'glow', x: '-50%', y: '-50%', width: '200%', height: '200%' });
+      const blur = createSVGElement('feGaussianBlur', { stdDeviation: '3', result: 'blur' });
+      const merge = createSVGElement('feMerge', {});
+      const mn1 = createSVGElement('feMergeNode', { in: 'blur' });
+      const mn2 = createSVGElement('feMergeNode', { in: 'SourceGraphic' });
+      merge.appendChild(mn1);
+      merge.appendChild(mn2);
+      filter.appendChild(blur);
+      filter.appendChild(merge);
+      defs.appendChild(filter);
+      this.svg.appendChild(defs);
+    }
+
+    // Background track
+    const track = createSVGElement('path', {
+      d: arcPath(cx, cy, r, START_ANGLE, END_ANGLE),
+      class: 'gauge-track'
+    });
+    this.svg.appendChild(track);
+
+    // Red zone
+    if (redZoneStart !== null) {
+      const rzAngle = START_ANGLE + ((redZoneStart - min) / (max - min)) * SWEEP;
+      const rz = createSVGElement('path', {
+        d: arcPath(cx, cy, r, rzAngle, END_ANGLE),
+        class: 'gauge-redzone'
+      });
+      this.svg.appendChild(rz);
+    }
+
+    // Tick marks
+    const tickR_inner_major = r - 12;
+    const tickR_inner_minor = r - 7;
+    const tickR_outer = r + 1;
+    const labelR = r - 22;
+    const totalMinor = majorTicks * minorTicks;
+
+    for (let i = 0; i <= totalMinor; i++) {
+      const angle = START_ANGLE + (i / totalMinor) * SWEEP;
+      const isMajor = i % minorTicks === 0;
+      const p1 = polarToXY(cx, cy, isMajor ? tickR_inner_major : tickR_inner_minor, angle);
+      const p2 = polarToXY(cx, cy, tickR_outer, angle);
+      const tick = createSVGElement('line', {
+        x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+        class: isMajor ? 'tick-major' : 'tick-minor'
+      });
+      this.svg.appendChild(tick);
+
+      // Major tick labels
+      if (isMajor) {
+        const val = min + (i / totalMinor) * (max - min);
+        const lp = polarToXY(cx, cy, labelR, angle);
+        const fs = numberSize < 28 ? 10 : 12;
+        let displayVal = val;
+        if (max <= 1) displayVal = val.toFixed(2);
+        else if (max <= 20) displayVal = val.toFixed(1);
+        else displayVal = Math.round(val);
+        const lbl = createSVGElement('text', {
+          x: lp.x, y: lp.y,
+          class: 'tick-label',
+          'font-size': fs
+        });
+        lbl.textContent = displayVal;
+        this.svg.appendChild(lbl);
+      }
+    }
+
+    // Needle
+    this.needle = createSVGElement('line', {
+      x1: cx, y1: cy,
+      x2: cx, y2: cy - r + 15,
+      class: 'gauge-needle',
+      stroke: color,
+      filter: 'url(#glow)'
+    });
+    this.svg.appendChild(this.needle);
+
+    // Center dot
+    const dot = createSVGElement('circle', {
+      cx, cy, r: 4,
+      class: 'gauge-center-dot'
+    });
+    this.svg.appendChild(dot);
+
+    // Value arc (thin, inside the track)
+    this.valueArc = createSVGElement('path', {
+      d: '',
+      class: 'gauge-value',
+      stroke: color
+    });
+    this.svg.appendChild(this.valueArc);
+
+    // Center value text
+    this.numberEl = createSVGElement('text', {
+      x: cx, y: cy + r * 0.45,
+      class: 'gauge-number',
+      'font-size': numberSize
+    });
+    this.numberEl.textContent = '--';
+    this.svg.appendChild(this.numberEl);
+
+    // Unit
+    const unitEl = createSVGElement('text', {
+      x: cx, y: cy + r * 0.45 + numberSize * 0.65,
+      class: 'gauge-unit',
+      'font-size': numberSize < 28 ? 11 : 13
+    });
+    unitEl.textContent = unit;
+    this.svg.appendChild(unitEl);
+
+    // Label at top
+    if (label) {
+      const lblEl = createSVGElement('text', {
+        x: cx, y: cy - r - 8,
+        class: 'gauge-label'
+      });
+      lblEl.textContent = label;
+      this.svg.appendChild(lblEl);
+    }
+  }
+
+  update(value, color) {
+    const { min, max } = this.cfg;
+    const clamped = Math.max(min, Math.min(max, value));
+
+    // 色は即時更新
+    if (color) {
+      this.needle.setAttribute('stroke', color);
+      this.valueArc.setAttribute('stroke', color);
+      this.numberEl.setAttribute('fill', color);
+    }
+
+    // アニメーション補間開始
+    if (!this._animating) {
+      this._animStart = this.value;
+    }
+    this._animTarget = clamped;
+    this._animTargetColor = color;
+    this._animStartTime = performance.now();
+    this._animDuration = 300; // ms
+
+    if (!this._animating) {
+      this._animating = true;
+      this._animate();
+    }
+  }
+
+  _animate() {
+    const now = performance.now();
+    const elapsed = now - this._animStartTime;
+    const progress = Math.min(elapsed / this._animDuration, 1);
+
+    // ease-out cubic
+    const eased = 1 - Math.pow(1 - progress, 3);
+
+    // 現在の表示値を補間
+    const current = this._animStart + (this._animTarget - this._animStart) * eased;
+    this._renderValue(current);
+
+    if (progress < 1) {
+      requestAnimationFrame(() => this._animate());
+    } else {
+      this.value = this._animTarget;
+      this._animStart = this._animTarget;
+      this._animating = false;
+    }
+  }
+
+  _renderValue(value) {
+    const { cx, cy, r, min, max, decimals, formatValue } = this.cfg;
+    this.value = value;
+
+    // Update needle angle
+    const angle = START_ANGLE + ((value - min) / (max - min)) * SWEEP;
+    const tip = polarToXY(cx, cy, r - 15, angle);
+    const tail = polarToXY(cx, cy, -8, angle);
+    this.needle.setAttribute('x1', tail.x);
+    this.needle.setAttribute('y1', tail.y);
+    this.needle.setAttribute('x2', tip.x);
+    this.needle.setAttribute('y2', tip.y);
+
+    // Update value arc
+    if (value > min) {
+      const path = arcPath(cx, cy, r - 16, START_ANGLE, angle);
+      this.valueArc.setAttribute('d', path);
+      this.valueArc.setAttribute('stroke-width', '2');
+    } else {
+      this.valueArc.setAttribute('d', '');
+    }
+
+    // Update number（アニメーション中は最終値を表示）
+    const displayVal = this._animTarget !== undefined ? this._animTarget : value;
+    if (formatValue) {
+      this.numberEl.textContent = formatValue(displayVal);
+    } else {
+      this.numberEl.textContent = displayVal > 0.001 ? displayVal.toFixed(decimals) : '--';
+    }
+  }
+}
+
+// === Eco color ===
+function ecoColor(kmL) {
+  if (kmL >= 20) return '#00e676';
+  if (kmL >= 15) return '#69f0ae';
+  if (kmL >= 10) return '#ffeb3b';
+  if (kmL >= 5)  return '#ff9800';
+  return '#f44336';
+}
+
+// === Speed color ===
+function speedColor(kmh) {
+  if (kmh >= 120) return '#f44336'; // 赤 — 高速域超過
+  if (kmh >= 100) return '#ff9800'; // オレンジ — 高速域
+  if (kmh >= 80)  return '#ffeb3b'; // 黄 — 準高速
+  if (kmh >= 60)  return '#69f0ae'; // 黄緑 — 一般道上限
+  if (kmh >= 30)  return '#42a5f5'; // 青 — 通常走行
+  return '#78909c';                  // グレー — 低速
+}
+
+// === RPM color ===
+function rpmColor(rpm) {
+  if (rpm >= 6000) return '#f44336'; // 赤 — レッドゾーン域
+  if (rpm >= 4000) return '#ff9800'; // オレンジ — 高回転
+  if (rpm >= 3000) return '#ffeb3b'; // 黄 — 中高回転
+  if (rpm >= 2000) return '#69f0ae'; // 黄緑 — 常用域
+  if (rpm >= 1000) return '#42a5f5'; // 青 — 低回転域
+  return '#78909c';                   // グレー — アイドル域
+}
+
+// === Create Gauges ===
+
+// Top left: Speed
+const gSpeed = new Gauge('g-speed', {
+  cx: 185, cy: 115, r: 95,
+  min: 0, max: 180,
+  color: '#78909c',
+  label: 'SPEED',
+  unit: 'km/h',
+  majorTicks: 9, minorTicks: 5,
+  numberSize: 36,
+  formatValue: v => v > 0.5 ? Math.round(v).toString() : '--'
+});
+
+// Top right: RPM
+const gRPM = new Gauge('g-rpm', {
+  cx: 185, cy: 115, r: 95,
+  min: 0, max: 8000,
+  color: '#78909c',
+  label: 'RPM',
+  unit: 'r/min',
+  majorTicks: 8, minorTicks: 5,
+  numberSize: 36,
+  redZoneStart: 6500,
+  formatValue: v => v > 10 ? Math.round(v).toString().padStart(4, '0') : '----'
+});
+
+// Mid left: Instant fuel economy
+const gEcon = new Gauge('g-econ', {
+  cx: 120, cy: 75, r: 60,
+  min: 0, max: 30,
+  color: '#69f0ae',
+  label: '瞬間燃費',
+  unit: 'km/L',
+  majorTicks: 6, minorTicks: 5,
+  numberSize: 24,
+  decimals: 1,
+  formatValue: v => v > 0.1 ? v.toFixed(1) : '--.-'
+});
+
+// Mid center: Power (PS)
+const gPower = new Gauge('g-power', {
+  cx: 120, cy: 75, r: 60,
+  min: 0, max: 100,
+  color: '#ff7043',
+  label: '推定出力',
+  unit: 'PS',
+  majorTicks: 5, minorTicks: 4,
+  numberSize: 24,
+  decimals: 1,
+  formatValue: v => v > 0.1 ? v.toFixed(1) : '--.-'
+});
+
+// Mid right: Torque (kgf·m)
+const gTorque = new Gauge('g-torque', {
+  cx: 120, cy: 75, r: 60,
+  min: 0, max: 15,
+  color: '#ffa726',
+  label: '推定トルク',
+  unit: 'kgf·m',
+  majorTicks: 5, minorTicks: 3,
+  numberSize: 24,
+  decimals: 1,
+  formatValue: v => v > 0.05 ? v.toFixed(1) : '--.-'
+});
+
+// === Clock ===
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent =
+    now.getHours().toString().padStart(2, '0') + ':' +
+    now.getMinutes().toString().padStart(2, '0');
+  document.getElementById('date').textContent =
+    now.getFullYear() + '/' +
+    (now.getMonth() + 1).toString().padStart(2, '0') + '/' +
+    now.getDate().toString().padStart(2, '0');
+}
+
+// === Data fetch ===
+const statusEl = document.getElementById('status-text');
+const dotEl = document.getElementById('status-dot');
+
+async function fetchData() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/realtime`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+
+    dotEl.classList.add('connected');
+    statusEl.textContent = 'OBD-II 接続中';
+    statusEl.style.color = '#4caf50';
+
+    // Speed (color by zone)
+    gSpeed.update(d.speed_kmh, speedColor(d.speed_kmh));
+
+    // RPM (4-digit, color by zone)
+    gRPM.update(d.rpm, rpmColor(d.rpm));
+
+    // Instant fuel economy
+    if (d.speed_kmh > 1 && d.instant_econ > 0) {
+      const econ = Math.min(d.instant_econ, 30);
+      gEcon.update(econ, ecoColor(econ));
+    } else {
+      gEcon.update(0);
+    }
+
+    // Power (PS)
+    gPower.update(d.est_power_ps > 0.1 ? d.est_power_ps : 0);
+
+    // Torque (Nm → kgf·m)
+    const kgfm = d.est_torque_nm * 0.10197;
+    gTorque.update(kgfm > 0.05 ? kgfm : 0);
+
+    // Engine load
+    if (d.engine_load > 0) {
+      document.getElementById('load').textContent = Math.round(d.engine_load);
+    }
+
+    // Coolant
+    if (d.coolant_temp > 0) {
+      document.getElementById('coolant').textContent = Math.round(d.coolant_temp);
+    }
+
+    // Trip data
+    if (d.trip) {
+      document.getElementById('avg-econ').textContent =
+        d.trip.avg_fuel_econ > 0 ? d.trip.avg_fuel_econ.toFixed(1) : '--.-';
+      document.getElementById('distance').textContent = d.trip.distance_km.toFixed(1);
+      document.getElementById('fuel-used').textContent = d.trip.fuel_used_l.toFixed(2);
+    }
+
+    // Maintenance alerts (rotate display)
+    if (d.alerts && d.alerts.length > 0) {
+      currentAlerts = d.alerts.map(a => ({
+        type: 'maintenance',
+        text: a.reminder.name,
+        severity: 'warning'
+      }));
+    } else {
+      currentAlerts = [];
+    }
+
+    // DTC alerts (故障コード)
+    if (d.dtcs && d.dtcs.codes && d.dtcs.codes.length > 0) {
+      const dtcAlerts = d.dtcs.codes.map(dtc => ({
+        type: 'dtc',
+        text: `${dtc.code}: ${dtc.description}`,
+        severity: dtc.severity
+      }));
+      // DTCを先頭に（メンテナンスより優先表示）
+      currentAlerts = [...dtcAlerts, ...currentAlerts];
+    }
+
+    if (currentAlerts.length > 0) {
+      if (alertIndex >= currentAlerts.length) alertIndex = 0;
+      showAlert();
+    } else {
+      const bar = document.getElementById('alert-bar');
+      bar.classList.remove('active', 'dtc-critical', 'dtc-warning');
+    }
+
+  } catch (e) {
+    dotEl.classList.remove('connected');
+    statusEl.textContent = '通信エラー: ' + e.message;
+    statusEl.style.color = '#f44336';
+  }
+}
+
+// === Alert rotation ===
+let currentAlerts = [];
+let alertIndex = 0;
+
+function showAlert() {
+  const bar = document.getElementById('alert-bar');
+  if (currentAlerts.length === 0) {
+    bar.classList.remove('active', 'dtc-critical', 'dtc-warning');
+    return;
+  }
+  const a = currentAlerts[alertIndex];
+  const prefix = currentAlerts.length > 1
+    ? `${alertIndex + 1}/${currentAlerts.length} `
+    : '';
+
+  // DTC or maintenance icon
+  const icon = a.type === 'dtc' ? '🔧' : '⚠';
+  bar.textContent = `${icon} ${prefix}${a.text}`;
+  bar.classList.add('active');
+
+  // DTC severity styling
+  bar.classList.remove('dtc-critical', 'dtc-warning');
+  if (a.type === 'dtc' && a.severity === 'critical') {
+    bar.classList.add('dtc-critical');
+  } else if (a.type === 'dtc') {
+    bar.classList.add('dtc-warning');
+  }
+}
+
+setInterval(() => {
+  if (currentAlerts.length > 1) {
+    alertIndex = (alertIndex + 1) % currentAlerts.length;
+    showAlert();
+  }
+}, 10000);
+
+updateClock();
+setInterval(updateClock, 10000);
+setInterval(fetchData, 500);
+fetchData();
+</script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "serial_port": "/dev/rfcomm0",
+  "webhook_url": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
+  "discord_webhook": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
+  "poll_interval_ms": 500,
+  "reset_threshold_km": 0.5,
+  "local_api_port": 9090,
+  "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
+  "web_static_dir": "/opt/pi-obd-meter/web/static",
+  "engine_displacement_cc": 1348,
+  "fuel_method": "map",
+  "ve_coefficient": 0.85,
+  "redline_rpm": 6500,
+  "brightness": {
+    "hdmi_output": "HDMI-1",
+    "schedule": [
+      {"hour": 5,  "brightness": 0.6, "label": "早朝"},
+      {"hour": 7,  "brightness": 1.0, "label": "昼間"},
+      {"hour": 17, "brightness": 0.7, "label": "夕方"},
+      {"hour": 19, "brightness": 0.5, "label": "夜間"},
+      {"hour": 22, "brightness": 0.3, "label": "深夜"}
+    ]
+  }
+}

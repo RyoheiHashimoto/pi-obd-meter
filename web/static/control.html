@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>デミオ コントロール</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 16px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 20px; margin-bottom: 16px; color: #888; }
+  h2 { font-size: 16px; margin: 24px 0 12px; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 4px; }
+
+  /* 現在のトリップ */
+  .trip-card {
+    background: #1a1a1a;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .trip-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .trip-stat .value {
+    font-size: 32px;
+    font-weight: bold;
+    color: #42a5f5;
+  }
+  .trip-stat .label {
+    font-size: 12px;
+    color: #666;
+  }
+
+  /* ボタン */
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-bottom: 8px;
+    transition: opacity 0.2s;
+  }
+  .btn:active { opacity: 0.7; }
+  .btn-reset {
+    background: #e53935;
+    color: white;
+  }
+  .btn-action {
+    background: #1e88e5;
+    color: white;
+  }
+  .btn-success {
+    background: #43a047;
+    color: white;
+  }
+  .btn-secondary {
+    background: #333;
+    color: #aaa;
+  }
+
+  /* メンテナンスリスト */
+  .maint-item {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 8px;
+  }
+  .maint-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .maint-name { font-weight: bold; font-size: 15px; }
+  .maint-detail { font-size: 13px; color: #888; }
+
+  /* プログレスバー */
+  .progress-bar {
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .progress-ok { background: #4caf50; }
+  .progress-warn { background: #ff9800; }
+  .progress-danger { background: #f44336; }
+
+  /* モーダル */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #222;
+    border-radius: 16px;
+    padding: 24px;
+    width: 90%;
+    max-width: 400px;
+  }
+  .modal h3 { margin-bottom: 16px; }
+
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%; transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    display: none;
+    z-index: 200;
+  }
+  .toast.active { display: block; }
+
+  /* 輝度コントロール */
+  .brightness-card {
+    background: #1a1a1a;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .brightness-current {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .brightness-value {
+    font-size: 28px;
+    font-weight: bold;
+    color: #ffc107;
+  }
+  .brightness-label {
+    font-size: 13px;
+    color: #888;
+  }
+  .brightness-mode {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: #2e7d32;
+    color: #fff;
+  }
+  .brightness-mode.manual {
+    background: #e65100;
+  }
+  .brightness-slider {
+    width: 100%;
+    margin: 12px 0;
+    -webkit-appearance: none;
+    height: 8px;
+    border-radius: 4px;
+    background: #333;
+    outline: none;
+  }
+  .brightness-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #ffc107;
+    cursor: pointer;
+  }
+  .schedule-list {
+    display: flex;
+    gap: 4px;
+    margin-top: 12px;
+  }
+  .schedule-item {
+    flex: 1;
+    text-align: center;
+    font-size: 11px;
+    padding: 6px 2px;
+    border-radius: 6px;
+    background: #222;
+    color: #666;
+  }
+  .schedule-item.active {
+    background: #33331a;
+    color: #ffc107;
+    font-weight: bold;
+  }
+  .schedule-item .sch-time { display: block; }
+  .schedule-item .sch-pct { display: block; font-size: 13px; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<!-- 現在のトリップ -->
+<div class="trip-card">
+  <div class="trip-stats">
+    <div class="trip-stat">
+      <div class="value" id="trip-distance">--.-</div>
+      <div class="label">走行距離 (km)</div>
+    </div>
+    <div class="trip-stat">
+      <div class="value" id="trip-econ">--.-</div>
+      <div class="label">平均燃費 (km/L)</div>
+    </div>
+    <div class="trip-stat">
+      <div class="value" id="trip-fuel">--.-</div>
+      <div class="label">燃料消費 (L)</div>
+    </div>
+    <div class="trip-stat">
+      <div class="value" id="trip-time">--:--</div>
+      <div class="label">走行時間</div>
+    </div>
+  </div>
+</div>
+
+<button class="btn btn-reset" onclick="confirmReset()">トリップリセット</button>
+
+<!-- メンテナンス -->
+<h2>🔧 メンテナンス</h2>
+<div id="maint-list"></div>
+
+<!-- 輝度コントロール -->
+<h2>🔆 画面の明るさ</h2>
+<div class="brightness-card">
+  <div class="brightness-current">
+    <div>
+      <div class="brightness-value" id="br-value">--%</div>
+      <div class="brightness-label" id="br-time-label">--</div>
+    </div>
+    <span class="brightness-mode" id="br-mode">自動</span>
+  </div>
+  <input type="range" class="brightness-slider" id="br-slider"
+         min="5" max="100" value="100"
+         oninput="onSliderInput(this.value)"
+         onchange="onSliderChange(this.value)">
+  <div style="display:flex; justify-content:space-between; font-size:11px; color:#666;">
+    <span>5%</span><span>100%</span>
+  </div>
+  <button class="btn btn-secondary" id="br-auto-btn" style="margin-top:12px; padding:10px; font-size:14px;"
+          onclick="setBrightnessAuto()">
+    🔄 自動に戻す
+  </button>
+  <div class="schedule-list" id="br-schedule"></div>
+</div>
+
+<!-- リセット確認モーダル -->
+<div class="modal-overlay" id="reset-modal">
+  <div class="modal">
+    <h3>トリップをリセットしますか？</h3>
+    <p style="color:#888; font-size:14px; margin-bottom:16px;">
+      現在のトリップデータをMac miniに送信してリセットします。
+    </p>
+    <button class="btn btn-reset" onclick="doReset()">リセットして送信</button>
+    <button class="btn btn-secondary" onclick="closeModal('reset-modal')" style="margin-top:8px;">キャンセル</button>
+  </div>
+</div>
+
+<!-- メンテリセット確認モーダル -->
+<div class="modal-overlay" id="maint-modal">
+  <div class="modal">
+    <h3 id="maint-modal-title">メンテナンス完了</h3>
+    <p style="color:#888; font-size:14px; margin-bottom:16px;">
+      <span id="maint-modal-name"></span>を実施済みとしてリセットしますか？
+    </p>
+    <button class="btn btn-success" id="maint-modal-confirm">完了としてリセット</button>
+    <button class="btn btn-secondary" onclick="closeModal('maint-modal')" style="margin-top:8px;">キャンセル</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = `http://${location.hostname}:9090`;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('active');
+  setTimeout(() => t.classList.remove('active'), 2500);
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+}
+
+// --- トリップ ---
+function confirmReset() {
+  document.getElementById('reset-modal').classList.add('active');
+}
+
+async function doReset() {
+  closeModal('reset-modal');
+  try {
+    const resp = await fetch(`${API}/api/reset`, { method: 'POST' });
+    const data = await resp.json();
+    if (data.completed) {
+      showToast(`✓ 送信完了: ${data.completed.distance_km.toFixed(1)}km / ${data.completed.avg_fuel_econ_km_per_l.toFixed(1)}km/L`);
+    } else {
+      showToast('リセット完了（データなし）');
+    }
+    fetchTrip();
+  } catch (e) {
+    showToast('❌ エラー: ' + e.message);
+  }
+}
+
+async function fetchTrip() {
+  try {
+    const resp = await fetch(`${API}/api/current`);
+    const data = await resp.json();
+    document.getElementById('trip-distance').textContent = data.distance_km.toFixed(1);
+    document.getElementById('trip-econ').textContent =
+      data.avg_fuel_econ_km_per_l > 0 ? data.avg_fuel_econ_km_per_l.toFixed(1) : '--.-';
+    document.getElementById('trip-fuel').textContent = data.fuel_used_l.toFixed(2);
+
+    const totalSec = (data.driving_time_sec || 0) + (data.idle_time_sec || 0);
+    const min = Math.floor(totalSec / 60);
+    const hrs = Math.floor(min / 60);
+    document.getElementById('trip-time').textContent =
+      hrs > 0 ? `${hrs}h${(min%60).toString().padStart(2,'0')}m` : `${min}m`;
+  } catch (e) {}
+}
+
+// --- メンテナンス ---
+async function fetchMaintenance() {
+  try {
+    const resp = await fetch(`${API}/api/maintenance`);
+    const items = await resp.json();
+    const list = document.getElementById('maint-list');
+    list.innerHTML = '';
+
+    items.forEach(item => {
+      const r = item.reminder;
+      const pct = Math.min(item.progress * 100, 100);
+      let progressClass = 'progress-ok';
+      if (item.is_overdue) progressClass = 'progress-danger';
+      else if (item.needs_alert) progressClass = 'progress-warn';
+
+      let detail = '';
+      if (r.type === 'distance') {
+        detail = item.remaining_km > 0
+          ? `残り ${item.remaining_km.toFixed(0)} km`
+          : `${Math.abs(item.remaining_km).toFixed(0)} km 超過`;
+      } else {
+        detail = item.days_left > 0
+          ? `残り ${item.days_left} 日`
+          : `${Math.abs(item.days_left)} 日超過`;
+      }
+
+      list.innerHTML += `
+        <div class="maint-item">
+          <div class="maint-header">
+            <span class="maint-name">${r.name}</span>
+            <span class="maint-detail">${detail}</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill ${progressClass}" style="width:${pct}%"></div>
+          </div>
+          <button class="btn btn-secondary" style="margin-top:10px; padding:8px; font-size:13px;"
+                  onclick="confirmMaintReset('${r.id}', '${r.name}')">
+            実施済みにする
+          </button>
+        </div>
+      `;
+    });
+  } catch (e) {}
+}
+
+function confirmMaintReset(id, name) {
+  document.getElementById('maint-modal-name').textContent = name;
+  document.getElementById('maint-modal-confirm').onclick = () => doMaintReset(id);
+  document.getElementById('maint-modal').classList.add('active');
+}
+
+async function doMaintReset(id) {
+  closeModal('maint-modal');
+  try {
+    await fetch(`${API}/api/maintenance/${id}/reset`, { method: 'POST' });
+    showToast('✓ リセット完了');
+    fetchMaintenance();
+  } catch (e) {
+    showToast('❌ エラー: ' + e.message);
+  }
+}
+
+// --- 輝度 ---
+let sliderDragging = false;
+
+function onSliderInput(val) {
+  sliderDragging = true;
+  document.getElementById('br-value').textContent = val + '%';
+}
+
+async function onSliderChange(val) {
+  sliderDragging = false;
+  try {
+    await fetch(`${API}/api/brightness`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ brightness: parseInt(val) / 100 })
+    });
+    fetchBrightness();
+    showToast(`🔆 輝度 ${val}% に設定`);
+  } catch (e) {
+    showToast('❌ エラー: ' + e.message);
+  }
+}
+
+async function setBrightnessAuto() {
+  try {
+    await fetch(`${API}/api/brightness/auto`, { method: 'POST' });
+    fetchBrightness();
+    showToast('🔆 自動輝度に復帰');
+  } catch (e) {
+    showToast('❌ エラー: ' + e.message);
+  }
+}
+
+async function fetchBrightness() {
+  try {
+    const resp = await fetch(`${API}/api/brightness`);
+    const data = await resp.json();
+
+    if (!sliderDragging) {
+      document.getElementById('br-slider').value = data.percent;
+      document.getElementById('br-value').textContent = data.percent + '%';
+    }
+    document.getElementById('br-time-label').textContent = data.time_label;
+
+    const modeEl = document.getElementById('br-mode');
+    const autoBtn = document.getElementById('br-auto-btn');
+    if (data.is_manual) {
+      modeEl.textContent = '手動';
+      modeEl.className = 'brightness-mode manual';
+      autoBtn.style.display = 'block';
+    } else {
+      modeEl.textContent = '自動';
+      modeEl.className = 'brightness-mode';
+      autoBtn.style.display = 'none';
+    }
+
+    // スケジュール表示
+    const schEl = document.getElementById('br-schedule');
+    schEl.innerHTML = data.schedule.map(s => {
+      const active = s.brightness === data.scheduled ? 'active' : '';
+      return `<div class="schedule-item ${active}">
+        <span class="sch-time">${String(s.hour).padStart(2,'0')}:00</span>
+        <span class="sch-pct">${Math.round(s.brightness * 100)}%</span>
+        <span>${s.label}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {}
+}
+
+// 初期読み込み & 定期更新
+fetchTrip();
+fetchMaintenance();
+fetchBrightness();
+setInterval(fetchTrip, 3000);
+setInterval(fetchMaintenance, 60000);
+setInterval(fetchBrightness, 10000);
+</script>
+</body>
+</html>

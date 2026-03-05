@@ -1,0 +1,19 @@
+[Unit]
+Description=DY Demio Fuel Economy Meter
+After=network.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/pi-obd-meter/pi-obd-meter -config /opt/pi-obd-meter/configs/config.json
+Restart=always
+RestartSec=5
+User=root
+StandardOutput=journal
+StandardError=journal
+
+# ELM327 Bluetooth接続（rfcomm）を待つ
+ExecStartPre=/bin/sh -c 'until [ -e /dev/rfcomm0 ]; do sleep 1; done'
+
+[Install]
+WantedBy=multi-user.target

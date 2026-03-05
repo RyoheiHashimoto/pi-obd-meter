@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#78909c"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#42a5f5"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#66bb6a"/>
+    </marker>
+    <marker id="arr-cyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#26c6da"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="520" rx="12" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="400" y="36" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="bold">pi-obd-meter アーキテクチャ</text>
+
+  <!-- Car interior box -->
+  <rect x="40" y="56" width="720" height="300" rx="10" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="60" y="78" fill="#64748b" font-size="12">車内</text>
+
+  <!-- ECU -->
+  <rect x="80" y="140" width="120" height="50" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+  <text x="140" y="162" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">ECU</text>
+  <text x="140" y="178" text-anchor="middle" fill="#94a3b8" font-size="10">エンジン制御</text>
+
+  <!-- ELM327 -->
+  <rect x="280" y="140" width="120" height="50" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+  <text x="340" y="162" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">ELM327</text>
+  <text x="340" y="178" text-anchor="middle" fill="#94a3b8" font-size="10">BT 2.0 / V1.5</text>
+
+  <!-- Raspberry Pi -->
+  <rect x="480" y="110" width="160" height="80" rx="8" fill="#1e293b" stroke="#42a5f5" stroke-width="1.5"/>
+  <text x="560" y="138" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">Raspberry Pi</text>
+  <text x="560" y="156" text-anchor="middle" fill="#94a3b8" font-size="10">pi-obd-meter (Go)</text>
+  <text x="560" y="172" text-anchor="middle" fill="#94a3b8" font-size="10">WebSocket API :9090</text>
+
+  <!-- 5" LCD -->
+  <rect x="500" y="240" width="120" height="44" rx="8" fill="#1e293b" stroke="#ab47bc" stroke-width="1"/>
+  <text x="560" y="258" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">5" LCD</text>
+  <text x="560" y="274" text-anchor="middle" fill="#94a3b8" font-size="10">800×480 メーター</text>
+
+  <!-- Smartphone -->
+  <rect x="340" y="280" width="120" height="44" rx="8" fill="#1e293b" stroke="#26c6da" stroke-width="1"/>
+  <text x="400" y="298" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">📱 スマホ</text>
+  <text x="400" y="314" text-anchor="middle" fill="#94a3b8" font-size="10">操作UI / DTC確認</text>
+
+  <!-- Google Sheets -->
+  <rect x="280" y="430" width="140" height="50" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="350" y="452" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">📊 Google Sheets</text>
+  <text x="350" y="468" text-anchor="middle" fill="#94a3b8" font-size="10">GAS Webhook</text>
+
+  <!-- Discord -->
+  <rect x="480" y="430" width="140" height="50" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="550" y="452" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">💬 Discord</text>
+  <text x="550" y="468" text-anchor="middle" fill="#94a3b8" font-size="10">通知</text>
+
+  <!-- Arrows -->
+  <!-- ECU → ELM327 -->
+  <line x1="200" y1="165" x2="275" y2="165" stroke="#78909c" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="238" y="158" text-anchor="middle" fill="#78909c" font-size="9">CAN</text>
+
+  <!-- ELM327 → Pi -->
+  <line x1="400" y1="165" x2="475" y2="155" stroke="#42a5f5" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+  <text x="438" y="148" text-anchor="middle" fill="#42a5f5" font-size="9">Bluetooth</text>
+  <text x="438" y="160" text-anchor="middle" fill="#42a5f5" font-size="8">/dev/rfcomm0</text>
+
+  <!-- Pi → LCD -->
+  <line x1="560" y1="190" x2="560" y2="235" stroke="#ab47bc" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="580" y="218" fill="#ab47bc" font-size="9">HDMI</text>
+
+  <!-- Pi ← → Smartphone -->
+  <line x1="480" y1="180" x2="420" y2="276" stroke="#26c6da" stroke-width="1.5" marker-end="url(#arr-cyan)"/>
+  <text x="435" y="238" fill="#26c6da" font-size="9">WiFi</text>
+
+  <!-- Pi → Internet (Google Sheets) -->
+  <line x1="530" y1="190" x2="530" y2="370" stroke="#66bb6a" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <line x1="530" y1="370" x2="350" y2="425" stroke="#66bb6a" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <line x1="530" y1="370" x2="550" y2="425" stroke="#66bb6a" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <text x="555" y="385" fill="#66bb6a" font-size="9">WiFi → Internet</text>
+
+  <!-- Legend -->
+  <rect x="60" y="430" width="160" height="55" rx="6" fill="#1e293b" stroke="#334155" stroke-width="0.5"/>
+  <text x="70" y="448" fill="#78909c" font-size="9">── 車内有線 (CAN)</text>
+  <text x="70" y="462" fill="#42a5f5" font-size="9">── Bluetooth 2.0</text>
+  <text x="70" y="476" fill="#66bb6a" font-size="9">╌╌ WiFi → Internet</text>
+</svg>

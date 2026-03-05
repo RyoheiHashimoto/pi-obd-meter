@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 720" font-family="'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#78909c"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#42a5f5"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#66bb6a"/>
+    </marker>
+    <marker id="arr-cyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#26c6da"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ab47bc"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="920" height="720" fill="url(#bg)" rx="10"/>
+
+  <!-- Title -->
+  <text x="460" y="36" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="bold">DYデミオ 燃費メーター v0.3 — 通信構成図</text>
+  <text x="460" y="54" text-anchor="middle" fill="#64748b" font-size="11">Mac miniなし・Google Sheets運用</text>
+
+  <!-- =============== 車内エリア =============== -->
+  <rect x="30" y="72" width="520" height="420" rx="8" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <rect x="42" y="72" width="62" height="20" rx="3" fill="#111827"/>
+  <text x="73" y="86" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="bold">🚗 車内</text>
+
+  <!-- ECU -->
+  <rect x="55" y="110" width="200" height="100" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1.5"/>
+  <text x="155" y="138" text-anchor="middle" fill="#e2e8f0" font-size="15" font-weight="bold">ECU</text>
+  <text x="155" y="158" text-anchor="middle" fill="#94a3b8" font-size="10">ZJ-VE 1.3L エンジン制御</text>
+  <text x="155" y="174" text-anchor="middle" fill="#64748b" font-size="9">CAN (ISO 15765-4 / 500kbps)</text>
+  <text x="155" y="190" text-anchor="middle" fill="#64748b" font-size="9">センサー: RPM, 速度, 負荷, MAF/MAP, 水温...</text>
+
+  <!-- OBD-II Port label -->
+  <rect x="110" y="222" width="90" height="22" rx="4" fill="#1e293b" stroke="#475569" stroke-width="1"/>
+  <text x="155" y="237" text-anchor="middle" fill="#94a3b8" font-size="9">OBD-IIポート</text>
+  <text x="155" y="250" text-anchor="middle" fill="#64748b" font-size="8">(ハンドル下・常時通電)</text>
+
+  <!-- Arrow ECU → OBD -->
+  <line x1="155" y1="210" x2="155" y2="220" stroke="#475569" stroke-width="1.5"/>
+
+  <!-- ELM327 -->
+  <rect x="55" y="265" width="200" height="85" rx="8" fill="#1e293b" stroke="#42a5f5" stroke-width="1.5"/>
+  <text x="155" y="293" text-anchor="middle" fill="#42a5f5" font-size="14" font-weight="bold">ELM327 V1.5</text>
+  <text x="155" y="311" text-anchor="middle" fill="#94a3b8" font-size="10">Zappa BT2.0 スイッチ付き ¥1,550</text>
+  <text x="155" y="327" text-anchor="middle" fill="#64748b" font-size="9">OBD-II信号 → Bluetooth変換</text>
+  <text x="155" y="340" text-anchor="middle" fill="#64748b" font-size="9">終了時 AT LP でスリープ</text>
+
+  <!-- Arrow OBD → ELM327 -->
+  <line x1="155" y1="252" x2="155" y2="263" stroke="#475569" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Raspberry Pi -->
+  <rect x="310" y="130" width="220" height="210" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="420" y="158" text-anchor="middle" fill="#66bb6a" font-size="14" font-weight="bold">Raspberry Pi 4 (2GB)</text>
+  <text x="420" y="175" text-anchor="middle" fill="#94a3b8" font-size="10">グローブボックス内 / Pi OS Lite</text>
+
+  <!-- Pi internals -->
+  <rect x="325" y="188" width="190" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="420" y="202" text-anchor="middle" fill="#94a3b8" font-size="10">pi-obd-meter (Go)</text>
+
+  <rect x="325" y="214" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="371" y="228" text-anchor="middle" fill="#64748b" font-size="9">BT → rfcomm0</text>
+
+  <rect x="423" y="214" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="469" y="228" text-anchor="middle" fill="#64748b" font-size="9">WiFi (内蔵)</text>
+
+  <rect x="325" y="240" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="371" y="254" text-anchor="middle" fill="#64748b" font-size="9">HTTP :9090</text>
+
+  <rect x="423" y="240" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="469" y="254" text-anchor="middle" fill="#64748b" font-size="9">HDMI出力</text>
+
+  <rect x="325" y="266" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="371" y="280" text-anchor="middle" fill="#64748b" font-size="9">メータ画面配信</text>
+
+  <rect x="423" y="266" width="92" height="20" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="469" y="280" text-anchor="middle" fill="#64748b" font-size="9">操作UI配信</text>
+
+  <rect x="325" y="296" width="190" height="18" rx="3" fill="#0f172a" stroke="#334155" stroke-width="0.8"/>
+  <text x="420" y="309" text-anchor="middle" fill="#475569" font-size="8">Chromium kiosk + overlayFS (SD保護)</text>
+
+  <!-- ELM327 → Pi (Bluetooth) -->
+  <path d="M255,305 Q290,305 310,240" fill="none" stroke="#42a5f5" stroke-width="2.5" stroke-dasharray="6,3" marker-end="url(#arr-blue)"/>
+  <text x="258" y="263" fill="#42a5f5" font-size="11" font-weight="bold">Bluetooth 2.0</text>
+  <text x="258" y="277" fill="#64b5f6" font-size="9">/dev/rfcomm0 (SPP)</text>
+
+  <!-- LCD Display -->
+  <rect x="310" y="386" width="220" height="85" rx="8" fill="#1e293b" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="420" y="413" text-anchor="middle" fill="#fb923c" font-size="14" font-weight="bold">5インチ LCD</text>
+  <text x="420" y="430" text-anchor="middle" fill="#94a3b8" font-size="10">Waveshare HDMI (H) V4</text>
+  <text x="420" y="446" text-anchor="middle" fill="#64748b" font-size="9">meter.html — 270° アークゲージ × 5</text>
+  <text x="420" y="460" text-anchor="middle" fill="#64748b" font-size="9">60fps補間 / 時刻ベース自動輝度</text>
+
+  <!-- Pi → LCD -->
+  <line x1="469" y1="340" x2="469" y2="384" stroke="#fb923c" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="478" y="365" fill="#fb923c" font-size="10" font-weight="bold">HDMI</text>
+
+  <!-- Power -->
+  <rect x="55" y="386" width="200" height="70" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="155" y="413" text-anchor="middle" fill="#ef4444" font-size="12" font-weight="bold">⚡ 電源 (ACC連動)</text>
+  <text x="155" y="430" text-anchor="middle" fill="#94a3b8" font-size="10">シガーソケット → USB-C 5V/3A</text>
+  <text x="155" y="445" text-anchor="middle" fill="#64748b" font-size="9">エンジンOFF → シャットダウン → AT LP</text>
+
+  <!-- Power → Pi -->
+  <path d="M255,410 Q285,390 310,340" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="275" y="375" fill="#ef4444" font-size="9">USB-C 5V</text>
+
+  <!-- =============== クラウドエリア =============== -->
+  <rect x="580" y="72" width="310" height="270" rx="8" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <rect x="592" y="72" width="88" height="20" rx="3" fill="#111827"/>
+  <text x="636" y="86" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="bold">☁️ クラウド</text>
+
+  <!-- Google Apps Script -->
+  <rect x="610" y="105" width="255" height="70" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="737" y="130" text-anchor="middle" fill="#66bb6a" font-size="13" font-weight="bold">Google Apps Script</text>
+  <text x="737" y="148" text-anchor="middle" fill="#94a3b8" font-size="10">Webhook (doPost)</text>
+  <text x="737" y="163" text-anchor="middle" fill="#64748b" font-size="9">トリップ受信 → Sheets書込 + Discord通知</text>
+
+  <!-- Google Sheets -->
+  <rect x="610" y="195" width="255" height="90" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="1.5"/>
+  <text x="737" y="220" text-anchor="middle" fill="#34d399" font-size="13" font-weight="bold">Google Sheets</text>
+  <text x="737" y="240" text-anchor="middle" fill="#94a3b8" font-size="10">📊 トリップ (自動蓄積)</text>
+  <text x="737" y="255" text-anchor="middle" fill="#94a3b8" font-size="10">⛽ 給油記録 (手入力・満タン法燃費)</text>
+  <text x="737" y="270" text-anchor="middle" fill="#94a3b8" font-size="10">🔧 メンテナンス (手入力・プルダウン)</text>
+
+  <!-- GAS → Sheets -->
+  <line x1="737" y1="175" x2="737" y2="193" stroke="#34d399" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Discord -->
+  <rect x="610" y="305" width="255" height="30" rx="8" fill="#1e293b" stroke="#818cf8" stroke-width="1.5"/>
+  <text x="737" y="325" text-anchor="middle" fill="#818cf8" font-size="12" font-weight="bold">Discord</text>
+
+  <!-- GAS → Discord -->
+  <path d="M820,175 L855,175 L855,318 L867,318" fill="none" stroke="#818cf8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="862" y="250" fill="#818cf8" font-size="9" transform="rotate(90,862,250)">トリップ通知</text>
+
+  <!-- Pi → GAS (WiFi) -->
+  <path d="M530,180 L608,135" fill="none" stroke="#66bb6a" stroke-width="2.5" marker-end="url(#arr-green)"/>
+  <text x="548" y="143" fill="#66bb6a" font-size="11" font-weight="bold">WiFi</text>
+  <text x="548" y="157" fill="#86efac" font-size="9">HTTP POST</text>
+  <text x="548" y="169" fill="#64748b" font-size="8">トリップ自動送信</text>
+
+  <!-- Pi → Discord direct (メンテ警告) -->
+  <path d="M530,210 L575,210 L575,318 L608,318" fill="none" stroke="#818cf8" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+  <text x="555" y="270" fill="#a78bfa" font-size="9" transform="rotate(90,555,270)">メンテ警告</text>
+
+  <!-- =============== スマホエリア =============== -->
+  <rect x="580" y="380" width="310" height="120" rx="8" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <rect x="592" y="380" width="110" height="20" rx="3" fill="#111827"/>
+  <text x="647" y="394" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="bold">📱 スマホ (Android)</text>
+
+  <!-- Phone box 1: control.html -->
+  <rect x="610" y="410" width="120" height="70" rx="6" fill="#1e293b" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="670" y="433" text-anchor="middle" fill="#22d3ee" font-size="11" font-weight="bold">control.html</text>
+  <text x="670" y="449" text-anchor="middle" fill="#64748b" font-size="9">トリップリセット</text>
+  <text x="670" y="462" text-anchor="middle" fill="#64748b" font-size="9">メンテ管理 / DTC確認</text>
+  <text x="670" y="475" text-anchor="middle" fill="#64748b" font-size="9">輝度調整</text>
+
+  <!-- Phone box 2: Sheets -->
+  <rect x="745" y="410" width="120" height="70" rx="6" fill="#1e293b" stroke="#34d399" stroke-width="1.5"/>
+  <text x="805" y="433" text-anchor="middle" fill="#34d399" font-size="11" font-weight="bold">Sheets アプリ</text>
+  <text x="805" y="449" text-anchor="middle" fill="#64748b" font-size="9">給油記録の入力</text>
+  <text x="805" y="462" text-anchor="middle" fill="#64748b" font-size="9">メンテ履歴の入力</text>
+  <text x="805" y="475" text-anchor="middle" fill="#64748b" font-size="9">ダッシュボード閲覧</text>
+
+  <!-- Pi → Phone (WiFi) -->
+  <path d="M530,300 L600,430" fill="none" stroke="#22d3ee" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arr-cyan)"/>
+  <text x="540" y="370" fill="#22d3ee" font-size="10" font-weight="bold">WiFi</text>
+  <text x="540" y="384" fill="#67e8f9" font-size="9">HTTP :9090</text>
+
+  <!-- =============== 凡例 =============== -->
+  <rect x="30" y="520" width="860" height="185" rx="8" fill="#0c1222" stroke="#1e293b" stroke-width="1"/>
+  <text x="50" y="545" fill="#94a3b8" font-size="13" font-weight="bold">通信経路</text>
+
+  <line x1="50" y1="566" x2="95" y2="566" stroke="#475569" stroke-width="2"/>
+  <circle cx="72" cy="566" r="3" fill="#475569"/>
+  <text x="105" y="570" fill="#cbd5e1" font-size="11">❶ CAN有線 — ECU ↔ ELM327（OBD-IIポート経由、車内LAN）</text>
+
+  <line x1="50" y1="590" x2="95" y2="590" stroke="#42a5f5" stroke-width="2.5" stroke-dasharray="6,3"/>
+  <text x="105" y="594" fill="#cbd5e1" font-size="11">❷ Bluetooth 2.0 — ELM327 → ラズパイ（/dev/rfcomm0、SPPシリアル通信）</text>
+
+  <line x1="50" y1="614" x2="95" y2="614" stroke="#66bb6a" stroke-width="2.5"/>
+  <text x="105" y="618" fill="#cbd5e1" font-size="11">❸ WiFi → インターネット — ラズパイ → GAS Webhook → Google Sheets + Discord（トリップ自動送信）</text>
+
+  <line x1="50" y1="638" x2="95" y2="638" stroke="#22d3ee" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="105" y="642" fill="#cbd5e1" font-size="11">❹ WiFi ローカル — スマホ → ラズパイ :9090（control.html 操作UI）</text>
+
+  <line x1="50" y1="662" x2="95" y2="662" stroke="#fb923c" stroke-width="2"/>
+  <text x="105" y="666" fill="#cbd5e1" font-size="11">❺ HDMI — ラズパイ → 5インチ LCD（meter.html 60fps表示）</text>
+
+  <line x1="50" y1="686" x2="95" y2="686" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="105" y="690" fill="#cbd5e1" font-size="11">❻ 電源 ACC連動 — シガーソケット → USB-C → ラズパイ + LCD ／ ELM327はOBD-II常時通電（スイッチでOFF可）</text>
+</svg>

@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test -v ./...
+
+      - name: Build ARM64 binary
+        run: |
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
+            -o pi-obd-meter-arm64 \
+            ./cmd/server
+
+      - name: Package release
+        run: |
+          mkdir -p release/pi-obd-meter
+          cp pi-obd-meter-arm64 release/pi-obd-meter/pi-obd-meter
+          cp -r web/ release/pi-obd-meter/web/
+          cp -r configs/ release/pi-obd-meter/configs/ 2>/dev/null || true
+          cd release && tar czf pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz pi-obd-meter/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz
+          generate_release_notes: true
