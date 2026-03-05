@@ -58,8 +58,37 @@
     justify-content: center;
     align-items: center;
     gap: 0;
+    position: relative;
   }
   .top-gauges svg { margin: 0 -24px; }
+  .gear-indicator {
+    position: absolute;
+    left: 50%; top: 55%;
+    transform: translate(-50%, -50%);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .gear-box {
+    width: 30px; height: 30px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background: #0a0a0c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: #333;
+    transition: all 0.3s ease-out;
+  }
+  .gear-box.active {
+    border-color: #69f0ae;
+    color: #69f0ae;
+    box-shadow: 0 0 8px rgba(105,240,174,0.4);
+  }
   .mid-gauges {
     display: flex;
     justify-content: center;
@@ -97,6 +126,12 @@
   </div>
   <div class="top-gauges">
     <svg id="gs" width="380" height="210" viewBox="0 0 380 210"></svg>
+    <div class="gear-indicator">
+      <div class="gear-box" id="g4">4</div>
+      <div class="gear-box" id="g3">3</div>
+      <div class="gear-box" id="g2">2</div>
+      <div class="gear-box" id="g1">1</div>
+    </div>
     <svg id="gr" width="380" height="210" viewBox="0 0 380 210"></svg>
   </div>
   <div class="mid-gauges">
@@ -277,6 +312,31 @@ const gtt = buildGauge('gt', {
   fmt: v => v > 0.05 ? v.toFixed(1) : '--.-'
 });
 
+// --- Gear estimation (DY Demio 4AT) ---
+const GEAR_RATIOS = [
+  { gear: 1, ratio: 105.2 },
+  { gear: 2, ratio: 57.1 },
+  { gear: 3, ratio: 37.4 },
+  { gear: 4, ratio: 26.4 }
+];
+const GEAR_TOLERANCE = 0.15;
+const gearEls = [null, document.getElementById('g1'), document.getElementById('g2'), document.getElementById('g3'), document.getElementById('g4')];
+
+function estimateGear(rpm, speed) {
+  if (speed < 3) return 0;
+  const ratio = rpm / speed;
+  for (const g of GEAR_RATIOS) {
+    if (Math.abs(ratio - g.ratio) / g.ratio <= GEAR_TOLERANCE) return g.gear;
+  }
+  return 0;
+}
+
+function updateGearIndicator(gear) {
+  for (let i = 1; i <= 4; i++) {
+    gearEls[i].classList.toggle('active', i === gear);
+  }
+}
+
 // --- Simulation ---
 let t = 0, tripDist = 14.6, tripFuel = 0.83;
 
@@ -332,6 +392,7 @@ function sim() {
   }
   gp.update(Math.max(0, powerPS));
   gtt.update(Math.max(0, torqueKgm));
+  updateGearIndicator(estimateGear(rpm, speed));
 
   document.getElementById('v-ae').textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--.-';
   document.getElementById('v-di').textContent = tripDist.toFixed(1);
