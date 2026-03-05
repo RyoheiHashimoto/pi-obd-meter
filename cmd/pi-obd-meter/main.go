@@ -30,9 +30,11 @@ type Config struct {
 	LocalAPIPort        int     `json:"local_api_port"`
 	MaintenancePath     string  `json:"maintenance_path"`
 	WebStaticDir        string  `json:"web_static_dir"`
-	EngineDisplacementL float64               `json:"engine_displacement_l"`
-	ThermalEfficiency   float64               `json:"thermal_efficiency"`
-	Brightness          display.BrightnessConfig `json:"brightness"`
+	EngineDisplacementCC float64               `json:"engine_displacement_cc"`
+	VECoefficient        float64               `json:"ve_coefficient"`
+	ThermalEfficiency    float64               `json:"thermal_efficiency"`
+	RedlineRPM           int                   `json:"redline_rpm"`
+	Brightness           display.BrightnessConfig `json:"brightness"`
 }
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
@@ -68,8 +70,10 @@ func loadConfig(path string) Config {
 		LocalAPIPort:        9090,
 		MaintenancePath:     "/var/lib/pi-obd-meter/maintenance.json",
 		WebStaticDir:        "/opt/pi-obd-meter/web/static",
-		EngineDisplacementL: 1.348, // ZJ-VE 1.3L
-		ThermalEfficiency:   0.28,  // 初期値、全開加速で校正
+		EngineDisplacementCC: 1348, // ZJ-VE 1.3L
+		VECoefficient:        0.85, // 体積効率、満タン法で校正
+		ThermalEfficiency:    0.28, // 初期値、全開加速で校正
+		RedlineRPM:           6500, // ZJ-VE レッドゾーン開始
 		Brightness:          display.DefaultConfig(),
 	}
 
@@ -111,8 +115,9 @@ func main() {
 
 	// --- PID検出 ---
 	reader := obd.NewReader(elm, obd.EngineConfig{
-		DisplacementL:     cfg.EngineDisplacementL,
-		ThermalEfficiency: cfg.ThermalEfficiency,
+		DisplacementL:        cfg.EngineDisplacementCC / 1000.0,
+		ThermalEfficiency:    cfg.ThermalEfficiency,
+		VolumetricEfficiency: cfg.VECoefficient,
 	})
 	if err := reader.DetectCapabilities(); err != nil {
 		log.Fatalf("OBDケイパビリティ検出失敗: %v", err)
@@ -286,6 +291,15 @@ func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Mana
 	// LCD: http://localhost:9090/meter.html
 	// スマホ: http://<raspi-ip>:9090/control.html
 	mux.Handle("GET /", http.FileServer(http.Dir(cfg.WebStaticDir)))
+
+	// --- 設定API（meter.html等がredline_rpm等を取得する） ---
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"redline_rpm":           cfg.RedlineRPM,
+			"engine_displacement_cc": cfg.EngineDisplacementCC,
+		})
+	})
 
 	// --- リアルタイムAPI（LCD用、500ms間隔でポーリングされる） ---
 	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {

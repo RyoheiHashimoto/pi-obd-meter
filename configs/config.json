@@ -9,6 +9,7 @@
   "web_static_dir": "/opt/pi-obd-meter/web/static",
   "engine_displacement_cc": 1348,
   "ve_coefficient": 0.85,
+  "thermal_efficiency": 0.28,
   "redline_rpm": 6500,
   "brightness": {
     "hdmi_output": "HDMI-1",

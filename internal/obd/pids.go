@@ -38,8 +38,6 @@ const (
 	GasolineDensity = 0.745
 	// 理論空燃比
 	StoichAFR = 14.7
-	// 体積効率（推定値、満タン法で校正）
-	VolumetricEfficiency = 0.85
 	// ガソリン低位発熱量 (J/g)
 	GasolineHeatValue = 44000.0
 	// 推定熱効率（初期値、全開加速でカタログ値と照合して調整）
@@ -48,8 +46,9 @@ const (
 
 // EngineConfig はエンジン固有の設定値（外部から注入）
 type EngineConfig struct {
-	DisplacementL       float64 // 排気量 (L) — ZJ-VE: 1.348, ZY-VE: 1.498
-	ThermalEfficiency   float64 // 熱効率 (0.25〜0.30)
+	DisplacementL          float64 // 排気量 (L) — ZJ-VE: 1.348, ZY-VE: 1.498
+	ThermalEfficiency      float64 // 熱効率 (0.25〜0.30)
+	VolumetricEfficiency   float64 // 体積効率 (0.80〜0.90、満タン法で校正)
 }
 
 // Reader はOBD-2データを読み取る
@@ -68,6 +67,9 @@ func NewReader(elm *ELM327, cfg EngineConfig) *Reader {
 	}
 	if cfg.ThermalEfficiency <= 0 {
 		cfg.ThermalEfficiency = DefaultThermalEfficiency
+	}
+	if cfg.VolumetricEfficiency <= 0 {
+		cfg.VolumetricEfficiency = 0.85
 	}
 	return &Reader{elm: elm, EngineCfg: cfg}
 }
@@ -268,7 +270,7 @@ func (d *OBDData) CalcFuelRateLph() float64 {
 
 	imap := d.RPM * d.IntakeManifold / (d.IntakeAirTemp + 273.15)
 	// MAF推定 (g/s)
-	estimatedMAF := imap / 120.0 * VolumetricEfficiency * d.engineCfg.DisplacementL * 28.97 / 8.314
+	estimatedMAF := imap / 120.0 * d.engineCfg.VolumetricEfficiency * d.engineCfg.DisplacementL * 28.97 / 8.314
 	fuelGramsPerSec := estimatedMAF / StoichAFR
 	fuelLitersPerHour := (fuelGramsPerSec / (GasolineDensity * 1000)) * 3600
 
