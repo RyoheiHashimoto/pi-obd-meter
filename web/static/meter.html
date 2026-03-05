@@ -50,9 +50,9 @@
     padding: 1px 8px;
     font-size: 14px;
     color: #ffb74d;
-    display: none;
+    visibility: hidden;
   }
-  .alert-bar.active { display: inline-block; }
+  .alert-bar.active { visibility: visible; }
   .top-gauges {
     display: flex;
     justify-content: center;
@@ -337,72 +337,133 @@ function updateGearIndicator(gear) {
   }
 }
 
-// --- Simulation ---
-let t = 0, tripDist = 14.6, tripFuel = 0.83;
+// --- Realtime API polling ---
+const statusDot = document.querySelector('.status-dot');
+let connected = false;
+let alerts = [];
+let alertIdx = 0;
 
-function sim() {
-  t += 0.02;
-  const phase = t % 12;
-  let speed, rpm, econ, powerPS, torqueKgm, cool, load;
+function setConnected(ok) {
+  connected = ok;
+  statusDot.style.background = ok ? '#4caf50' : '#f44336';
+  statusDot.style.boxShadow = ok
+    ? '0 0 6px rgba(76,175,80,0.6)'
+    : '0 0 6px rgba(244,67,54,0.6)';
+}
 
-  if (phase < 3) {
-    const p = phase / 3;
-    speed = p * p * 65;
-    rpm = 800 + p * 3200;
-    econ = 6 + p * 8;
-    powerPS = p * p * 35;
-    torqueKgm = p * 8.5;
-    cool = 88; load = 20 + p * 40;
-  } else if (phase < 7) {
-    const w = Math.sin(t * 3) * 3;
-    speed = 60 + w;
-    rpm = 2200 + Math.sin(t * 2) * 200;
-    econ = 16 + Math.sin(t * 1.5) * 3;
-    powerPS = 12 + Math.sin(t * 2) * 3;
-    torqueKgm = 3.5 + Math.sin(t * 2) * 0.8;
-    cool = 90; load = 30 + Math.sin(t * 2) * 5;
-  } else if (phase < 9) {
-    const p = (phase - 7) / 2;
-    speed = 60 + p * 60;
-    rpm = 2200 + p * 3800;
-    econ = 5 + (1 - p) * 4;
-    powerPS = 15 + p * p * 55;
-    torqueKgm = 4 + p * 8;
-    cool = 92; load = 50 + p * 45;
-  } else {
-    const p = (phase - 9) / 3;
-    speed = 120 * (1 - p * p);
-    rpm = 5500 * (1 - p) + 800 * p;
-    econ = 25 + p * 5;
-    powerPS = 2; torqueKgm = 0.5;
-    cool = 91; load = 10 * (1 - p) + 8;
-  }
+function applyData(d) {
+  const spd = d.speed_kmh || 0;
+  const rpm = d.rpm || 0;
+  const econ = d.instant_econ || 0;
+  const powerPS = d.est_power_ps || 0;
+  const torqueKgm = (d.est_torque_nm || 0) / 9.80665;
+  const cool = d.coolant_temp || 0;
+  const load = d.engine_load || 0;
 
-  const dt = 0.05 / 3600;
-  tripDist += Math.max(0, speed) * dt;
-  tripFuel += (speed > 2 ? speed / Math.max(econ, 1) : 0.8) * dt;
-  const avgEco = tripFuel > 0.001 ? tripDist / tripFuel : 0;
-
-  gs.update(Math.max(0, speed), spdCol(speed));
-  gr.update(Math.max(0, rpm), rpmCol(rpm));
-  if (speed > 2) {
+  gs.update(spd, spdCol(spd));
+  gr.update(rpm, rpmCol(rpm));
+  if (spd > 2) {
     ge.update(Math.min(30, econ), ecoCol(econ));
   } else {
     ge.update(0, '#555');
   }
+  gp.update(powerPS);
+  gtt.update(torqueKgm);
+  updateGearIndicator(estimateGear(rpm, spd));
+
+  // Sub-strip
+  const trip = d.trip;
+  if (trip) {
+    document.getElementById('v-ae').textContent = trip.avg_fuel_econ_km_per_l > 0.1 ? trip.avg_fuel_econ_km_per_l.toFixed(1) : '--.-';
+    document.getElementById('v-di').textContent = trip.distance_km.toFixed(1);
+    document.getElementById('v-fu').textContent = trip.fuel_used_l.toFixed(2);
+  }
+  document.getElementById('v-ct').textContent = cool > 0 ? Math.round(cool) : '--';
+  document.getElementById('v-ld').textContent = load > 0 ? Math.round(load) : '--';
+
+  // Alerts from API
+  if (d.alerts && d.alerts.length > 0) {
+    alerts = d.alerts.map(a => {
+      const r = a.reminder;
+      const remain = r.type === 'distance'
+        ? `${Math.round(a.remaining_km).toLocaleString()} km`
+        : `${a.days_left} 日`;
+      return `${r.name}まで ${remain}`;
+    });
+  } else {
+    alerts = [];
+  }
+}
+
+async function fetchRealtime() {
+  try {
+    const resp = await fetch('/api/realtime');
+    if (!resp.ok) throw new Error(resp.status);
+    const d = await resp.json();
+    if (!connected) setConnected(true);
+    applyData(d);
+  } catch (e) {
+    if (connected || !simMode) {
+      setConnected(false);
+      if (!simMode) startSimMode();
+    }
+  }
+}
+
+// --- Simulation fallback (for preview / no API) ---
+let simMode = false;
+let simT = 0, simTripDist = 14.6, simTripFuel = 0.83;
+
+function startSimMode() {
+  simMode = true;
+  setInterval(simTick, 50);
+}
+
+function simTick() {
+  simT += 0.02;
+  const phase = simT % 12;
+  let speed, rpm, econ, powerPS, torqueKgm, cool, load;
+
+  if (phase < 3) {
+    const p = phase / 3;
+    speed = p * p * 65; rpm = 800 + p * 3200;
+    econ = 6 + p * 8; powerPS = p * p * 35; torqueKgm = p * 8.5;
+    cool = 88; load = 20 + p * 40;
+  } else if (phase < 7) {
+    const w = Math.sin(simT * 3) * 3;
+    speed = 60 + w; rpm = 2200 + Math.sin(simT * 2) * 200;
+    econ = 16 + Math.sin(simT * 1.5) * 3; powerPS = 12 + Math.sin(simT * 2) * 3;
+    torqueKgm = 3.5 + Math.sin(simT * 2) * 0.8; cool = 90; load = 30 + Math.sin(simT * 2) * 5;
+  } else if (phase < 9) {
+    const p = (phase - 7) / 2;
+    speed = 60 + p * 60; rpm = 2200 + p * 3800;
+    econ = 5 + (1 - p) * 4; powerPS = 15 + p * p * 55; torqueKgm = 4 + p * 8;
+    cool = 92; load = 50 + p * 45;
+  } else {
+    const p = (phase - 9) / 3;
+    speed = 120 * (1 - p * p); rpm = 5500 * (1 - p) + 800 * p;
+    econ = 25 + p * 5; powerPS = 2; torqueKgm = 0.5;
+    cool = 91; load = 10 * (1 - p) + 8;
+  }
+
+  const dt = 0.05 / 3600;
+  simTripDist += Math.max(0, speed) * dt;
+  simTripFuel += (speed > 2 ? speed / Math.max(econ, 1) : 0.8) * dt;
+  const avgEco = simTripFuel > 0.001 ? simTripDist / simTripFuel : 0;
+
+  gs.update(Math.max(0, speed), spdCol(speed));
+  gr.update(Math.max(0, rpm), rpmCol(rpm));
+  if (speed > 2) { ge.update(Math.min(30, econ), ecoCol(econ)); } else { ge.update(0, '#555'); }
   gp.update(Math.max(0, powerPS));
   gtt.update(Math.max(0, torqueKgm));
   updateGearIndicator(estimateGear(rpm, speed));
 
   document.getElementById('v-ae').textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--.-';
-  document.getElementById('v-di').textContent = tripDist.toFixed(1);
-  document.getElementById('v-fu').textContent = tripFuel.toFixed(2);
+  document.getElementById('v-di').textContent = simTripDist.toFixed(1);
+  document.getElementById('v-fu').textContent = simTripFuel.toFixed(2);
   document.getElementById('v-ct').textContent = Math.round(cool);
   document.getElementById('v-ld').textContent = Math.round(load);
 }
-
-setInterval(sim, 50);
-sim();
 
 // --- Clock & Date (Asia/Tokyo) ---
 function updateClock() {
@@ -415,12 +476,6 @@ updateClock();
 setInterval(updateClock, 1000);
 
 // --- Alert rotation (10s) ---
-const alerts = [
-  'オイル交換まで 1,200 km',
-  'ATF交換まで 3,200 km',
-  'タイヤローテーションまで 4,800 km'
-];
-let alertIdx = 0;
 function updateAlert() {
   const bar = document.getElementById('alert-bar');
   if (alerts.length === 0) { bar.classList.remove('active'); return; }
@@ -429,8 +484,11 @@ function updateAlert() {
   bar.textContent = prefix + alerts[alertIdx];
   alertIdx = (alertIdx + 1) % alerts.length;
 }
-updateAlert();
 setInterval(updateAlert, 10000);
+
+// --- Start ---
+fetchRealtime();
+setInterval(fetchRealtime, 500);
 </script>
 </body>
 </html>
