@@ -18,7 +18,7 @@
   }
   .dashboard {
     display: grid;
-    grid-template-rows: 24px auto auto 44px;
+    grid-template-rows: 32px auto auto 44px;
     align-content: center;
     height: 100%;
     padding: 0 4px;
@@ -28,14 +28,14 @@
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: 0 8px;
-    font-size: 11px;
-    color: #444;
+    font-size: 16px;
+    color: #999;
     border-bottom: 1px solid #111;
   }
   .header > :last-child { text-align: right; }
   .status-dot {
     display: inline-block;
-    width: 6px; height: 6px;
+    width: 8px; height: 8px;
     border-radius: 50%;
     background: #4caf50;
     box-shadow: 0 0 6px rgba(76,175,80,0.6);
@@ -48,8 +48,8 @@
     border: 1px solid #ff6600;
     border-radius: 2px;
     padding: 1px 8px;
-    font-size: 10px;
-    color: #ff9800;
+    font-size: 14px;
+    color: #ffb74d;
     display: none;
   }
   .alert-bar.active { display: inline-block; }
@@ -78,10 +78,10 @@
   .sub-item { text-align: center; }
   .sub-item .val {
     font-family: 'Orbitron', monospace;
-    font-size: 17px; font-weight: 700; color: #999;
+    font-size: 24px; font-weight: 700; color: #ccc;
   }
-  .sub-item .lbl { font-size: 8px; color: #333; text-transform: uppercase; letter-spacing: 1px; }
-  .sub-item .unt { font-size: 8px; color: #3a3a3a; }
+  .sub-item .lbl { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
+  .sub-item .unt { font-size: 11px; color: #555; }
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; text-anchor: middle; }
   .g-lbl { font-family: 'Share Tech Mono', monospace; text-anchor: middle; letter-spacing: 2px; }
@@ -176,8 +176,8 @@ function buildGauge(svgId, cfg) {
     if (isMj) {
       const v = min + (i / total) * (max - min);
       const [lx, ly] = p2xy(cx, cy, r - 24, a);
-      const fs = big ? 10 : 8;
-      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#484848', 'font-size': fs });
+      const fs = big ? 13 : 11;
+      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': fs });
       t.textContent = Math.round(v);
     }
   }
@@ -195,17 +195,17 @@ function buildGauge(svgId, cfg) {
   el(svg, 'circle', { cx, cy, r: big ? 5 : 3.5, fill: '#1a1a22', stroke: '#333', 'stroke-width': 1.5 });
 
   // Number
-  const numY = cy + r * 0.42;
+  const numY = big ? cy + r * 0.42 : cy + r * 0.1;
   const nm = el(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
   nm.textContent = '--';
 
   // Unit
-  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.7, class: 'g-unit', fill: '#484848', 'font-size': big ? 11 : 9 });
+  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.7, class: 'g-unit', fill: '#666', 'font-size': big ? 14 : 12 });
   ut.textContent = unit;
 
   // Label
   if (label) {
-    const lb = el(svg, 'text', { x: cx, y: cy - r - 6, class: 'g-lbl', fill: '#2a2a2a', 'font-size': 9 });
+    const lb = el(svg, 'text', { x: cx, y: cy - r - 6, class: 'g-lbl', fill: '#555', 'font-size': 12 });
     lb.textContent = label;
   }
 
@@ -347,11 +347,11 @@ sim();
 function updateClock() {
   const now = new Date();
   const tz = { timeZone: 'Asia/Tokyo' };
-  document.getElementById('clock').textContent = now.toLocaleTimeString('ja-JP', { ...tz, hour: '2-digit', minute: '2-digit', hour12: false });
+  document.getElementById('clock').textContent = now.toLocaleTimeString('ja-JP', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   document.getElementById('date').textContent = now.toLocaleDateString('ja-JP', { ...tz, year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 updateClock();
-setInterval(updateClock, 10000);
+setInterval(updateClock, 1000);
 
 // --- Alert rotation (10s) ---
 const alerts = [
