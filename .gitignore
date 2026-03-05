@@ -1,0 +1,23 @@
+# Build output
+bin/
+pi-obd-meter
+pi-obd-meter-arm64
+pi-obd-scanner
+pi-obd-scanner-arm64
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Serena
+.serena/
+
+# Secrets (実際のURLが入ったconfig)
+configs/config.local.json

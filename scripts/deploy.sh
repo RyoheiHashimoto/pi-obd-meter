@@ -7,7 +7,7 @@
 set -euo pipefail
 
 REPO="YOUR_USER/pi-obd-meter"  # ← GitHub ユーザー名に書き換え
-INSTALL_DIR="$HOME/pi-obd-meter"
+INSTALL_DIR="/opt/pi-obd-meter"
 SERVICE_NAME="pi-obd-meter"
 
 # Get version
@@ -42,7 +42,9 @@ sudo systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
 echo "Installing to ${INSTALL_DIR}..."
 mkdir -p "${INSTALL_DIR}"
 cp "${TMPDIR}/pi-obd-meter/pi-obd-meter" "${INSTALL_DIR}/pi-obd-meter"
+cp "${TMPDIR}/pi-obd-meter/pi-obd-scanner" "${INSTALL_DIR}/pi-obd-scanner" 2>/dev/null || true
 chmod +x "${INSTALL_DIR}/pi-obd-meter"
+chmod +x "${INSTALL_DIR}/pi-obd-scanner" 2>/dev/null || true
 cp -r "${TMPDIR}/pi-obd-meter/web/" "${INSTALL_DIR}/web/"
 cp -r "${TMPDIR}/pi-obd-meter/configs/" "${INSTALL_DIR}/configs/" 2>/dev/null || true
 

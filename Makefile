@@ -1,15 +1,15 @@
 PI = pi@raspberrypi.local
-DEST = /opt/demio-meter
+DEST = /opt/pi-obd-meter
 
 # --- ビルド ---
 
 build:
-	GOOS=linux GOARCH=arm64 go build -o bin/demio-meter ./cmd/demio-meter
-	GOOS=linux GOARCH=arm64 go build -o bin/demio-scanner ./cmd/demio-scanner
+	GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
+	GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
 
 build-local:
-	go build -o bin/demio-meter ./cmd/demio-meter
-	go build -o bin/demio-scanner ./cmd/demio-scanner
+	go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
+	go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
 
 # --- デプロイ ---
 
@@ -17,12 +17,12 @@ deploy: build
 	rsync -avz bin/ $(PI):$(DEST)/
 	rsync -avz web/static/ $(PI):$(DEST)/web/static/
 	rsync -avz configs/ $(PI):$(DEST)/configs/
-	ssh $(PI) 'sudo systemctl restart demio-meter'
+	ssh $(PI) 'sudo systemctl restart pi-obd-meter'
 	@echo "✓ デプロイ完了"
 
 deploy-web:
 	rsync -avz web/static/ $(PI):$(DEST)/web/static/
-	ssh $(PI) 'sudo systemctl restart demio-meter'
+	ssh $(PI) 'sudo systemctl restart pi-obd-meter'
 	@echo "✓ Web UIのみデプロイ完了"
 
 # --- ラズパイ初期セットアップ（初回のみ） ---
@@ -31,8 +31,8 @@ setup-pi:
 	ssh $(PI) 'sudo mkdir -p $(DEST)/web/static $(DEST)/configs'
 	ssh $(PI) 'sudo chown -R pi:pi $(DEST)'
 	$(MAKE) deploy
-	rsync -avz systemd/ $(PI):/tmp/systemd/
-	ssh $(PI) 'sudo cp /tmp/systemd/demio-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable demio-meter'
+	rsync -avz configs/pi-obd-meter.service $(PI):/tmp/pi-obd-meter.service
+	ssh $(PI) 'sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable pi-obd-meter'
 	@echo "✓ 初期セットアップ完了"
 
 # --- ユーティリティ ---
@@ -41,13 +41,13 @@ ssh:
 	ssh $(PI)
 
 logs:
-	ssh $(PI) 'journalctl -u demio-meter -f'
+	ssh $(PI) 'journalctl -u pi-obd-meter -f'
 
 status:
-	ssh $(PI) 'systemctl status demio-meter'
+	ssh $(PI) 'systemctl status pi-obd-meter'
 
 restart:
-	ssh $(PI) 'sudo systemctl restart demio-meter'
+	ssh $(PI) 'sudo systemctl restart pi-obd-meter'
 
 # --- overlayFS（SD保護） ---
 

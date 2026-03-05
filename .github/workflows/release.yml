@@ -21,17 +21,22 @@ jobs:
       - name: Test
         run: go test -v ./...
 
-      - name: Build ARM64 binary
+      - name: Build ARM64 binaries
         run: |
           GOOS=linux GOARCH=arm64 go build \
             -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o pi-obd-meter-arm64 \
-            ./cmd/server
+            ./cmd/pi-obd-meter
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags "-s -w" \
+            -o pi-obd-scanner-arm64 \
+            ./cmd/pi-obd-scanner
 
       - name: Package release
         run: |
           mkdir -p release/pi-obd-meter
           cp pi-obd-meter-arm64 release/pi-obd-meter/pi-obd-meter
+          cp pi-obd-scanner-arm64 release/pi-obd-meter/pi-obd-scanner
           cp -r web/ release/pi-obd-meter/web/
           cp -r configs/ release/pi-obd-meter/configs/ 2>/dev/null || true
           cd release && tar czf pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz pi-obd-meter/

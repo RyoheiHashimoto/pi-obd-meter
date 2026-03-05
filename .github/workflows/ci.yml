@@ -25,7 +25,11 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Build (host)
-        run: go build -o pi-obd-meter ./cmd/server
+        run: |
+          go build -o pi-obd-meter ./cmd/pi-obd-meter
+          go build -o pi-obd-scanner ./cmd/pi-obd-scanner
 
       - name: Build (ARM64 cross-compile)
-        run: GOOS=linux GOARCH=arm64 go build -o pi-obd-meter-arm64 ./cmd/server
+        run: |
+          GOOS=linux GOARCH=arm64 go build -o pi-obd-meter-arm64 ./cmd/pi-obd-meter
+          GOOS=linux GOARCH=arm64 go build -o pi-obd-scanner-arm64 ./cmd/pi-obd-scanner
