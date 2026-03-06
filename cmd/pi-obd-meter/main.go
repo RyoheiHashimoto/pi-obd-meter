@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,12 +41,14 @@ type Config struct {
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh     float64              `json:"speed_kmh"`
-	RPM          float64              `json:"rpm"`
-	EngineLoad   float64              `json:"engine_load"`
-	ThrottlePos  float64              `json:"throttle_pos"`
-	Alerts       []maintenance.Status `json:"alerts"`
-	Notification string               `json:"notification,omitempty"`
+	SpeedKmh      float64              `json:"speed_kmh"`
+	RPM           float64              `json:"rpm"`
+	EngineLoad    float64              `json:"engine_load"`
+	ThrottlePos   float64              `json:"throttle_pos"`
+	Alerts        []maintenance.Status `json:"alerts"`
+	Notification  string               `json:"notification,omitempty"`
+	OBDConnected  bool                 `json:"obd_connected"`
+	WiFiConnected bool                 `json:"wifi_connected"`
 }
 
 var version = "dev"
@@ -74,6 +77,18 @@ func getNotification() string {
 		return ""
 	}
 	return notification
+}
+
+func checkWiFi() bool {
+	iface, err := net.InterfaceByName("wlan0")
+	if err != nil {
+		return false
+	}
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return false
+	}
+	return len(addrs) > 0
 }
 
 func loadConfig(path string) Config {
@@ -176,6 +191,7 @@ func main() {
 	sampleCount := 0
 	var lastFuelTank float64
 	var errCount int
+	var wifiConnected bool
 	const maxConsecutiveErrors = 10
 	for {
 		select {
@@ -215,6 +231,7 @@ func main() {
 			if isFull {
 				lastFuelTank = data.FuelTankLevel
 				tracker.UpdateFuelLevel(lastFuelTank)
+				wifiConnected = checkWiFi()
 			}
 
 			tracker.Update(data.SpeedKmh)
@@ -223,12 +240,14 @@ func main() {
 
 			dataMu.Lock()
 			latestData = RealtimeData{
-				SpeedKmh:     data.SpeedKmh,
-				RPM:          data.RPM,
-				EngineLoad:   data.EngineLoad,
-				ThrottlePos:  data.ThrottlePos,
-				Alerts:       maintMgr.GetAlerts(),
-				Notification: getNotification(),
+				SpeedKmh:      data.SpeedKmh,
+				RPM:           data.RPM,
+				EngineLoad:    data.EngineLoad,
+				ThrottlePos:   data.ThrottlePos,
+				Alerts:        maintMgr.GetAlerts(),
+				Notification:  getNotification(),
+				OBDConnected:  errCount == 0,
+				WiFiConnected: wifiConnected,
 			}
 			dataMu.Unlock()
 

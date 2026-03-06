@@ -44,6 +44,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    position: relative;
   }
   .gauges svg { margin: 0; }
   .bottom-bars {
@@ -92,6 +93,41 @@
     width: 36px;
     text-align: right;
   }
+  .indicators {
+    position: absolute;
+    top: 6px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 20;
+    pointer-events: none;
+  }
+  .ind {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .ind-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #222;
+    border: 1px solid #333;
+    transition: background-color 0.5s, box-shadow 0.5s;
+  }
+  .ind-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 14px;
+    color: #444;
+    letter-spacing: 1px;
+  }
+  .ind-dot.on-green { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .ind-dot.on-red { background: #f44336; box-shadow: 0 0 6px #f44336; }
+  .ind-dot.on-orange { background: #ff9800; box-shadow: 0 0 6px #ff9800; }
+  .ind-dot.blink-red { background: #f44336; box-shadow: 0 0 6px #f44336; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; text-anchor: middle; }
   .g-lbl { font-family: 'Share Tech Mono', monospace; text-anchor: middle; letter-spacing: 2px; }
@@ -101,6 +137,12 @@
 <body>
 <div class="dashboard">
   <div class="gauges">
+    <div class="indicators">
+      <div class="ind"><div class="ind-dot" id="ind-obd"></div><span class="ind-label">OBD</span></div>
+      <div class="ind"><div class="ind-dot" id="ind-maint"></div><span class="ind-label">MAINT</span></div>
+      <div class="ind"><div class="ind-dot" id="ind-lug"></div><span class="ind-label">LUG</span></div>
+      <div class="ind"><div class="ind-dot" id="ind-wifi"></div><span class="ind-label">WiFi</span></div>
+    </div>
     <svg id="gs" width="400" height="400" viewBox="0 0 400 400"></svg>
     <svg id="gr" width="400" height="400" viewBox="0 0 400 400"></svg>
   </div>
@@ -311,6 +353,32 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { toastEl.classList.remove('show'); }, 5000);
 }
 
+// --- Indicator lamps ---
+const indObd = document.getElementById('ind-obd');
+const indMaint = document.getElementById('ind-maint');
+const indLug = document.getElementById('ind-lug');
+const indWifi = document.getElementById('ind-wifi');
+
+function updateIndicators(d) {
+  indObd.className = 'ind-dot ' + (d.obd_connected ? 'on-green' : 'on-red');
+
+  const alertCount = d.alerts ? d.alerts.length : 0;
+  indMaint.className = 'ind-dot ' + (alertCount >= 2 ? 'on-red' : alertCount === 1 ? 'on-orange' : '');
+
+  const spd = d.speed_kmh || 0;
+  const rpm = d.rpm || 0;
+  const load = d.engine_load || 0;
+  let lugClass = '';
+  if (spd >= 15 && rpm >= 500) {
+    const lugging = load / rpm * 1000;
+    if (lugging > 30) lugClass = 'on-red';
+    else if (lugging > 22) lugClass = 'on-orange';
+  }
+  indLug.className = 'ind-dot ' + lugClass;
+
+  indWifi.className = 'ind-dot ' + (d.wifi_connected ? 'on-green' : 'on-red');
+}
+
 // --- Config defaults ---
 const DEFAULTS = {
   redline_rpm: 6500,
@@ -333,6 +401,7 @@ function applyData(d) {
   gs.update(spd, spdCol(spd));
   gr.update(rpm, rpmCol(rpm));
   updateBars(rpm, load, throttle, spd);
+  updateIndicators(d);
 
   // Maintenance alerts as toast
   const alertCount = d.alerts ? d.alerts.length : 0;
