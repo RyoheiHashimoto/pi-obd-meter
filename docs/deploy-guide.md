@@ -4,6 +4,7 @@
 
 ```
 Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
+                                                 --> GAS Webアプリ (スマホ閲覧)
 ```
 
 開発は2つのフェーズに分かれる。
@@ -11,7 +12,6 @@ Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
 **フェーズ1: 開発中（overlayFS OFF）**
 - `./scripts/deploy.sh deploy` で自由にコードを転送・再起動できる
 - SDカードに普通に書き込める状態
-- このフェーズでは電源ブチ切りに注意（でも開発中なので許容）
 
 **フェーズ2: 安定運用（overlayFS ON）**
 - SDカードへの書き込みがゼロになる
@@ -55,14 +55,8 @@ Raspberry Pi Imager で以下を選択：
   - WiFi設定（自宅のSSID/パスワード）
   - ユーザー: 任意（`deploy.sh` の `PI` 変数と合わせる）
 
-### 1-2. SSH鍵を登録（パスワード入力を省略するため）
+### 1-2. SSH鍵を登録
 
-```bash
-# Macで実行（$PI は deploy.sh の接続先に読み替え）
-ssh-copy-id $(head -10 scripts/deploy.sh | grep -oP '(?<=PI="\$\{PI_HOST:-).+(?=\})')
-```
-
-または手動で:
 ```bash
 ssh-copy-id user@hostname.local
 ```
@@ -72,7 +66,6 @@ ssh-copy-id user@hostname.local
 ### 1-3. ラズパイ側の基本設定
 
 ```bash
-# ラズパイにSSHで入って実行
 ./scripts/deploy.sh ssh
 
 # Bluetooth有効化の確認
@@ -81,10 +74,6 @@ sudo systemctl status bluetooth
 # 必要パッケージのインストール
 sudo apt update
 sudo apt install -y bluez bluez-tools chromium-browser xserver-xorg xinit
-
-# 自動起動用ディレクトリ作成
-sudo mkdir -p /opt/pi-obd-meter/web/static /opt/pi-obd-meter/configs
-sudo chown -R $(whoami):$(whoami) /opt/pi-obd-meter
 ```
 
 ### 1-4. ELM327 Bluetooth ペアリング
@@ -93,14 +82,9 @@ sudo chown -R $(whoami):$(whoami) /opt/pi-obd-meter
 
 #### Step 1: Bluetooth アダプタ準備
 
-Pi のデフォルト設定では Classic Bluetooth (BR/EDR) のスキャンが動かないことがある。以下を先に実行する：
-
 ```bash
-# Bluetooth がブロックされている場合
 sudo rfkill unblock bluetooth
 sudo systemctl restart bluetooth
-
-# Device Class を設定（BR/EDR スキャンに必要）
 sudo hciconfig hci0 class 0x200000
 sudo hciconfig hci0 piscan
 ```
@@ -110,37 +94,27 @@ sudo hciconfig hci0 piscan
 ELM327 の電源スイッチを ON にし、車のキーを ACC 以上にしてから実行：
 
 ```bash
-# Classic Bluetooth スキャンで ELM327 を探す
 hcitool scan
 # → 00:1D:A5:XX:XX:XX  OBDII のように表示される
 
-# ペアリング
 bluetoothctl
-  scan on
   pair XX:XX:XX:XX:XX:XX
   # PINを聞かれたら 1234 を入力
   trust XX:XX:XX:XX:XX:XX
   quit
 ```
 
-> `bluetoothctl` の `scan on` だけでは BLE デバイスしか見えないことがある。先に `hcitool scan` で Classic Bluetooth のアドレスを確認するのが確実。
-
 #### Step 3: rfcomm バインド
 
 ```bash
-# rfcommバインド（Bluetooth SPP → シリアルポート変換）
 sudo rfcomm bind 0 XX:XX:XX:XX:XX:XX
-# → /dev/rfcomm0 が作成される
-
-# 確認
 ls -la /dev/rfcomm0
 ```
 
 #### 起動時の自動バインド
 
-rfcomm bind は再起動で消えるため、`/etc/rc.local` の `exit 0` の前に追記：
+`/etc/rc.local` の `exit 0` の前に追記：
 ```bash
-# Bluetooth Class 設定 + ELM327 rfcomm バインド
 hciconfig hci0 class 0x200000
 hciconfig hci0 piscan
 rfcomm bind 0 XX:XX:XX:XX:XX:XX
@@ -151,7 +125,6 @@ rfcomm bind 0 XX:XX:XX:XX:XX:XX
 ## 2. 初回デプロイ
 
 ```bash
-# Macのプロジェクトルートで実行
 ./scripts/deploy.sh setup
 ```
 
@@ -171,23 +144,11 @@ rfcomm bind 0 XX:XX:XX:XX:XX:XX
 ./scripts/deploy.sh deploy
 ```
 
-やっていること：
-1. `GOOS=linux GOARCH=arm64 go build` でクロスコンパイル
-2. `rsync` で差分のみ転送（2回目以降は変更分だけなので速い）
-3. `systemctl restart` でサービス再起動
-
-### Web UI（HTML/CSS/JS）だけ変更したら
+### Web UI（meter.html）だけ変更したら
 
 ```bash
 ./scripts/deploy.sh deploy-web
 ```
-
-Goの再ビルドをスキップして、HTMLだけ転送。
-
-### なぜ rsync なのか
-
-- **rsync**: 差分転送。変更があったファイルだけ送る。2回目以降が速い
-- **scp**: 毎回全ファイル転送。OpenSSH 9.0で非推奨になった
 
 ---
 
@@ -198,6 +159,8 @@ Goの再ビルドをスキップして、HTMLだけ転送。
 ./scripts/deploy.sh logs       # リアルタイムログ表示
 ./scripts/deploy.sh status     # サービス状態確認
 ./scripts/deploy.sh restart    # サービス再起動（ファイル転送なし）
+./scripts/deploy.sh shutdown   # 安全にシャットダウン
+./scripts/deploy.sh reboot     # 再起動
 ```
 
 ---
@@ -208,63 +171,35 @@ Goの再ビルドをスキップして、HTMLだけ転送。
 
 **全部動作確認が終わって「もう触らない」状態になったら。**
 
-開発中は絶対にOFFにしておく。理由はシンプルで、overlayFSがONだと `deploy` で書き込んだファイルが再起動で消える。
-
 ### 判断の目安
 
-overlayFSをONにしていいタイミング：
-- ELM327接続、メーター表示、Google Sheets送信、すべて正常動作を確認済み
+- ELM327接続、メーター表示、Google Sheets送信（トリップ/給油/メンテ）すべて正常
+- GAS Webダッシュボードがスマホで正しく表示される
 - 1週間くらい普通に使って問題が出ていない
-- 「しばらくコードは変更しない」と思える
-
-### なぜ必要か
-
-車のエンジンを切るとラズパイの電源が突然落ちる。書き込み中にブチッと切れるとSDカードが壊れる。overlayFSはファイルシステムをRAM上に置くことで、SDへの書き込みをゼロにする。
 
 ### コマンド
 
 ```bash
 # overlayFSを有効にする（SD保護モード）
 ./scripts/deploy.sh overlay-on
-# ラズパイを再起動（SSH先は deploy.sh の設定値を使用）
-./scripts/deploy.sh ssh  # 入ったら: sudo reboot
+./scripts/deploy.sh reboot
 
 # overlayFSを無効にする（デプロイモード）
 ./scripts/deploy.sh overlay-off
-./scripts/deploy.sh ssh  # 入ったら: sudo reboot
+./scripts/deploy.sh reboot
 ```
-
-※ どちらも再起動が必要。`raspi-config` が再起動時に適用する設定を予約する仕組みのため。
 
 ### 安定運用中にコードを更新したくなったら
 
 ```bash
-# 1. overlayFS解除
 ./scripts/deploy.sh overlay-off
-./scripts/deploy.sh ssh  # 入ったら: sudo reboot
-
-# 2. 再起動を待つ（30秒くらい）
+./scripts/deploy.sh reboot
 sleep 30
-
-# 3. デプロイ
 ./scripts/deploy.sh deploy
-
-# 4. 動作確認
-./scripts/deploy.sh logs
-
-# 5. 問題なければoverlayFS再有効化
+./scripts/deploy.sh logs       # 動作確認
 ./scripts/deploy.sh overlay-on
-./scripts/deploy.sh ssh  # 入ったら: sudo reboot
+./scripts/deploy.sh reboot
 ```
-
-2回の再起動が必要になるが、安定運用に入ったら更新頻度は低いので問題ない。
-
-### 運用フェーズまとめ
-
-| フェーズ | overlayFS | デプロイ | SD保護 |
-|---------|-----------|---------|--------|
-| 開発中 | OFF | `./scripts/deploy.sh deploy` だけ | なし（注意して使う） |
-| 安定運用 | ON | 上記の5ステップ | 電源ブチ切りOK |
 
 ---
 
@@ -273,17 +208,16 @@ sleep 30
 ### 6-1. スプレッドシート作成
 
 1. Google Sheets で新しいスプレッドシートを作成
-2. 名前を「DYデミオ 燃費メーター」にする
 
 ### 6-2. Apps Script 設定
 
 1. 拡張機能 → Apps Script
 2. `gas/webhook.gs` の内容をまるごと貼り付け
-3. `setup()` 関数を1回実行（シートの初期化）
+3. `setup()` 関数を1回実行（シート初期化: トリップ / 給油記録 / メンテ状態）
 4. デプロイ → 新しいデプロイ → ウェブアプリ
    - 実行するユーザー: 自分
    - アクセスできるユーザー: 全員
-6. 表示されたURLをコピー
+5. 表示されたURLをコピー
 
 ### 6-3. config.json に設定
 
@@ -291,10 +225,20 @@ sleep 30
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
-  "poll_interval_ms": 500,
-  "local_api_port": 9090
+  "fuel_tank_capacity_l": 44,
+  "redline_rpm": 6500
 }
 ```
+
+### 6-4. スマホでダッシュボード確認
+
+デプロイしたWebアプリURL（doGetのURL）をスマホのブラウザで開く。
+ホーム画面に追加すると、ネイティブアプリのように使える。
+
+表示内容:
+- 通算燃費
+- 直近10件の給油履歴（日付、距離、燃費、給油量）
+- メンテナンス進捗バー（緑/橙/赤）
 
 ---
 
@@ -303,31 +247,30 @@ sleep 30
 ### Step 1: ELM327接続テスト（車不要）
 
 ```bash
-# ラズパイで実行
 /opt/pi-obd-meter/pi-obd-scanner -port /dev/rfcomm0
 ```
 
-ELM327の電源をONにして実行。ECUに繋がっていなくても `ELM327 v1.5` のバージョン応答が返ればBT接続は成功。
+ELM327の電源をONにして実行。ECUに繋がっていなくても `ELM327 v1.5` の応答が返ればBT接続は成功。
 
-### Step 2: スマホからWeb UIアクセス
-
-ラズパイのIPを確認して、スマホブラウザで:
-```
-http://<raspi-ip>:9090/control.html
-```
-
-### Step 3: 車でエンジンONテスト
+### Step 2: 車でエンジンONテスト
 
 OBD-IIポートにELM327を挿して、エンジンをかけて、ラズパイ起動。
 ```bash
 ./scripts/deploy.sh logs  # 別ターミナルでリアルタイム監視
 ```
 
-RPM、速度、水温のデータが流れてくればOK。
+RPM、速度のデータが流れてくればOK。
+
+### Step 3: メーター表示確認
+
+5インチLCDに速度・RPMゲージ、中央にスロットル/負荷バーが表示される。
 
 ### Step 4: Google Sheets連携テスト
 
-短い距離を走ってトリップを完了させ、Google Sheetsの「トリップ」シートにデータが入るか確認。
+1. 短い距離を走ってトリップを完了 → 「トリップ」シートにデータが入るか確認
+2. 給油してからエンジン始動 → 「給油記録」シートに燃費が記録されるか確認
+3. エンジン始動 → 「メンテ状態」シートが更新されるか確認
+4. GAS WebアプリURLをスマホで開く → ダッシュボードが表示されるか確認
 
 ---
 
@@ -341,29 +284,26 @@ pi-obd-meter/
 │   └── pi-obd-scanner/main.go  # 診断ツール
 ├── internal/
 │   ├── obd/                   # ELM327通信、PID、DTC
-│   ├── trip/                  # トリップ追跡
+│   ├── trip/                  # トリップ追跡 + 燃料状態永続化
 │   ├── sender/                # Google Sheets送信
 │   ├── display/               # 画面輝度制御
 │   └── maintenance/           # メンテナンスリマインダー
 ├── web/static/
-│   ├── meter.html             # メーター画面（5インチLCD）
-│   └── control.html           # 操作画面（スマホ）
+│   └── meter.html             # メーター画面（5インチLCD）
 ├── gas/
 │   └── webhook.gs             # Google Apps Script
 ├── configs/
 │   └── config.json
 ├── scripts/
-│   └── deploy.sh              # 開発・デプロイスクリプト
-├── docs/
-└── go.mod
+│   └── deploy.sh
+└── docs/
 
 Raspberry Pi (車載)
 /opt/pi-obd-meter/
 ├── pi-obd-meter                # バイナリ
 ├── pi-obd-scanner              # バイナリ
 ├── web/static/
-│   ├── meter.html
-│   └── control.html
+│   └── meter.html
 └── configs/
     └── config.json
 ```
@@ -374,29 +314,29 @@ Raspberry Pi (車載)
 
 ### rsyncが繋がらない
 ```bash
-# deploy.sh 経由で接続確認
 ./scripts/deploy.sh ssh
-# 上記が失敗する場合、PI_HOST を確認
 head -10 scripts/deploy.sh | grep PI=
 ```
 
 ### ELM327にBT接続できない
 ```bash
 bluetoothctl
-  devices              # ペアリング済みデバイス一覧
-  info XX:XX:XX:XX     # 接続状態確認
+  devices
+  info XX:XX:XX:XX
 ```
+
+### OBD読み取りエラーが連続する
+連続10回エラーで自動再接続を試みる。ログに「再接続を試みます」と表示される。
+Bluetooth接続が不安定な場合は `rfcomm release 0 && rfcomm bind 0 XX:XX:XX:XX:XX:XX` で再バインド。
 
 ### overlayFSの状態確認
 ```bash
 ./scripts/deploy.sh ssh
-# ラズパイ上で:
 mount | grep overlay
-# 出力があればoverlayFS有効、なければ無効
 ```
 
 ### サービスが起動しない
 ```bash
-./scripts/deploy.sh logs     # エラーログ確認
-./scripts/deploy.sh status   # サービス状態確認
+./scripts/deploy.sh logs
+./scripts/deploy.sh status
 ```
