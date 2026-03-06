@@ -44,6 +44,7 @@ type Config struct {
 	MaxRPM               int                      `json:"max_rpm"`
 	PowerMaxPS           int                      `json:"power_max_ps"`
 	TorqueMaxKgfm        float64                  `json:"torque_max_kgfm"`
+	OBDProtocol          string                   `json:"obd_protocol"`
 	GearRatios           []GearRatio              `json:"gear_ratios"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
@@ -90,6 +91,7 @@ func loadConfig(path string) Config {
 		RedlineRPM:           6500, // ZJ-VE レッドゾーン開始
 		MaxSpeedKmh:          180,
 		MaxRPM:               8000,
+		OBDProtocol:          "6", // CAN 11bit 500kbaud (ISO 15765-4)
 		PowerMaxPS:           100,
 		TorqueMaxKgfm:        15,
 		GearRatios: []GearRatio{
@@ -132,7 +134,7 @@ func main() {
 	}
 
 	// --- ELM327接続 ---
-	elm := obd.NewELM327(cfg.SerialPort)
+	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	if err := elm.Connect(); err != nil {
 		log.Fatalf("ELM327接続失敗: %v", err)
 	}

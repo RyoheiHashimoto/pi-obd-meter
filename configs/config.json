@@ -7,6 +7,7 @@
   "local_api_port": 9090,
   "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
   "web_static_dir": "/opt/pi-obd-meter/web/static",
+  "obd_protocol": "6",
   "engine_displacement_cc": 1348,
   "ve_coefficient": 0.85,
   "thermal_efficiency": 0.28,

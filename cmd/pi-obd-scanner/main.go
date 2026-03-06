@@ -34,6 +34,7 @@ var pidNames = map[byte]string{
 
 func main() {
 	portName := flag.String("port", "/dev/ttyUSB0", "ELM327のシリアルポート")
+	protocol := flag.String("protocol", "6", "OBDプロトコル番号 (0=自動, 6=CAN 11bit 500kbaud)")
 	flag.Parse()
 
 	fmt.Println("========================================")
@@ -41,7 +42,7 @@ func main() {
 	fmt.Println("========================================")
 	fmt.Printf("ポート: %s\n\n", *portName)
 
-	elm := obd.NewELM327(*portName)
+	elm := obd.NewELM327(*portName, *protocol)
 	if err := elm.Connect(); err != nil {
 		fmt.Fprintf(os.Stderr, "接続エラー: %v\n", err)
 		os.Exit(1)

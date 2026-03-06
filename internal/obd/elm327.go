@@ -13,16 +13,22 @@ import (
 
 // ELM327 はELM327アダプタとのシリアル通信を管理する
 type ELM327 struct {
-	port     serial.Port
-	portName string
-	mu       sync.Mutex
-	reader   *bufio.Reader
+	port        serial.Port
+	portName    string
+	obdProtocol string
+	mu          sync.Mutex
+	reader      *bufio.Reader
 }
 
 // NewELM327 は新しいELM327接続を作成する
-func NewELM327(portName string) *ELM327 {
+// obdProtocol: ATSPコマンドのプロトコル番号 ("0"=自動検出, "6"=CAN 11bit 500kbaud 等)
+func NewELM327(portName string, obdProtocol string) *ELM327 {
+	if obdProtocol == "" {
+		obdProtocol = "6" // デフォルト: CAN 11bit 500kbaud
+	}
 	return &ELM327{
-		portName: portName,
+		portName:    portName,
+		obdProtocol: obdProtocol,
 	}
 }
 
@@ -53,7 +59,7 @@ func (e *ELM327) Connect() error {
 		"ATL0",  // 改行OFF
 		"ATS0",  // スペースOFF
 		"ATH0",  // ヘッダOFF
-		"ATSP6", // CAN 11bit 500kbaud (ISO 15765-4)
+		"ATSP" + e.obdProtocol, // OBDプロトコル設定
 	}
 
 	for _, cmd := range initCmds {
