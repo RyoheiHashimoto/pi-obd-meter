@@ -1,6 +1,6 @@
 {
   "serial_port": "/dev/rfcomm0",
-  "webhook_url": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
+  "webhook_url": "https://script.google.com/macros/s/AKfycbwYszp7P8kYlZabnLgUTCLUHqOZ-cBS1nv9umJp6NGXcyArT83PMJq_AfmEH3Pk_SshFg/exec",
   "poll_interval_ms": 500,
   "reset_threshold_km": 0.5,
   "local_api_port": 9090,
