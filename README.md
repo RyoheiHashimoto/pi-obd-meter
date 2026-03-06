@@ -204,6 +204,44 @@ GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
 
 SSH先を変更する場合は環境変数 `PI_HOST` を設定する（デフォルトは `scripts/deploy.sh` 内の `PI` 変数を参照）。
 
+### CI/CD
+
+#### CI（自動）
+
+GitHub Actions で PR / main push 時に自動実行される。
+
+| ステップ | 内容 |
+|---------|------|
+| Lint | golangci-lint（errcheck, govet, staticcheck 等） |
+| Test | `go test -race` + カバレッジ計測 |
+| Build | ホストビルド + ARM64 クロスコンパイル |
+
+```bash
+# ローカルで CI と同じチェックを実行
+make check
+```
+
+#### CD（手動）
+
+Pi への**デプロイは意図的に手動**にしている。車載組み込みシステムのため、壊れたバイナリが自動デプロイされると走行中に復旧できない。
+
+**リリースフロー:**
+
+```bash
+# 1. タグを打つ → GitHub Actions が ARM64 バイナリを自動ビルド → GitHub Release 作成
+git tag v0.3.0 && git push --tags
+
+# 2. Pi 側でリリースをインストール（手動）
+./scripts/deploy.sh release-install v0.3.0
+```
+
+**開発中のデプロイ:**
+
+```bash
+# Mac からビルド + 転送 + 再起動（手動）
+./scripts/deploy.sh deploy
+```
+
 ### デプロイの仕組み
 
 Mac でクロスコンパイル（`GOOS=linux GOARCH=arm64`）して、rsync で差分転送する。ラズパイに Go のツールチェインは不要。
