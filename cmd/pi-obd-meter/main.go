@@ -66,6 +66,8 @@ type RealtimeData struct {
 	DTCs        *obd.DTCResult       `json:"dtcs,omitempty"`
 }
 
+var version = "dev"
+
 var (
 	latestData RealtimeData
 	latestDTCs *obd.DTCResult
@@ -117,7 +119,7 @@ func main() {
 	cfg := loadConfig(*configPath)
 
 	fmt.Println("=================================")
-	fmt.Println("  DYデミオ 燃費メーター v0.2.0")
+	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 	fmt.Printf("送信先: Google Sheets (GAS Webhook)\n")
