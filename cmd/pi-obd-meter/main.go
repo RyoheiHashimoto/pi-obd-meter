@@ -20,6 +20,12 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
+// GearRatio はギア比定義
+type GearRatio struct {
+	Gear  int     `json:"gear"`
+	Ratio float64 `json:"ratio"`
+}
+
 // Config はアプリケーション設定
 type Config struct {
 	SerialPort           string                   `json:"serial_port"`
@@ -34,6 +40,11 @@ type Config struct {
 	VECoefficient        float64                  `json:"ve_coefficient"`
 	ThermalEfficiency    float64                  `json:"thermal_efficiency"`
 	RedlineRPM           int                      `json:"redline_rpm"`
+	MaxSpeedKmh          int                      `json:"max_speed_kmh"`
+	MaxRPM               int                      `json:"max_rpm"`
+	PowerMaxPS           int                      `json:"power_max_ps"`
+	TorqueMaxKgfm        float64                  `json:"torque_max_kgfm"`
+	GearRatios           []GearRatio              `json:"gear_ratios"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
 
@@ -74,7 +85,17 @@ func loadConfig(path string) Config {
 		VECoefficient:        0.85, // 体積効率、満タン法で校正
 		ThermalEfficiency:    0.28, // 初期値、全開加速で校正
 		RedlineRPM:           6500, // ZJ-VE レッドゾーン開始
-		Brightness:           display.DefaultConfig(),
+		MaxSpeedKmh:          180,
+		MaxRPM:               8000,
+		PowerMaxPS:           100,
+		TorqueMaxKgfm:        15,
+		GearRatios: []GearRatio{
+			{Gear: 1, Ratio: 105.2},
+			{Gear: 2, Ratio: 57.1},
+			{Gear: 3, Ratio: 37.4},
+			{Gear: 4, Ratio: 26.4},
+		},
+		Brightness: display.DefaultConfig(),
 	}
 
 	data, err := os.ReadFile(path)
@@ -300,6 +321,11 @@ func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Mana
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"redline_rpm":            cfg.RedlineRPM,
 			"engine_displacement_cc": cfg.EngineDisplacementCC,
+			"max_speed_kmh":          cfg.MaxSpeedKmh,
+			"max_rpm":                cfg.MaxRPM,
+			"power_max_ps":           cfg.PowerMaxPS,
+			"torque_max_kgfm":        cfg.TorqueMaxKgfm,
+			"gear_ratios":            cfg.GearRatios,
 		})
 	})
 

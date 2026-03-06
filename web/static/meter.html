@@ -285,40 +285,24 @@ function ecoCol(v) {
   return '#f44336';
 }
 
-// --- Build gauges ---
-const gs = buildGauge('gs', {
-  cx: 190, cy: 120, r: 98, min: 0, max: 180, color: '#78909c',
-  label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 38, big: true,
-  fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
-});
-const gr = buildGauge('gr', {
-  cx: 190, cy: 120, r: 98, min: 0, max: 8000, color: '#78909c',
-  label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 38, rzStart: 6500, big: true,
-  fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
-});
-const ge = buildGauge('ge', {
-  cx: 124, cy: 78, r: 62, min: 0, max: 30, color: '#69f0ae',
-  label: '瞬間燃費', unit: 'km/L', mj: 6, mn: 5, numSz: 26,
-  fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
-});
-const gp = buildGauge('gp', {
-  cx: 124, cy: 78, r: 62, min: 0, max: 100, color: '#ff7043',
-  label: '推定出力', unit: 'PS', mj: 5, mn: 4, numSz: 26,
-  fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
-});
-const gtt = buildGauge('gt', {
-  cx: 124, cy: 78, r: 62, min: 0, max: 15, color: '#ffa726',
-  label: '推定トルク', unit: 'kgf·m', mj: 5, mn: 3, numSz: 26,
-  fmt: v => v > 0.05 ? v.toFixed(1) : '--.-'
-});
+// --- Config defaults (fallback for file:// preview) ---
+const DEFAULTS = {
+  redline_rpm: 6500,
+  max_speed_kmh: 180,
+  max_rpm: 8000,
+  power_max_ps: 100,
+  torque_max_kgfm: 15,
+  gear_ratios: [
+    { gear: 1, ratio: 105.2 },
+    { gear: 2, ratio: 57.1 },
+    { gear: 3, ratio: 37.4 },
+    { gear: 4, ratio: 26.4 }
+  ]
+};
 
-// --- Gear estimation (DY Demio 4AT) ---
-const GEAR_RATIOS = [
-  { gear: 1, ratio: 105.2 },
-  { gear: 2, ratio: 57.1 },
-  { gear: 3, ratio: 37.4 },
-  { gear: 4, ratio: 26.4 }
-];
+// --- Gauge & gear variables (initialized in initApp) ---
+let gs, gr, ge, gp, gtt;
+let GEAR_RATIOS = DEFAULTS.gear_ratios;
 const GEAR_TOLERANCE = 0.15;
 const gearEls = [null, document.getElementById('g1'), document.getElementById('g2'), document.getElementById('g3'), document.getElementById('g4')];
 
@@ -489,8 +473,44 @@ function updateAlert() {
 setInterval(updateAlert, 10000);
 
 // --- Start ---
-fetchRealtime();
-setInterval(fetchRealtime, 500);
+async function initApp() {
+  let conf = DEFAULTS;
+  try {
+    const resp = await fetch('/api/config');
+    if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
+  } catch (e) { /* file:// mode, use defaults */ }
+
+  gs = buildGauge('gs', {
+    cx: 190, cy: 120, r: 98, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 38, big: true,
+    fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
+  });
+  gr = buildGauge('gr', {
+    cx: 190, cy: 120, r: 98, min: 0, max: conf.max_rpm, color: '#78909c',
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 38, rzStart: conf.redline_rpm, big: true,
+    fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
+  });
+  ge = buildGauge('ge', {
+    cx: 124, cy: 78, r: 62, min: 0, max: 30, color: '#69f0ae',
+    label: '瞬間燃費', unit: 'km/L', mj: 6, mn: 5, numSz: 26,
+    fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
+  });
+  gp = buildGauge('gp', {
+    cx: 124, cy: 78, r: 62, min: 0, max: conf.power_max_ps, color: '#ff7043',
+    label: '推定出力', unit: 'PS', mj: 5, mn: 4, numSz: 26,
+    fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
+  });
+  gtt = buildGauge('gt', {
+    cx: 124, cy: 78, r: 62, min: 0, max: conf.torque_max_kgfm, color: '#ffa726',
+    label: '推定トルク', unit: 'kgf·m', mj: 5, mn: 3, numSz: 26,
+    fmt: v => v > 0.05 ? v.toFixed(1) : '--.-'
+  });
+  if (conf.gear_ratios) GEAR_RATIOS = conf.gear_ratios;
+
+  fetchRealtime();
+  setInterval(fetchRealtime, 500);
+}
+initApp();
 </script>
 </body>
 </html>

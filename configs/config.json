@@ -11,6 +11,16 @@
   "ve_coefficient": 0.85,
   "thermal_efficiency": 0.28,
   "redline_rpm": 6500,
+  "max_speed_kmh": 180,
+  "max_rpm": 8000,
+  "power_max_ps": 100,
+  "torque_max_kgfm": 15,
+  "gear_ratios": [
+    { "gear": 1, "ratio": 105.2 },
+    { "gear": 2, "ratio": 57.1 },
+    { "gear": 3, "ratio": 37.4 },
+    { "gear": 4, "ratio": 26.4 }
+  ],
   "brightness": {
     "hdmi_output": "HDMI-1",
     "schedule": [
