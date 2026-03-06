@@ -44,7 +44,7 @@
     align-items: center;
     position: relative;
   }
-  .gauges svg { margin: 0 -20px; }
+  .gauges svg { margin: 0; }
   .center-bars {
     position: absolute;
     left: 50%;
@@ -52,7 +52,7 @@
     transform: translate(-50%, -50%);
     display: flex;
     gap: 6px;
-    height: 260px;
+    height: 330px;
     z-index: 10;
   }
   .vbar-col {
@@ -103,7 +103,7 @@
 <body>
 <div class="dashboard">
   <div class="gauges">
-    <svg id="gs" width="400" height="370" viewBox="0 0 400 370"></svg>
+    <svg id="gs" width="400" height="480" viewBox="0 0 400 480"></svg>
     <div class="center-bars">
       <div class="vbar-col">
         <span class="vbar-val" id="throttle-val">--</span>
@@ -116,7 +116,7 @@
         <span class="vbar-name">LOAD</span>
       </div>
     </div>
-    <svg id="gr" width="400" height="370" viewBox="0 0 400 370"></svg>
+    <svg id="gr" width="400" height="480" viewBox="0 0 400 480"></svg>
   </div>
 </div>
 <div id="toast" class="toast"></div>
@@ -155,7 +155,8 @@ function ensureFilter(svg) {
 
 function buildGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
-  const { cx, cy, r, min, max, label, unit, mj, mn, numSz, rzStart } = cfg;
+  const { cx, cy, r, min, max, label, unit, mj, mn, numSz, tkSz, rzStart } = cfg;
+  const tickFontSize = tkSz || 15;
 
   ensureFilter(svg);
 
@@ -181,7 +182,7 @@ function buildGauge(svgId, cfg) {
     if (isMj) {
       const v = min + (i / total) * (max - min);
       const [lx, ly] = p2xy(cx, cy, r - 34, a);
-      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': 15 });
+      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': tickFontSize });
       t.textContent = Math.round(v);
     }
   }
@@ -204,12 +205,12 @@ function buildGauge(svgId, cfg) {
   nm.textContent = '--';
 
   // Unit
-  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#666', 'font-size': 16 });
+  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#666', 'font-size': 18 });
   ut.textContent = unit;
 
   // Label
   if (label) {
-    const lb = el(svg, 'text', { x: cx, y: cy - r - 8, class: 'g-lbl', fill: '#555', 'font-size': 14 });
+    const lb = el(svg, 'text', { x: cx, y: cy - r - 10, class: 'g-lbl', fill: '#555', 'font-size': 16 });
     lb.textContent = label;
   }
 
@@ -428,13 +429,13 @@ async function initApp() {
   } catch (e) { /* file:// mode */ }
 
   gs = buildGauge('gs', {
-    cx: 200, cy: 190, r: 148, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 48,
+    cx: 200, cy: 240, r: 185, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 54, tkSz: 17,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
   gr = buildGauge('gr', {
-    cx: 200, cy: 190, r: 148, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 48, rzStart: conf.redline_rpm,
+    cx: 200, cy: 240, r: 185, min: 0, max: conf.max_rpm, color: '#78909c',
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 54, tkSz: 17, rzStart: conf.redline_rpm,
     fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
 
