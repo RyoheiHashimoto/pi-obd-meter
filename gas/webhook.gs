@@ -104,21 +104,8 @@ function buildDashboardHtml() {
   var fuelData = getSheetData('給油記録');
   var maintData = getSheetData('メンテ状態');
 
-  // 燃費統計
-  var totalDist = 0, totalFuel = 0, fuelCount = 0;
-  var recentRows = [];
-
-  if (fuelData.length > 0) {
-    fuelCount = fuelData.length;
-    fuelData.forEach(function(r) {
-      totalDist += r[1] || 0;  // 距離
-      totalFuel += r[2] || 0;  // 消費燃料
-    });
-    // 直近10件（新しい順）
-    recentRows = fuelData.slice(-10).reverse();
-  }
-
-  var avgEcon = totalFuel > 0 ? round(totalDist / totalFuel, 1) : 0;
+  // 直近10件（新しい順）
+  var recentRows = fuelData.length > 0 ? fuelData.slice(-10).reverse() : [];
 
   // メンテナンス行
   var maintRows = maintData || [];
@@ -137,12 +124,6 @@ function buildDashboardHtml() {
   html += '.sub{font-size:11px;color:#666;margin-bottom:16px}';
   html += '.card{background:#12121a;border-radius:8px;padding:12px;margin-bottom:12px}';
   html += '.card h2{font-size:14px;color:#888;margin:0 0 8px;letter-spacing:1px}';
-  html += '.stat-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1a1a24}';
-  html += '.stat-row:last-child{border:none}';
-  html += '.stat-label{color:#888}';
-  html += '.stat-val{color:#fff;font-weight:600}';
-  html += '.big-num{font-size:32px;color:#69f0ae;font-weight:700;text-align:center;padding:8px 0}';
-  html += '.big-unit{font-size:14px;color:#666;font-weight:400}';
   html += 'table{width:100%;border-collapse:collapse;font-size:12px}';
   html += 'th{text-align:left;color:#666;padding:4px 6px;border-bottom:1px solid #1a1a24}';
   html += 'td{padding:4px 6px;border-bottom:1px solid #0f0f18}';
@@ -159,16 +140,7 @@ function buildDashboardHtml() {
   html += '<h1>DYデミオ ダッシュボード</h1>';
   html += '<div class="sub">更新: ' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') + '</div>';
 
-  // 通算燃費
-  html += '<div class="card">';
-  html += '<h2>⛽ 通算燃費</h2>';
-  html += '<div class="big-num">' + avgEcon + ' <span class="big-unit">km/L</span></div>';
-  html += '<div class="stat-row"><span class="stat-label">総走行距離</span><span class="stat-val">' + round(totalDist, 0) + ' km</span></div>';
-  html += '<div class="stat-row"><span class="stat-label">総消費燃料</span><span class="stat-val">' + round(totalFuel, 1) + ' L</span></div>';
-  html += '<div class="stat-row"><span class="stat-label">給油回数</span><span class="stat-val">' + fuelCount + ' 回</span></div>';
-  html += '</div>';
-
-  // 直近の給油記録
+  // 給油記録
   if (recentRows.length > 0) {
     html += '<div class="card">';
     html += '<h2>📊 給油履歴</h2>';
