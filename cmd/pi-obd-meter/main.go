@@ -28,15 +28,12 @@ type Config struct {
 	LocalAPIPort         int                      `json:"local_api_port"`
 	MaintenancePath      string                   `json:"maintenance_path"`
 	WebStaticDir         string                   `json:"web_static_dir"`
-	EngineDisplacementCC float64                  `json:"engine_displacement_cc"`
-	VECoefficient        float64                  `json:"ve_coefficient"`
-	ThermalEfficiency    float64                  `json:"thermal_efficiency"`
 	RedlineRPM           int                      `json:"redline_rpm"`
 	MaxSpeedKmh          int                      `json:"max_speed_kmh"`
 	MaxRPM               int                      `json:"max_rpm"`
-	PowerMaxPS           int                      `json:"power_max_ps"`
-	TorqueMaxKgfm        float64                  `json:"torque_max_kgfm"`
 	OBDProtocol          string                   `json:"obd_protocol"`
+	FuelTankCapacityL    float64                  `json:"fuel_tank_capacity_l"`
+	RefuelMinIncreasePct float64                  `json:"refuel_min_increase_pct"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
@@ -45,47 +42,35 @@ type Config struct {
 type RealtimeData struct {
 	SpeedKmh    float64              `json:"speed_kmh"`
 	RPM         float64              `json:"rpm"`
-	InstantEcon float64              `json:"instant_econ"`
-	FuelRateLph float64              `json:"fuel_rate_lph"`
-	CoolantTemp float64              `json:"coolant_temp"`
-	FuelTank    float64              `json:"fuel_tank_pct"`
-	EstPowerKW  float64              `json:"est_power_kw"`
-	EstPowerPS  float64              `json:"est_power_ps"`
-	EstTorqueNm float64              `json:"est_torque_nm"`
 	EngineLoad  float64              `json:"engine_load"`
 	ThrottlePos float64              `json:"throttle_pos"`
 	Trip        *trip.TripData       `json:"trip"`
 	Alerts      []maintenance.Status `json:"alerts"`
-	DTCs        *obd.DTCResult       `json:"dtcs,omitempty"`
 }
 
 var version = "dev"
 
 var (
 	latestData RealtimeData
-	latestDTCs *obd.DTCResult
 	dataMu     sync.RWMutex
 )
 
 func loadConfig(path string) Config {
 	cfg := Config{
 		SerialPort:           "/dev/rfcomm0",
-		WebhookURL:           "", // Google Apps Script Webhook URL
+		WebhookURL:           "",
 		PollIntervalMs:       500,
 		ResetThreshold:       0.5,
 		LocalAPIPort:         9090,
 		MaintenancePath:      "/var/lib/pi-obd-meter/maintenance.json",
 		WebStaticDir:         "/opt/pi-obd-meter/web/static",
-		EngineDisplacementCC: 1348, // ZJ-VE 1.3L
-		VECoefficient:        0.85, // 体積効率、満タン法で校正
-		ThermalEfficiency:    0.28, // 初期値、全開加速で校正
-		RedlineRPM:           6500, // ZJ-VE レッドゾーン開始
+		RedlineRPM:           6500,
 		MaxSpeedKmh:          180,
 		MaxRPM:               8000,
-		OBDProtocol:          "6", // CAN 11bit 500kbaud (ISO 15765-4)
-		PowerMaxPS:           100,
-		TorqueMaxKgfm:        15,
-		Brightness: display.DefaultConfig(),
+		OBDProtocol:          "6",
+		FuelTankCapacityL:    44,
+		RefuelMinIncreasePct: 5.0,
+		Brightness:           display.DefaultConfig(),
 	}
 
 	data, err := os.ReadFile(path)
@@ -109,7 +94,6 @@ func main() {
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
-	fmt.Printf("送信先: Google Sheets (GAS Webhook)\n")
 
 	// --- ELM327接続 ---
 	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
@@ -120,18 +104,13 @@ func main() {
 	fmt.Println("✓ ELM327接続完了")
 
 	// --- PID検出 ---
-	reader := obd.NewReader(elm, obd.EngineConfig{
-		DisplacementL:        cfg.EngineDisplacementCC / 1000.0,
-		ThermalEfficiency:    cfg.ThermalEfficiency,
-		VolumetricEfficiency: cfg.VECoefficient,
-	})
+	reader := obd.NewReader(elm)
 	if err := reader.DetectCapabilities(); err != nil {
 		log.Fatalf("OBDケイパビリティ検出失敗: %v", err)
 	}
 
 	// --- 送信クライアント（Google Sheets） ---
 	client := sender.NewClient(cfg.WebhookURL)
-	// リトライはメモリキュー（overlayFSのためファイル保存しない）
 
 	// --- メンテナンスマネージャー ---
 	maintMgr := maintenance.NewManager(cfg.MaintenancePath)
@@ -143,25 +122,26 @@ func main() {
 	tracker := trip.NewTracker(trip.TrackerConfig{
 		ResetThresholdKm: cfg.ResetThreshold,
 		OnTripComplete: func(data trip.TripData) {
-			fmt.Printf("\n🏁 トリップ完了!\n")
-			fmt.Printf("   距離: %.1f km | 燃費: %.1f km/L | 燃料: %.2f L\n",
-				data.DistanceKm, data.AvgFuelEconKm, data.FuelUsedL)
-
-			// Google Sheetsに送信（GAS側でDiscord通知も行う）
+			fmt.Printf("\n🏁 トリップ完了! 距離: %.1f km\n", data.DistanceKm)
 			client.SendTrip(data)
 		},
 	})
+
+	// --- 給油検出（エンジン始動時） ---
+	checkRefueling(reader, tracker, client, cfg)
+
+	// --- メンテナンス状態をGASに送信 ---
+	sendMaintenanceStatus(client, maintMgr)
 
 	// --- ローカルAPI + Web UI ---
 	brightness := display.NewBrightnessController(cfg.Brightness)
 	brightness.Start()
 	defer brightness.Stop()
-	go startLocalAPI(cfg, tracker, maintMgr, brightness)
+	go startLocalAPI(cfg, maintMgr)
 
 	// --- メインループ（2層ポーリング） ---
-	// 高速ループ: RPM+速度のみ（~7Hz）、N回に1回全PID取得
 	const fastIntervalMs = 150
-	const fullEveryN = 5 // 5回に1回フルデータ取得（~750msごと）
+	const fullEveryN = 5
 
 	ticker := time.NewTicker(fastIntervalMs * time.Millisecond)
 	defer ticker.Stop()
@@ -169,38 +149,15 @@ func main() {
 	retryTicker := time.NewTicker(5 * time.Minute)
 	defer retryTicker.Stop()
 
-	// DTC（故障コード）チェック: 起動時 + 1分ごと
-	dtcTicker := time.NewTicker(1 * time.Minute)
-	defer dtcTicker.Stop()
-	go func() {
-		// 起動時チェック
-		if result, err := elm.ReadDTCs(); err == nil {
-			dataMu.Lock()
-			latestDTCs = result
-			dataMu.Unlock()
-			if result.MIL {
-				fmt.Printf("⚠ チェックランプ点灯中: %d件の故障コード\n", len(result.Codes))
-				for _, dtc := range result.Codes {
-					fmt.Printf("  %s: %s\n", dtc.Code, dtc.Description)
-				}
-			} else {
-				fmt.Println("✓ 故障コードなし")
-			}
-		}
-	}()
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	fmt.Println("\n▶ データ収集開始...")
-	fmt.Printf("  高速ポーリング: %dms (RPM+速度), 全PID: %dmsごと\n", fastIntervalMs, fastIntervalMs*fullEveryN)
+	fmt.Printf("  高速ポーリング: %dms (RPM+速度+負荷+スロットル), 全PID: %dmsごと\n", fastIntervalMs, fastIntervalMs*fullEveryN)
 	fmt.Printf("  LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
-	fmt.Printf("  スマホ操作:   http://<raspi-ip>:%d/control.html\n", cfg.LocalAPIPort)
 
 	sampleCount := 0
-	// 前回のフルデータを保持（高速ループ時に燃費等を補完する）
-	var lastFuelRate, lastInstantEcon, lastCoolant, lastFuelTank float64
-	var lastPowerKW, lastPowerPS, lastTorqueNm float64
+	var lastFuelTank float64
 	for {
 		select {
 		case <-ticker.C:
@@ -222,57 +179,33 @@ func main() {
 			dtSec := float64(fastIntervalMs) / 1000.0
 
 			if isFull {
-				// フルデータ: 燃費・水温等を更新
-				lastFuelRate = data.CalcFuelRateLph()
-				lastInstantEcon = data.CalcInstantFuelEconomy()
-				lastCoolant = data.CoolantTemp
 				lastFuelTank = data.FuelTankLevel
-				lastPowerKW = data.CalcEstimatedPowerKW()
-				lastPowerPS = data.CalcEstimatedPowerPS()
-				lastTorqueNm = data.CalcEstimatedTorqueNm()
+				tracker.UpdateFuelLevel(lastFuelTank)
 			}
 
-			tracker.Update(data.SpeedKmh, lastFuelRate)
+			tracker.Update(data.SpeedKmh)
 			current := tracker.GetCurrent()
 			totalKmAccum += (data.SpeedKmh / 3600.0) * dtSec
 			maintMgr.UpdateTotalKm(totalKmAccum)
 
-			// リアルタイムデータ更新（LCD & スマホ用）
 			dataMu.Lock()
 			latestData = RealtimeData{
 				SpeedKmh:    data.SpeedKmh,
 				RPM:         data.RPM,
-				InstantEcon: lastInstantEcon,
-				FuelRateLph: lastFuelRate,
-				CoolantTemp: lastCoolant,
-				FuelTank:    lastFuelTank,
-				EstPowerKW:  lastPowerKW,
-				EstPowerPS:  lastPowerPS,
-				EstTorqueNm: lastTorqueNm,
 				EngineLoad:  data.EngineLoad,
 				ThrottlePos: data.ThrottlePos,
 				Trip:        &current,
 				Alerts:      maintMgr.GetAlerts(),
-				DTCs:        latestDTCs,
 			}
 			dataMu.Unlock()
 
 			if sampleCount%30 == 0 {
-				fmt.Printf("\r🚗 %3.0f km/h | ⛽ %4.1f km/L (avg %4.1f) | %.1f km | %.2f L",
-					data.SpeedKmh, lastInstantEcon, current.AvgFuelEconKm,
-					current.DistanceKm, current.FuelUsedL)
+				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm | %.1f km",
+					data.SpeedKmh, data.RPM, current.DistanceKm)
 			}
 
 		case <-retryTicker.C:
 			client.RetryPending()
-
-		case <-dtcTicker.C:
-			// 1分ごとのDTCチェック（ポーリングの合間に実行）
-			if result, err := elm.ReadDTCs(); err == nil {
-				dataMu.Lock()
-				latestDTCs = result
-				dataMu.Unlock()
-			}
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
@@ -284,11 +217,123 @@ func main() {
 	}
 }
 
+// checkRefueling はエンジン始動時に給油を検出する
+func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Client, cfg Config) {
+	// タンク残量を複数回読み取り平均（ノイズ低減）
+	var sum float64
+	var count int
+	for i := 0; i < 3; i++ {
+		pct, err := reader.ReadFuelTankLevel()
+		if err != nil {
+			continue
+		}
+		sum += pct
+		count++
+		if i < 2 {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	if count == 0 {
+		fmt.Println("⚠ 燃料タンクレベル取得失敗、給油検出スキップ")
+		return
+	}
+	currentPct := sum / float64(count)
+	fmt.Printf("✓ 燃料タンク: %.1f%%\n", currentPct)
+
+	tripStartPct, lastPct, valid := tracker.GetFuelState()
+	if !valid {
+		// 初回起動: ベースライン設定のみ
+		fmt.Println("  初回起動: 燃料ベースライン設定")
+		tracker.ResetFuelBaseline(currentPct)
+		return
+	}
+
+	delta := currentPct - lastPct
+	minIncrease := cfg.RefuelMinIncreasePct
+	if minIncrease <= 0 {
+		minIncrease = 5.0
+	}
+
+	if delta >= minIncrease {
+		// 給油検出!
+		fuelUsedL := (tripStartPct - lastPct) / 100.0 * cfg.FuelTankCapacityL
+		refuelAmountL := delta / 100.0 * cfg.FuelTankCapacityL
+		completed := tracker.ManualReset()
+
+		fmt.Printf("⛽ 給油検出! タンク %.1f%% → %.1f%% (+%.1fL)\n", lastPct, currentPct, refuelAmountL)
+
+		if completed != nil && completed.DistanceKm >= 1.0 && fuelUsedL > 0 {
+			fuelEcon := completed.DistanceKm / fuelUsedL
+			fmt.Printf("   前回区間: %.1f km / %.1f L = %.1f km/L\n",
+				completed.DistanceKm, fuelUsedL, fuelEcon)
+
+			// GASに給油データを送信
+			client.Send("refuel", map[string]interface{}{
+				"trip_id":         completed.TripID,
+				"start_time":      completed.StartTime,
+				"end_time":        completed.EndTime,
+				"distance_km":     completed.DistanceKm,
+				"fuel_used_l":     fuelUsedL,
+				"fuel_economy":    fuelEcon,
+				"refuel_amount_l": refuelAmountL,
+				"old_level_pct":   lastPct,
+				"new_level_pct":   currentPct,
+				"max_speed_kmh":   completed.MaxSpeedKmh,
+				"avg_speed_kmh":   completed.AvgSpeedKmh,
+				"driving_time_sec": completed.DrivingTimeSec,
+				"idle_time_sec":   completed.IdleTimeSec,
+			})
+		}
+
+		tracker.ResetFuelBaseline(currentPct)
+	} else if delta > 3.0 {
+		fmt.Printf("  タンク微増 +%.1f%% (しきい値%.0f%%未満、給油判定せず)\n", delta, minIncrease)
+		tracker.UpdateFuelLevel(currentPct)
+	} else {
+		tracker.UpdateFuelLevel(currentPct)
+	}
+}
+
+// sendMaintenanceStatus はメンテナンス状態をGASに送信する
+func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager) {
+	statuses := maintMgr.CheckAll()
+	if len(statuses) == 0 {
+		return
+	}
+
+	// 送信用にシンプルな構造に変換
+	var items []map[string]interface{}
+	for _, s := range statuses {
+		item := map[string]interface{}{
+			"id":           s.Reminder.ID,
+			"name":         s.Reminder.Name,
+			"type":         string(s.Reminder.Type),
+			"progress":     s.Progress,
+			"needs_alert":  s.NeedsAlert,
+			"is_overdue":   s.IsOverdue,
+		}
+		if s.Reminder.Type == "distance" {
+			item["remaining_km"] = s.RemainingKm
+			item["current_km"] = s.CurrentKm
+		} else {
+			item["days_left"] = s.DaysLeft
+			item["days_elapsed"] = s.DaysElapsed
+		}
+		items = append(items, item)
+	}
+
+	client.Send("maintenance", map[string]interface{}{
+		"statuses": items,
+		"sent_at":  time.Now(),
+	})
+	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
+}
+
 // corsMiddleware はCORSヘッダーを付与する
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -297,28 +342,23 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Manager, brightness *display.BrightnessController) {
+func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	mux := http.NewServeMux()
 
 	// --- Web UI配信 ---
-	// LCD: http://localhost:9090/meter.html
-	// スマホ: http://<raspi-ip>:9090/control.html
 	mux.Handle("GET /", http.FileServer(http.Dir(cfg.WebStaticDir)))
 
-	// --- 設定API（meter.html等がredline_rpm等を取得する） ---
+	// --- 設定API（meter.htmlがredline_rpm等を取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"redline_rpm":            cfg.RedlineRPM,
-			"engine_displacement_cc": cfg.EngineDisplacementCC,
-			"max_speed_kmh":          cfg.MaxSpeedKmh,
-			"max_rpm":                cfg.MaxRPM,
-			"power_max_ps":           cfg.PowerMaxPS,
-			"torque_max_kgfm":        cfg.TorqueMaxKgfm,
+			"redline_rpm":   cfg.RedlineRPM,
+			"max_speed_kmh": cfg.MaxSpeedKmh,
+			"max_rpm":       cfg.MaxRPM,
 		})
 	})
 
-	// --- リアルタイムAPI（LCD用、500ms間隔でポーリングされる） ---
+	// --- リアルタイムAPI（LCD用、200ms間隔でポーリングされる） ---
 	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
 		dataMu.RLock()
 		defer dataMu.RUnlock()
@@ -326,75 +366,10 @@ func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Mana
 		json.NewEncoder(w).Encode(latestData)
 	})
 
-	// --- トリップAPI ---
-	mux.HandleFunc("GET /api/current", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tracker.GetCurrent())
-	})
-
-	mux.HandleFunc("POST /api/reset", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		completed := tracker.ManualReset()
-		if completed != nil {
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "reset", "completed": completed,
-			})
-		} else {
-			json.NewEncoder(w).Encode(map[string]string{"status": "no_data"})
-		}
-	})
-
-	// --- メンテナンスAPI ---
+	// --- メンテナンスAPI（メーター画面のアラートバー用） ---
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(maintMgr.CheckAll())
-	})
-
-	mux.HandleFunc("POST /api/maintenance/{id}/reset", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		w.Header().Set("Content-Type", "application/json")
-		if err := maintMgr.ResetReminder(id); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": id})
-	})
-
-	// --- 故障コード（DTC）API ---
-	mux.HandleFunc("GET /api/dtc", func(w http.ResponseWriter, r *http.Request) {
-		dataMu.RLock()
-		defer dataMu.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		if latestDTCs != nil {
-			json.NewEncoder(w).Encode(latestDTCs)
-		} else {
-			json.NewEncoder(w).Encode(map[string]string{"status": "未チェック"})
-		}
-	})
-
-	// --- 輝度API ---
-	mux.HandleFunc("GET /api/brightness", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(brightness.Status())
-	})
-
-	mux.HandleFunc("POST /api/brightness", func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			Brightness float64 `json:"brightness"` // 0.0〜1.0
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "不正なリクエスト", http.StatusBadRequest)
-			return
-		}
-		brightness.SetManual(req.Brightness)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(brightness.Status())
-	})
-
-	mux.HandleFunc("POST /api/brightness/auto", func(w http.ResponseWriter, r *http.Request) {
-		brightness.ClearManual()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(brightness.Status())
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.LocalAPIPort)

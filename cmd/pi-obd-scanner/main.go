@@ -63,17 +63,11 @@ func main() {
 	essential := map[byte]bool{
 		0x0C: true, // RPM
 		0x0D: true, // 車速
-		0x10: true, // MAF
-		0x0B: true, // MAP
 		0x04: true, // エンジン負荷
-		0x0F: true, // 吸気温度
+		0x11: true, // スロットル
 		0x2F: true, // 燃料レベル
-		0x5E: true, // 燃料消費レート
+		0x05: true, // 冷却水温度
 	}
-
-	hasMAF := false
-	hasMAP := false
-	hasFuelRate := false
 
 	for _, pid := range supported {
 		name, known := pidNames[pid]
@@ -85,34 +79,13 @@ func main() {
 			name = "(不明)"
 		}
 		fmt.Printf("  %s PID 0x%02X: %s\n", marker, pid, name)
-
-		if pid == 0x10 {
-			hasMAF = true
-		}
-		if pid == 0x0B {
-			hasMAP = true
-		}
-		if pid == 0x5E {
-			hasFuelRate = true
-		}
 	}
 
 	fmt.Println(strings.Repeat("-", 50))
-	fmt.Println("\n燃費計算方式の判定:")
-
-	if hasFuelRate {
-		fmt.Println("  ✓ 燃料消費レート(PID 0x5E)が使えます → 最も正確")
-	} else if hasMAF {
-		fmt.Println("  ✓ MAFセンサーが使えます → MAF方式で燃費計算")
-	} else if hasMAP {
-		fmt.Println("  ✓ MAPセンサーが使えます → Speed-Density方式で燃費計算（推定）")
-	} else {
-		fmt.Println("  ✗ MAF/MAPどちらも取得できません。燃費計算が困難です。")
-	}
 
 	// リアルタイムテスト
 	fmt.Println("\nリアルタイムデータテスト（Ctrl+Cで終了）:")
-	reader := obd.NewReader(elm, obd.EngineConfig{})
+	reader := obd.NewReader(elm)
 	_ = reader.DetectCapabilities()
 
 	data, err := reader.ReadAll()
@@ -125,13 +98,7 @@ func main() {
 	fmt.Printf("  車速:   %.0f km/h\n", data.SpeedKmh)
 	fmt.Printf("  負荷:   %.1f %%\n", data.EngineLoad)
 	fmt.Printf("  冷却水: %.0f ℃\n", data.CoolantTemp)
-	if data.HasMAF {
-		fmt.Printf("  MAF:    %.2f g/s\n", data.MAF)
-	} else {
-		fmt.Printf("  MAP:    %.0f kPa\n", data.IntakeManifold)
-		fmt.Printf("  吸気温: %.0f ℃\n", data.IntakeAirTemp)
-	}
-	fmt.Printf("  燃料率: %.2f L/h\n", data.CalcFuelRateLph())
+	fmt.Printf("  スロットル: %.1f %%\n", data.ThrottlePos)
 	fmt.Printf("  タンク: %.0f %%\n", data.FuelTankLevel)
 
 	// === 故障コード（DTC）読み取り ===

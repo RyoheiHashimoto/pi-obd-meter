@@ -2,14 +2,15 @@
 
 ## プロジェクト概要
 
-OBD-2対応車向けの車載燃費メーター。
-Raspberry Pi 4 + ELM327 (Bluetooth) でリアルタイム燃費を5インチLCDに表示し、トリップデータをGoogle Sheetsに自動記録する。
-車両固有のパラメータ（排気量、燃費計算方式、レッドゾーン等）はconfig.jsonで設定するため、OBD-2対応車であれば車種を問わず利用可能。
+OBD-2対応車向けの車載メーター + 自動燃費記録システム。
+Raspberry Pi 4 + ELM327 (Bluetooth) で速度・RPM・負荷・スロットルを5インチLCDにリアルタイム表示。
+給油時の燃費は、エンジン始動時のタンク残量変化から自動算出し、Google Sheetsに記録する。
+スマホからはGAS Webアプリで燃費履歴・メンテナンス状態を確認できる。
 開発・動作確認はDYマツダデミオ（DBA-DY3W, ZJ-VE 1.3L）で行っている。
 
 ## 技術スタック
 
-- **言語:** Go（車載バイナリ）+ HTML/CSS/JS（メーターUI）+ Google Apps Script（データ記録）
+- **言語:** Go（車載バイナリ）+ HTML/CSS/JS（メーターUI）+ Google Apps Script（データ記録 + Webダッシュボード）
 - **ターゲット:** Raspberry Pi 4 Model B 2GB (ARM64, Raspberry Pi OS Lite 64-bit)
 - **ディスプレイ:** ELECROW 5インチ IPS HDMI タッチモニター (800×480) — Pi USBから給電可 (5V/1A)
 - **OBD通信:** ELM327 V1.5 Bluetooth 2.0 → /dev/rfcomm0 (SPPシリアル)
@@ -45,49 +46,65 @@ go build ./cmd/pi-obd-scanner
 
 ```
 cmd/
-  pi-obd-meter/main.go      メインアプリ。OBD読取→表示→送信を統合
-  pi-obd-scanner/main.go     対応PIDスキャナー（診断・初期確認用）
+  pi-obd-meter/main.go      メインアプリ。OBD読取→表示→給油検出→送信を統合
+  pi-obd-scanner/main.go     対応PIDスキャナー（診断・初期確認用、DTC読取含む）
 
 internal/
   obd/
     elm327.go               ELM327シリアル通信（AT初期化、PIDリクエスト、マルチPIDバッチ）
-    pid.go                  OBD-2 PID定義（RPM, 速度, MAP, IAT, 水温, スロットル, O2）
-    dtc.go                  DTC読取（Mode 03）。約80件の日本語エラーコード辞書
-    fuel.go                 燃料消費計算（MAP方式）
+    pids.go                 OBD-2 PID定義（RPM, 速度, 負荷, スロットル, 水温, 燃料タンク）
+    dtc.go                  DTC読取（Mode 03）。スキャナーコマンドから使用
   trip/
-    tracker.go              トリップ追跡。車速積分で走行距離、燃料積算
+    tracker.go              トリップ追跡。車速積分で走行距離 + 燃料状態永続化（給油検出用）
   sender/
-    client.go               GAS Webhook送信。メモリ内リトライキュー（最大100件）
-  notify/
+    client.go               GAS Webhook送信。汎用Send + メモリ内リトライキュー（最大100件）
   display/
     brightness.go           xrandr経由の輝度制御。時刻ベース自動調整
   maintenance/
-    reminder.go             走行距離ベースのメンテナンスリマインダー
+    reminder.go             走行距離/日付ベースのメンテナンスリマインダー
 
 web/static/
-  meter.html                メーター画面。270° SVGアークゲージ、60fps補間アニメーション
-  control.html              スマホ操作UI。トリップリセット、DTC確認、輝度調整
+  meter.html                メーター画面。速度+RPMの270° SVGアークゲージ、中央にスロットル/負荷の縦バー
 
 gas/
-  webhook.gs                Google Apps Script。doPost受信→シート書込→ダッシュボード更新
+  webhook.gs                Google Apps Script。doPost(トリップ/給油/メンテ受信) + doGet(スマホ用ダッシュボード)
 
 configs/
-  config.json               アプリ設定（シリアルポート、webhook URL等）
-  pi-obd-meter.service        systemdユニットファイル
+  config.json               アプリ設定（シリアルポート、webhook URL、メンテナンス項目等）
+  pi-obd-meter.service      systemdユニットファイル
   kiosk.sh                  Chromiumキオスクモード起動スクリプト
 
 docs/
   deploy-guide.md           セットアップ・デプロイ手順（詳細）
-  communication-diagram-v2.svg  通信構成図
 ```
 
 ## アーキテクチャ上の重要な決定
 
 ### データフロー
 ```
-ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → GAS Webhook → Google Sheets
-                                          → control.html（スマホ: メンテ警告・トリップ表示）
+ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/RPM/負荷/スロットル）
+                                            → GAS Webhook → Google Sheets（トリップ/給油/メンテ記録）
+                                                          → doGet Webアプリ（スマホ: 燃費履歴/メンテ状態）
 ```
+
+### 給油自動検出
+- エンジン始動時にPID 0x2F（燃料タンクレベル）を3回読み取り平均
+- 前回保存値との差分 ≥ 5% → 給油と判定
+- 給油検出時: `燃費 = 走行距離 / ((トリップ開始時タンク% - 直近タンク%) / 100 × タンク容量L)`
+- 前回の燃料状態は `trip_state.json` に永続化（`lastFuelPct`, `tripStartFuelPct`）
+- 3-5% の微増はログのみ（ノイズ/センサー揺らぎ）、3%未満は無視
+- 距離 < 1km のトリップは燃費計算をスキップ
+
+### GAS Webダッシュボード
+- `doGet` で `HtmlService.createHtmlOutput()` によるモバイル対応HTMLを返す
+- 表示内容: 通算燃費、直近10件の給油履歴テーブル、メンテナンス進捗バー
+- ダークテーマ、外部ライブラリなし、ホーム画面追加対応
+- データはすべてGoogle Sheetsから直接取得（リアルタイム）
+
+### 2層ポーリング
+- **高速 (150ms)**: RPM + 速度 + エンジン負荷 + スロットル（ReadFast）
+- **全PID (750ms=150ms×5)**: 上記 + 冷却水温 + 燃料タンクレベル（ReadAll）
+- 高速層はメーター表示の応答性確保、全PIDは燃料レベル追跡に使用
 
 ### overlayFS
 - ラズパイのSDカードは overlayFS で保護する（エンジンOFF = 電源断からの保護）
@@ -106,17 +123,9 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → GAS Webhook → Google Sheets
 - マルチPIDバッチ: 1リクエストで複数PID取得（6-7往復 → 2往復、~3.5-4Hz）
 - ECUレスポンスが律速（50-100ms/PID）。BT遅延（20-50ms）は支配的でない
 
-### 燃費計算
-- 起動時に PID 0x00 でサポートPIDをスキャンし、MAF/MAP方式を自動判定（config不要）
-- **MAF方式**: PID 0x10 からMAF値を直接取得。精度高、校正不要。エアフロセンサー搭載車（多くの国産車・輸入車）
-- **MAP方式**: MAP + 吸気温度 + RPM + 排気量 → 理想気体の状態方程式で吸入空気量推定。エアフロ非搭載車（一部の小排気量車・軽自動車等）
-- 体積効率(VE)は `ve_coefficient` configで車種ごとに校正（満タン法）
-- 排気量は `engine_displacement_cc` configで設定
-- レッドゾーンは `redline_rpm` configで設定（メーターUI描画に使用）
-- 車両固有の定数はすべてconfig.jsonに外出し済み。コード内にハードコードしない
-
 ### メーターUI
-- 800×480 全画面、270° SVGアークゲージ
+- 800×480 全画面、速度（左）+ RPM（右）の270° SVGアークゲージ
+- 中央にスロットル位置・エンジン負荷の縦バー（ラギング指数で色分け: 緑/橙/赤）
 - requestAnimationFrame で60fps補間（ease-out cubic, 300ms）
 - OBDデータ更新は~3.5-4Hz、アニメーションで滑らかに見せる
 - 時刻ベースで自動輝度調整（xrandr --brightness）
@@ -138,35 +147,31 @@ hdmi_cvt 800 480 60 6 0 0 0
 - タッチ機能は車載では不使用（dtoverlay設定は不要）
 - モニター給電: Pi 4 USB-A → ELECROW micro USB (5V/1A)
 
-### DTC（診断トラブルコード）
-- Mode 03 読取のみ。Mode 04（コードクリア）は意図的に未実装
-- 理由: 車検前のCELリセット事故防止
-- 3段階の重大度分類: critical / warning / info
-
-### 通知・表示の責任分離
-- トリップデータ: GAS Webhook → Google Sheets（記録）
-- メンテナンス警告: control.html のプログレスバー（スマホで確認）
-- リアルタイムデータ: meter.html（車載LCD）+ control.html（スマホ）
+### データ送信の責任分離
+- **トリップ完了**: Pi → GAS Webhook (type: "trip") → Google Sheets
+- **給油検出**: Pi → GAS Webhook (type: "refuel") → Google Sheets（燃費計算値含む）
+- **メンテナンス状態**: Pi → GAS Webhook (type: "maintenance") → Google Sheets（エンジン始動時に毎回送信）
+- **リアルタイム表示**: Pi → meter.html（車載LCD、ローカルHTTP API経由）
+- **燃費履歴・メンテ確認**: GAS doGet Webアプリ（スマホからアクセス）
 
 ## 車両固有の設定（config.json）
 
 以下はすべてconfig.jsonで設定する。コード内にハードコードしない。
 
-- `engine_displacement_cc`: 排気量 (例: ZJ-VE=1348, ZY-VE=1498)
-- `ve_coefficient`: 体積効率 (MAP方式時のみ。0.80-0.90、満タン法で校正)
-- `thermal_efficiency`: 推定熱効率 (0.25-0.30、全開加速でカタログ値と照合して調整)
 - `redline_rpm`: レッドゾーン開始回転数 (例: ZJ-VE=6500)
-- 空燃比: 14.7:1（ストイキ、ガソリン車共通）
-- ガソリン密度: 745 g/L（共通）
+- `max_speed_kmh`: 速度メーター最大値 (例: 180)
+- `max_rpm`: RPMメーター最大値 (例: 8000)
+- `fuel_tank_capacity_l`: 燃料タンク容量 (例: DYデミオ=44L)
+- `refuel_min_increase_pct`: 給油判定の最小増加率 (デフォルト: 5.0%)
+- `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, タイプ, 間隔, 警告閾値）
 
 ### 開発元の確認車両
 - マツダ DYデミオ DBA-DY3W / ZJ-VE 1.3L 91PS / 1,090kg / 4AT / CAN 2.0B
 
 ## 注意事項
 
-- `go.mod` のモジュール名は `pi-obd-meter`
-- エラーメッセージ・ログは英語、UIとドキュメントは日本語
-- config.json の webhook_url は実際のURLに差し替えが必要
-- config.json の車両パラメータ（排気量、燃費方式、VE、レッドゾーン）は車種に合わせて設定
+- `go.mod` のモジュール名は `github.com/hashimoto/pi-obd-meter`
+- エラーメッセージ・ログは日本語
+- config.json の webhook_url は実際のGAS WebアプリURLに差し替えが必要
 - ELM327のBluetoothアドレスは実機に合わせて rfcomm bind する
 - 車両固有の定数をコード内にハードコードしないこと（config.jsonから読む）
