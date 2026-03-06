@@ -22,7 +22,6 @@ linters-settings:
       - os.WriteFile
       # Fire-and-forget sends (retried by queue or non-critical)
       - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).Send
-      - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).SendTrip
       # Server start (blocks forever, error only on bind failure)
       - net/http.ListenAndServe
 

@@ -18,8 +18,6 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
 
     switch (payload.type) {
-      case 'trip':
-        return handleTrip(payload.data);
       case 'refuel':
         return handleRefuel(payload.data);
       case 'maintenance':
@@ -37,29 +35,6 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(buildDashboardHtml())
     .setTitle('DYデミオ ダッシュボード')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// === トリップデータ処理 ===
-function handleTrip(data) {
-  const sheet = getOrCreateSheet('トリップ', [
-    '日時', 'トリップID', '距離(km)',
-    '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)', 'アイドル(分)'
-  ]);
-
-  const drivingMin = Math.round((data.driving_time_sec || 0) / 60);
-  const idleMin = Math.round((data.idle_time_sec || 0) / 60);
-
-  sheet.appendRow([
-    new Date(data.start_time || Date.now()),
-    data.trip_id || '',
-    round(data.distance_km, 1),
-    round(data.max_speed_kmh || 0, 0),
-    round(data.avg_speed_kmh || 0, 0),
-    drivingMin,
-    idleMin
-  ]);
-
-  return jsonResponse({ status: 'ok', trip_id: data.trip_id });
 }
 
 // === 給油データ処理 ===
@@ -252,10 +227,6 @@ function getSheetData(sheetName) {
 
 // === 初期セットアップ（1回だけ実行） ===
 function setup() {
-  getOrCreateSheet('トリップ', [
-    '日時', 'トリップID', '距離(km)',
-    '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)', 'アイドル(分)'
-  ]);
   getOrCreateSheet('給油記録', [
     '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
     'タンク%(前)', 'タンク%(後)', '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)'

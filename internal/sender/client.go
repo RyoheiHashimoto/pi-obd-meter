@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
 // Client はGoogle Apps Script Webhookへデータを送信するクライアント
@@ -43,11 +42,6 @@ type GASPayload struct {
 func (c *Client) Send(payloadType string, data interface{}) error {
 	payload := GASPayload{Type: payloadType, Data: data}
 	return c.sendPayload(payload)
-}
-
-// SendTrip はトリップデータをGASに送信する
-func (c *Client) SendTrip(data trip.TripData) error {
-	return c.Send("trip", data)
 }
 
 // sendPayload はペイロードを送信する

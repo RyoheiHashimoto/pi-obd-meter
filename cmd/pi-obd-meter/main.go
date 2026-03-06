@@ -44,7 +44,6 @@ type RealtimeData struct {
 	RPM          float64              `json:"rpm"`
 	EngineLoad   float64              `json:"engine_load"`
 	ThrottlePos  float64              `json:"throttle_pos"`
-	Trip         *trip.TripData       `json:"trip"`
 	Alerts       []maintenance.Status `json:"alerts"`
 	Notification string               `json:"notification,omitempty"`
 }
@@ -139,14 +138,10 @@ func main() {
 	maintMgr.InitDefaults(cfg.MaintenanceReminders)
 	fmt.Printf("✓ メンテナンスリマインダー: %d 項目\n", len(maintMgr.GetAll()))
 
-	// --- トリップトラッカー ---
+	// --- トリップトラッカー（距離積算 + 燃料状態管理用） ---
 	var totalKmAccum float64
 	tracker := trip.NewTracker(trip.TrackerConfig{
 		ResetThresholdKm: cfg.ResetThreshold,
-		OnTripComplete: func(data trip.TripData) {
-			fmt.Printf("\n🏁 トリップ完了! 距離: %.1f km\n", data.DistanceKm)
-			client.SendTrip(data)
-		},
 	})
 
 	// --- 給油検出（エンジン始動時） ---
@@ -223,7 +218,6 @@ func main() {
 			}
 
 			tracker.Update(data.SpeedKmh)
-			current := tracker.GetCurrent()
 			totalKmAccum += (data.SpeedKmh / 3600.0) * dtSec
 			maintMgr.UpdateTotalKm(totalKmAccum)
 
@@ -233,15 +227,14 @@ func main() {
 				RPM:          data.RPM,
 				EngineLoad:   data.EngineLoad,
 				ThrottlePos:  data.ThrottlePos,
-				Trip:         &current,
 				Alerts:       maintMgr.GetAlerts(),
 				Notification: getNotification(),
 			}
 			dataMu.Unlock()
 
 			if sampleCount%30 == 0 {
-				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm | %.1f km",
-					data.SpeedKmh, data.RPM, current.DistanceKm)
+				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm",
+					data.SpeedKmh, data.RPM)
 			}
 
 		case <-retryTicker.C:
@@ -249,9 +242,6 @@ func main() {
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
-			if completed := tracker.ManualReset(); completed != nil {
-				client.SendTrip(*completed)
-			}
 			return
 		}
 	}
