@@ -17,6 +17,8 @@
     cursor: none;
   }
   .dashboard {
+    display: flex;
+    flex-direction: column;
     height: 100%;
   }
   .toast {
@@ -42,57 +44,53 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    position: relative;
   }
   .gauges svg { margin: 0; }
-  .center-bars {
-    position: absolute;
-    left: 50%;
-    top: 47%;
-    transform: translate(-50%, -50%);
+  .bottom-bars {
     display: flex;
-    gap: 4px;
-    height: 310px;
-    z-index: 10;
-  }
-  .vbar-col {
-    display: flex;
-    flex-direction: column;
+    justify-content: center;
     align-items: center;
-    width: 20px;
+    gap: 24px;
+    height: 80px;
+    padding: 0 20px;
   }
-  .vbar-val {
-    font-family: 'Orbitron', monospace;
-    font-size: 11px;
-    font-weight: 700;
-    color: #aaa;
-    margin-bottom: 2px;
-    height: 14px;
-    line-height: 14px;
-  }
-  .vbar-wrap {
+  .hbar-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     flex: 1;
-    width: 100%;
+  }
+  .hbar-name {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 16px;
+    color: #555;
+    letter-spacing: 2px;
+    width: 52px;
+  }
+  .hbar-wrap {
+    flex: 1;
+    height: 22px;
     background: #111;
     border-radius: 3px;
     position: relative;
     overflow: hidden;
   }
-  .vbar-fill {
+  .hbar-fill {
     position: absolute;
-    bottom: 0;
-    width: 100%;
-    height: 0%;
+    left: 0;
+    height: 100%;
+    width: 0%;
     background: #555;
-    transition: height 0.3s ease-out, background-color 0.3s;
+    transition: width 0.3s ease-out, background-color 0.3s;
     border-radius: 3px;
   }
-  .vbar-name {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
-    color: #666;
-    margin-top: 2px;
-    letter-spacing: 1px;
+  .hbar-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #aaa;
+    width: 36px;
+    text-align: right;
   }
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; text-anchor: middle; }
@@ -103,20 +101,20 @@
 <body>
 <div class="dashboard">
   <div class="gauges">
-    <svg id="gs" width="400" height="480" viewBox="0 0 400 480"></svg>
-    <div class="center-bars">
-      <div class="vbar-col">
-        <span class="vbar-val" id="throttle-val">--</span>
-        <div class="vbar-wrap"><div class="vbar-fill" id="throttle-fill"></div></div>
-        <span class="vbar-name">THR</span>
-      </div>
-      <div class="vbar-col">
-        <span class="vbar-val" id="load-val">--</span>
-        <div class="vbar-wrap"><div class="vbar-fill" id="load-fill"></div></div>
-        <span class="vbar-name">LOAD</span>
-      </div>
+    <svg id="gs" width="400" height="400" viewBox="0 0 400 400"></svg>
+    <svg id="gr" width="400" height="400" viewBox="0 0 400 400"></svg>
+  </div>
+  <div class="bottom-bars">
+    <div class="hbar-group">
+      <span class="hbar-name">THR</span>
+      <div class="hbar-wrap"><div class="hbar-fill" id="throttle-fill"></div></div>
+      <span class="hbar-val" id="throttle-val">--</span>
     </div>
-    <svg id="gr" width="400" height="480" viewBox="0 0 400 480"></svg>
+    <div class="hbar-group">
+      <span class="hbar-name">LOAD</span>
+      <div class="hbar-wrap"><div class="hbar-fill" id="load-fill"></div></div>
+      <span class="hbar-val" id="load-val">--</span>
+    </div>
   </div>
 </div>
 <div id="toast" class="toast"></div>
@@ -271,19 +269,17 @@ function rpmCol(v) {
   return '#78909c';
 }
 
-// --- Efficiency indicator (vertical bars) ---
+// --- Efficiency indicator (horizontal bars) ---
 const throttleFill = document.getElementById('throttle-fill');
 const throttleVal = document.getElementById('throttle-val');
 const loadFill = document.getElementById('load-fill');
 const loadVal = document.getElementById('load-val');
 function updateBars(rpm, load, throttle, speed) {
-  // スロットル開度バー（縦）
-  throttleFill.style.height = Math.min(100, throttle) + '%';
+  throttleFill.style.width = Math.min(100, throttle) + '%';
   throttleVal.textContent = throttle > 0 ? Math.round(throttle) : '--';
   throttleFill.style.backgroundColor = throttle > 80 ? '#e040fb' : throttle > 50 ? '#29b6f6' : '#78909c';
 
-  // 負荷バー（縦、ラギング指数で色が変わる）
-  loadFill.style.height = Math.min(100, load) + '%';
+  loadFill.style.width = Math.min(100, load) + '%';
   loadVal.textContent = load > 0 ? Math.round(load) : '--';
 
   if (speed < 15 || rpm < 500) {
@@ -291,7 +287,6 @@ function updateBars(rpm, load, throttle, speed) {
     return;
   }
 
-  // ラギング指数 = 負荷 / RPM × 1000
   const lugging = load / rpm * 1000;
   if (lugging > 30) {
     loadFill.style.backgroundColor = '#f44336';
@@ -389,27 +384,22 @@ function simTick() {
   let speed, rpm, load, throttle;
 
   if (phase < 3) {
-    // 発進加速
     const p = phase / 3;
     speed = p * p * 60; rpm = 800 + p * 3200;
     load = 25 + p * 45; throttle = 20 + p * 50;
   } else if (phase < 7) {
-    // 巡航（効率的）
     speed = 60 + Math.sin(simT * 3) * 3;
     rpm = 2200 + Math.sin(simT * 2) * 200;
     load = 28 + Math.sin(simT * 2) * 5; throttle = 18 + Math.sin(simT * 2) * 4;
   } else if (phase < 10) {
-    // ラギング（低回転+高負荷）→ SHIFT DOWN 表示
     speed = 45 + Math.sin(simT * 2) * 3;
     rpm = 1300 + Math.sin(simT * 3) * 100;
     load = 65 + Math.sin(simT * 1.5) * 8; throttle = 55 + Math.sin(simT * 1.5) * 10;
   } else if (phase < 13) {
-    // シフトダウン後の加速
     const p = (phase - 10) / 3;
     speed = 45 + p * 40; rpm = 2800 + p * 2000;
     load = 45 + p * 30; throttle = 40 + p * 40;
   } else {
-    // 減速
     const p = (phase - 13) / 3;
     speed = 85 * (1 - p * p); rpm = 4800 * (1 - p) + 800 * p;
     load = 8 + (1 - p) * 5; throttle = 3 + (1 - p) * 5;
@@ -429,13 +419,13 @@ async function initApp() {
   } catch (e) { /* file:// mode */ }
 
   gs = buildGauge('gs', {
-    cx: 200, cy: 260, r: 168, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 50, tkSz: 15,
+    cx: 200, cy: 235, r: 185, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 54, tkSz: 17,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
   gr = buildGauge('gr', {
-    cx: 200, cy: 260, r: 168, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 50, tkSz: 15, rzStart: conf.redline_rpm,
+    cx: 200, cy: 235, r: 185, min: 0, max: conf.max_rpm, color: '#78909c',
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 54, tkSz: 17, rzStart: conf.redline_rpm,
     fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
 
