@@ -19,12 +19,6 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
-// GearRatio はギア比定義
-type GearRatio struct {
-	Gear  int     `json:"gear"`
-	Ratio float64 `json:"ratio"`
-}
-
 // Config はアプリケーション設定
 type Config struct {
 	SerialPort           string                   `json:"serial_port"`
@@ -43,7 +37,6 @@ type Config struct {
 	PowerMaxPS           int                      `json:"power_max_ps"`
 	TorqueMaxKgfm        float64                  `json:"torque_max_kgfm"`
 	OBDProtocol          string                   `json:"obd_protocol"`
-	GearRatios           []GearRatio              `json:"gear_ratios"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
@@ -91,12 +84,6 @@ func loadConfig(path string) Config {
 		OBDProtocol:          "6", // CAN 11bit 500kbaud (ISO 15765-4)
 		PowerMaxPS:           100,
 		TorqueMaxKgfm:        15,
-		GearRatios: []GearRatio{
-			{Gear: 1, Ratio: 105.2},
-			{Gear: 2, Ratio: 57.1},
-			{Gear: 3, Ratio: 37.4},
-			{Gear: 4, Ratio: 26.4},
-		},
 		Brightness: display.DefaultConfig(),
 	}
 
@@ -170,9 +157,12 @@ func main() {
 	defer brightness.Stop()
 	go startLocalAPI(cfg, tracker, maintMgr, brightness)
 
-	// --- メインループ ---
-	pollInterval := time.Duration(cfg.PollIntervalMs) * time.Millisecond
-	ticker := time.NewTicker(pollInterval)
+	// --- メインループ（2層ポーリング） ---
+	// 高速ループ: RPM+速度のみ（~7Hz）、N回に1回全PID取得
+	const fastIntervalMs = 150
+	const fullEveryN = 5 // 5回に1回フルデータ取得（~750msごと）
+
+	ticker := time.NewTicker(fastIntervalMs * time.Millisecond)
 	defer ticker.Stop()
 
 	retryTicker := time.NewTicker(5 * time.Minute)
@@ -202,25 +192,48 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	fmt.Println("\n▶ データ収集開始...")
+	fmt.Printf("  高速ポーリング: %dms (RPM+速度), 全PID: %dmsごと\n", fastIntervalMs, fastIntervalMs*fullEveryN)
 	fmt.Printf("  LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 	fmt.Printf("  スマホ操作:   http://<raspi-ip>:%d/control.html\n", cfg.LocalAPIPort)
 
 	sampleCount := 0
+	// 前回のフルデータを保持（高速ループ時に燃費等を補完する）
+	var lastFuelRate, lastInstantEcon, lastCoolant, lastFuelTank, lastLoad float64
+	var lastPowerKW, lastPowerPS, lastTorqueNm float64
 	for {
 		select {
 		case <-ticker.C:
-			data, err := reader.ReadAll()
+			sampleCount++
+			isFull := sampleCount%fullEveryN == 0
+
+			var data *obd.OBDData
+			var err error
+			if isFull {
+				data, err = reader.ReadAll()
+			} else {
+				data, err = reader.ReadFast()
+			}
 			if err != nil {
 				log.Printf("OBD読み取りエラー: %v", err)
 				continue
 			}
 
-			fuelRate := data.CalcFuelRateLph()
-			instantEcon := data.CalcInstantFuelEconomy()
-			tracker.Update(data.SpeedKmh, fuelRate)
+			dtSec := float64(fastIntervalMs) / 1000.0
 
+			if isFull {
+				// フルデータ: 燃費・水温等を更新
+				lastFuelRate = data.CalcFuelRateLph()
+				lastInstantEcon = data.CalcInstantFuelEconomy()
+				lastCoolant = data.CoolantTemp
+				lastFuelTank = data.FuelTankLevel
+				lastLoad = data.EngineLoad
+				lastPowerKW = data.CalcEstimatedPowerKW()
+				lastPowerPS = data.CalcEstimatedPowerPS()
+				lastTorqueNm = data.CalcEstimatedTorqueNm()
+			}
+
+			tracker.Update(data.SpeedKmh, lastFuelRate)
 			current := tracker.GetCurrent()
-			dtSec := float64(cfg.PollIntervalMs) / 1000.0
 			totalKmAccum += (data.SpeedKmh / 3600.0) * dtSec
 			maintMgr.UpdateTotalKm(totalKmAccum)
 
@@ -229,24 +242,23 @@ func main() {
 			latestData = RealtimeData{
 				SpeedKmh:    data.SpeedKmh,
 				RPM:         data.RPM,
-				InstantEcon: instantEcon,
-				FuelRateLph: fuelRate,
-				CoolantTemp: data.CoolantTemp,
-				FuelTank:    data.FuelTankLevel,
-				EstPowerKW:  data.CalcEstimatedPowerKW(),
-				EstPowerPS:  data.CalcEstimatedPowerPS(),
-				EstTorqueNm: data.CalcEstimatedTorqueNm(),
-				EngineLoad:  data.EngineLoad,
+				InstantEcon: lastInstantEcon,
+				FuelRateLph: lastFuelRate,
+				CoolantTemp: lastCoolant,
+				FuelTank:    lastFuelTank,
+				EstPowerKW:  lastPowerKW,
+				EstPowerPS:  lastPowerPS,
+				EstTorqueNm: lastTorqueNm,
+				EngineLoad:  lastLoad,
 				Trip:        &current,
 				Alerts:      maintMgr.GetAlerts(),
 				DTCs:        latestDTCs,
 			}
 			dataMu.Unlock()
 
-			sampleCount++
-			if sampleCount%10 == 0 {
+			if sampleCount%30 == 0 {
 				fmt.Printf("\r🚗 %3.0f km/h | ⛽ %4.1f km/L (avg %4.1f) | %.1f km | %.2f L",
-					data.SpeedKmh, instantEcon, current.AvgFuelEconKm,
+					data.SpeedKmh, lastInstantEcon, current.AvgFuelEconKm,
 					current.DistanceKm, current.FuelUsedL)
 			}
 
@@ -302,7 +314,6 @@ func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Mana
 			"max_rpm":                cfg.MaxRPM,
 			"power_max_ps":           cfg.PowerMaxPS,
 			"torque_max_kgfm":        cfg.TorqueMaxKgfm,
-			"gear_ratios":            cfg.GearRatios,
 		})
 	})
 

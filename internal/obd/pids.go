@@ -127,6 +127,40 @@ func (r *Reader) testMultiPID() {
 	r.multiTested = true
 }
 
+// ReadFast はRPM+速度のみを最速で取得する（メーター追従性優先）
+func (r *Reader) ReadFast() (*OBDData, error) {
+	data := &OBDData{HasMAF: r.hasMAF, engineCfg: r.EngineCfg}
+
+	if r.supportsMulti {
+		result, err := r.elm.QueryMultiPID([]byte{PIDEngineRPM, PIDVehicleSpeed})
+		if err != nil {
+			// フォールバック: 個別クエリ
+			if raw, err := r.elm.QueryPID(PIDEngineRPM); err == nil && len(raw) >= 2 {
+				data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
+			}
+			if raw, err := r.elm.QueryPID(PIDVehicleSpeed); err == nil && len(raw) >= 1 {
+				data.SpeedKmh = float64(raw[0])
+			}
+			return data, nil
+		}
+		if raw, ok := result[PIDEngineRPM]; ok && len(raw) >= 2 {
+			data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
+		}
+		if raw, ok := result[PIDVehicleSpeed]; ok && len(raw) >= 1 {
+			data.SpeedKmh = float64(raw[0])
+		}
+	} else {
+		if raw, err := r.elm.QueryPID(PIDEngineRPM); err == nil && len(raw) >= 2 {
+			data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
+		}
+		if raw, err := r.elm.QueryPID(PIDVehicleSpeed); err == nil && len(raw) >= 1 {
+			data.SpeedKmh = float64(raw[0])
+		}
+	}
+
+	return data, nil
+}
+
 // ReadAll は全データを一度に読み取る
 // マルチPID対応ならバッチ、非対応なら個別クエリ
 func (r *Reader) ReadAll() (*OBDData, error) {
