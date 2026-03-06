@@ -54,11 +54,11 @@ func (e *ELM327) Connect() error {
 
 	// ELM327初期化シーケンス
 	initCmds := []string{
-		"ATZ",   // リセット
-		"ATE0",  // エコーOFF
-		"ATL0",  // 改行OFF
-		"ATS0",  // スペースOFF
-		"ATH0",  // ヘッダOFF
+		"ATZ",                  // リセット
+		"ATE0",                 // エコーOFF
+		"ATL0",                 // 改行OFF
+		"ATS0",                 // スペースOFF
+		"ATH0",                 // ヘッダOFF
 		"ATSP" + e.obdProtocol, // OBDプロトコル設定
 	}
 

@@ -217,8 +217,8 @@ func (t *Tracker) ResetFuelBaseline(pct float64) {
 
 type persistedState struct {
 	Current          TripData `json:"current"`
-	PrevDistance      float64  `json:"prev_distance"`
-	LastTimestamp     int64    `json:"last_timestamp"`
+	PrevDistance     float64  `json:"prev_distance"`
+	LastTimestamp    int64    `json:"last_timestamp"`
 	LastFuelPct      float64  `json:"last_fuel_pct"`
 	TripStartFuelPct float64  `json:"trip_start_fuel_pct"`
 	FuelStateValid   bool     `json:"fuel_state_valid"`
@@ -227,8 +227,8 @@ type persistedState struct {
 func (t *Tracker) saveState() {
 	state := persistedState{
 		Current:          t.current,
-		PrevDistance:      t.prevDistanceKm,
-		LastTimestamp:     t.lastTimestamp.Unix(),
+		PrevDistance:     t.prevDistanceKm,
+		LastTimestamp:    t.lastTimestamp.Unix(),
 		LastFuelPct:      t.lastFuelPct,
 		TripStartFuelPct: t.tripStartFuelPct,
 		FuelStateValid:   t.fuelStateValid,

@@ -177,7 +177,9 @@ func TestPersistence(t *testing.T) {
 		{ID: "oil", Name: "オイル", Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8},
 	})
 	m1.UpdateTotalKm(1000)
-	m1.ResetReminder("oil") // LastResetKm = 1000 で保存
+	if err := m1.ResetReminder("oil"); err != nil {
+		t.Fatal(err)
+	}
 
 	// 新しいManagerで読み込み
 	m2 := NewManager(path)

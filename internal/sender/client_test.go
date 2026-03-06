@@ -13,9 +13,11 @@ func TestSendSuccess(t *testing.T) {
 	var received GASPayload
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &received)
+		if err := json.Unmarshal(body, &received); err != nil {
+			t.Errorf("unmarshal: %v", err)
+		}
 		w.WriteHeader(200)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer srv.Close()
 
@@ -112,7 +114,9 @@ func TestPayloadJSON(t *testing.T) {
 	}
 
 	var decoded map[string]interface{}
-	json.Unmarshal(b, &decoded)
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatal(err)
+	}
 
 	if decoded["type"] != "refuel" {
 		t.Errorf("type: got %v, want refuel", decoded["type"])

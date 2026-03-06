@@ -286,19 +286,19 @@ func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Cl
 
 			// GASに給油データを送信
 			client.Send("refuel", map[string]interface{}{
-				"trip_id":         completed.TripID,
-				"start_time":      completed.StartTime,
-				"end_time":        completed.EndTime,
-				"distance_km":     completed.DistanceKm,
-				"fuel_used_l":     fuelUsedL,
-				"fuel_economy":    fuelEcon,
-				"refuel_amount_l": refuelAmountL,
-				"old_level_pct":   lastPct,
-				"new_level_pct":   currentPct,
-				"max_speed_kmh":   completed.MaxSpeedKmh,
-				"avg_speed_kmh":   completed.AvgSpeedKmh,
+				"trip_id":          completed.TripID,
+				"start_time":       completed.StartTime,
+				"end_time":         completed.EndTime,
+				"distance_km":      completed.DistanceKm,
+				"fuel_used_l":      fuelUsedL,
+				"fuel_economy":     fuelEcon,
+				"refuel_amount_l":  refuelAmountL,
+				"old_level_pct":    lastPct,
+				"new_level_pct":    currentPct,
+				"max_speed_kmh":    completed.MaxSpeedKmh,
+				"avg_speed_kmh":    completed.AvgSpeedKmh,
 				"driving_time_sec": completed.DrivingTimeSec,
-				"idle_time_sec":   completed.IdleTimeSec,
+				"idle_time_sec":    completed.IdleTimeSec,
 			})
 		}
 
@@ -322,12 +322,12 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager)
 	var items []map[string]interface{}
 	for _, s := range statuses {
 		item := map[string]interface{}{
-			"id":           s.Reminder.ID,
-			"name":         s.Reminder.Name,
-			"type":         string(s.Reminder.Type),
-			"progress":     s.Progress,
-			"needs_alert":  s.NeedsAlert,
-			"is_overdue":   s.IsOverdue,
+			"id":          s.Reminder.ID,
+			"name":        s.Reminder.Name,
+			"type":        string(s.Reminder.Type),
+			"progress":    s.Progress,
+			"needs_alert": s.NeedsAlert,
+			"is_overdue":  s.IsOverdue,
 		}
 		if s.Reminder.Type == "distance" {
 			item["remaining_km"] = s.RemainingKm
