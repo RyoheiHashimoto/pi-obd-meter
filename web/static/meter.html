@@ -17,40 +17,8 @@
     cursor: none;
   }
   .dashboard {
-    display: grid;
-    grid-template-rows: 24px 1fr;
     height: 100%;
   }
-  .header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0 12px;
-    border-bottom: 1px solid #111;
-  }
-  .status-dot {
-    display: inline-block;
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: #4caf50;
-    box-shadow: 0 0 6px rgba(76,175,80,0.6);
-    flex-shrink: 0;
-    animation: pulse-dot 2s ease-in-out infinite;
-  }
-  @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
-  .alert-bar {
-    background: rgba(26,10,0,0.95);
-    border: 1px solid #ff6600;
-    border-radius: 2px;
-    padding: 1px 8px;
-    font-size: 13px;
-    color: #ffb74d;
-    visibility: hidden;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .alert-bar.active { visibility: visible; }
   .toast {
     position: fixed;
     top: 50%; left: 50%;
@@ -134,10 +102,6 @@
 </head>
 <body>
 <div class="dashboard">
-  <div class="header">
-    <span class="status-dot"></span>
-    <span id="alert-bar" class="alert-bar"></span>
-  </div>
   <div class="gauges">
     <svg id="gs" width="400" height="370" viewBox="0 0 400 370"></svg>
     <div class="center-bars">
@@ -361,18 +325,8 @@ const DEFAULTS = {
 let gs, gr;
 
 // --- Realtime API polling ---
-const statusDot = document.querySelector('.status-dot');
 let connected = false;
-let alerts = [];
-let alertIdx = 0;
-
-function setConnected(ok) {
-  connected = ok;
-  statusDot.style.background = ok ? '#4caf50' : '#f44336';
-  statusDot.style.boxShadow = ok
-    ? '0 0 6px rgba(76,175,80,0.6)'
-    : '0 0 6px rgba(244,67,54,0.6)';
-}
+let prevAlertCount = 0;
 
 function applyData(d) {
   const spd = d.speed_kmh || 0;
@@ -384,22 +338,19 @@ function applyData(d) {
   gr.update(rpm, rpmCol(rpm));
   updateBars(rpm, load, throttle, spd);
 
-  // Alerts from API
-  const prev = alerts.length;
-  if (d.alerts && d.alerts.length > 0) {
-    alerts = d.alerts.map(a => {
-      const r = a.reminder;
-      const remain = r.type === 'distance'
-        ? `${Math.round(a.remaining_km).toLocaleString()} km`
-        : `${a.days_left} 日`;
-      return `${r.name}まで ${remain}`;
-    });
-  } else {
-    alerts = [];
+  // Maintenance alerts as toast
+  const alertCount = d.alerts ? d.alerts.length : 0;
+  if (alertCount > 0 && alertCount !== prevAlertCount) {
+    const a = d.alerts[0];
+    const r = a.reminder;
+    const remain = r.type === 'distance'
+      ? `${Math.round(a.remaining_km).toLocaleString()} km`
+      : `${a.days_left} 日`;
+    showToast(`⚠ ${r.name}まで ${remain}`);
   }
-  if (alerts.length !== prev) updateAlert();
+  prevAlertCount = alertCount;
 
-  // Toast notification
+  // Toast notification (refueling etc.)
   if (d.notification) {
     showToast(d.notification);
   } else if (lastNotification) {
@@ -412,11 +363,11 @@ async function fetchRealtime() {
     const resp = await fetch('/api/realtime');
     if (!resp.ok) throw new Error(resp.status);
     const d = await resp.json();
-    if (!connected) setConnected(true);
+    connected = true;
     applyData(d);
   } catch (e) {
     if (connected || !simMode) {
-      setConnected(false);
+      connected = false;
       if (!simMode) startSimMode();
     }
   }
@@ -467,17 +418,6 @@ function simTick() {
   gr.update(Math.max(0, rpm), rpmCol(rpm));
   updateBars(rpm, load, throttle, speed);
 }
-
-// --- Alert rotation (10s) ---
-function updateAlert() {
-  const bar = document.getElementById('alert-bar');
-  if (alerts.length === 0) { bar.classList.remove('active'); return; }
-  bar.classList.add('active');
-  const prefix = alerts.length > 1 ? `\u26A0 ${alertIdx + 1}/${alerts.length} ` : '\u26A0 ';
-  bar.textContent = prefix + alerts[alertIdx];
-  alertIdx = (alertIdx + 1) % alerts.length;
-}
-setInterval(updateAlert, 10000);
 
 // --- Start ---
 async function initApp() {

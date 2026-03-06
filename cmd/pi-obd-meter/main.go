@@ -306,7 +306,7 @@ func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Cl
 			fuelEcon := completed.DistanceKm / fuelUsedL
 			fmt.Printf("   前回区間: %.1f km / %.1f L = %.1f km/L\n",
 				completed.DistanceKm, fuelUsedL, fuelEcon)
-			setNotification(fmt.Sprintf("⛽ %.1f km/L (%.0fkm)", fuelEcon, completed.DistanceKm), 15*time.Second)
+			setNotification(fmt.Sprintf("⛽ %.1f km/L (%.0fkm)", fuelEcon, completed.DistanceKm), 5*time.Second)
 
 			// GASに給油データを送信
 			client.Send("refuel", map[string]interface{}{
