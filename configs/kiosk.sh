@@ -1,7 +1,7 @@
 #!/bin/bash
 # LCD キオスクモード起動スクリプト
-# RasPiの /etc/xdg/lxsession/LXDE-pi/autostart に追加するか
-# systemdサービスとして登録する
+# kiosk.service (systemd) から自動起動される
+# 手動実行: bash /opt/pi-obd-meter/configs/kiosk.sh
 
 # 画面設定
 export DISPLAY=:0

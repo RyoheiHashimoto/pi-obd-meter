@@ -29,7 +29,7 @@ cmd_deploy() {
   rsync -avz "$ROOT/bin/" "${PI}:${DEST}/"
   rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
   rsync -avz "$ROOT/configs/" "${PI}:${DEST}/configs/"
-  ssh "$PI" "sudo systemctl restart ${SERVICE}"
+  ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
   echo "✓ デプロイ完了"
 }
 
@@ -47,31 +47,22 @@ cmd_setup() {
   # systemd登録を先に行う（deploy 内の restart が成功するように）
   rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
   ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
-  # Chromium翻訳バー無効化
-  echo "Disabling Chromium translate..."
-  ssh "$PI" "python3 -c \"
-import json, os
-p = os.path.expanduser('~/.config/chromium/Default/Preferences')
-if os.path.exists(p):
-    with open(p) as f: d = json.load(f)
-    d['translate'] = {'enabled': False}
-    d['translate_blocked_languages'] = ['ja', 'en']
-    d.setdefault('intl', {})['accept_languages'] = 'ja'
-    with open(p, 'w') as f: json.dump(d, f)
-    print('done')
-else:
-    print('skip: Chromium not yet configured')
-\""
+  # キオスクサービス登録
+  echo "Installing kiosk service..."
+  rsync -avz "$ROOT/configs/kiosk.service" "${PI}:/tmp/kiosk.service"
+  ssh "$PI" "sudo cp /tmp/kiosk.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable kiosk"
   cmd_deploy
   echo "✓ 初期セットアップ完了"
 }
 
-cmd_ssh()      { ssh "$PI"; }
-cmd_logs()     { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
-cmd_status()   { ssh "$PI" "systemctl status ${SERVICE}"; }
-cmd_restart()  { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
-cmd_shutdown() { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
-cmd_reboot()   { ssh "$PI" "sudo reboot"; echo "✓ 再起動中...30秒ほどお待ちください"; }
+cmd_ssh()           { ssh "$PI"; }
+cmd_logs()          { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
+cmd_status()        { ssh "$PI" "systemctl status ${SERVICE}"; }
+cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
+cmd_kiosk_logs()    { ssh "$PI" "journalctl -u kiosk -f"; }
+cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart kiosk"; }
+cmd_shutdown()      { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
+cmd_reboot()        { ssh "$PI" "sudo reboot"; echo "✓ 再起動中...30秒ほどお待ちください"; }
 
 cmd_overlay_on() {
   ssh "$PI" "sudo raspi-config nonint do_overlayfs 0"
@@ -141,6 +132,8 @@ Usage: ./scripts/deploy.sh <command> [args]
   logs             リアルタイムログ表示
   status           サービス状態確認
   restart          サービス再起動 (転送なし)
+  kiosk-logs       キオスク (Chromium) ログ表示
+  kiosk-restart    キオスク (Chromium) 再起動
   shutdown         ラズパイを安全にシャットダウン
   reboot           ラズパイを再起動
 
@@ -168,6 +161,8 @@ case "${1:-help}" in
   logs)            cmd_logs ;;
   status)          cmd_status ;;
   restart)         cmd_restart ;;
+  kiosk-logs)      cmd_kiosk_logs ;;
+  kiosk-restart)   cmd_kiosk_restart ;;
   shutdown)        cmd_shutdown ;;
   reboot)          cmd_reboot ;;
   overlay-on)      cmd_overlay_on ;;

@@ -1,0 +1,17 @@
+[Unit]
+Description=OBD Meter Kiosk Display
+After=pi-obd-meter.service graphical.target
+Wants=pi-obd-meter.service
+
+[Service]
+Type=simple
+User=laurel
+Environment=DISPLAY=:0
+ExecStart=/bin/bash /opt/pi-obd-meter/configs/kiosk.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target
