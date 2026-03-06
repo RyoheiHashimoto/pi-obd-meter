@@ -82,7 +82,9 @@ func loadConfig(path string) Config {
 		log.Printf("設定ファイルが見つかりません、デフォルト設定を使用: %v", err)
 		return cfg
 	}
-	_ = json.Unmarshal(data, &cfg)
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		log.Printf("設定ファイルのJSON解析に失敗、デフォルト設定を使用: %v", err)
+	}
 	return cfg
 }
 

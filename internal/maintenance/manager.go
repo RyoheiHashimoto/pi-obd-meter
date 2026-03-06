@@ -3,6 +3,7 @@ package maintenance
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -250,5 +251,7 @@ func (m *Manager) load() {
 	if err != nil {
 		return
 	}
-	_ = json.Unmarshal(data, &m.reminders)
+	if err := json.Unmarshal(data, &m.reminders); err != nil {
+		log.Printf("maintenance state parse error, using defaults: %v", err)
+	}
 }
