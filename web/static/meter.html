@@ -48,18 +48,18 @@
   .center-bars {
     position: absolute;
     left: 50%;
-    top: 50%;
+    top: 47%;
     transform: translate(-50%, -50%);
     display: flex;
-    gap: 6px;
-    height: 330px;
+    gap: 4px;
+    height: 310px;
     z-index: 10;
   }
   .vbar-col {
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 24px;
+    width: 20px;
   }
   .vbar-val {
     font-family: 'Orbitron', monospace;
@@ -429,13 +429,13 @@ async function initApp() {
   } catch (e) { /* file:// mode */ }
 
   gs = buildGauge('gs', {
-    cx: 200, cy: 240, r: 185, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 54, tkSz: 17,
+    cx: 200, cy: 260, r: 168, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 50, tkSz: 15,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
   gr = buildGauge('gr', {
-    cx: 200, cy: 240, r: 185, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 54, tkSz: 17, rzStart: conf.redline_rpm,
+    cx: 200, cy: 260, r: 168, min: 0, max: conf.max_rpm, color: '#78909c',
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 50, tkSz: 15, rzStart: conf.redline_rpm,
     fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
 
