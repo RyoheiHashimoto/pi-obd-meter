@@ -21,8 +21,7 @@ linters-settings:
       # Fire-and-forget persistence (overlayFS may be read-only)
       - os.WriteFile
       # Fire-and-forget sends (retried by queue or non-critical)
-      - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).SendTrip
-      - (*github.com/hashimoto/pi-obd-meter/internal/notify.Discord).SendMaintenanceAlert
+      - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).Send
       # Server start (blocks forever, error only on bind failure)
       - net/http.ListenAndServe
 

@@ -8,7 +8,7 @@ set -euo pipefail
 PI="${PI_HOST:-laurel@pi-obd-meter.local}"
 DEST="/opt/pi-obd-meter"
 SERVICE="pi-obd-meter"
-REPO="${GITHUB_REPO:-YOUR_USER/pi-obd-meter}"
+REPO="${GITHUB_REPO:-RyoheiHashimoto/pi-obd-meter}"
 
 # プロジェクトルート
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
