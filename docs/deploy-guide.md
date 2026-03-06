@@ -18,8 +18,6 @@ Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
 - エンジンOFF = 電源ブチ切りでもSDが壊れない
 - コード更新時だけ一時的にOFFに戻す
 
-**最初はフェーズ1のことだけ考えればいい。** overlayFSは全部動いてから有効にする。
-
 ---
 
 ## 接続設定
