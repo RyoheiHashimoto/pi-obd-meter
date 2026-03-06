@@ -53,7 +53,7 @@ func (e *ELM327) Connect() error {
 		"ATL0",  // 改行OFF
 		"ATS0",  // スペースOFF
 		"ATH0",  // ヘッダOFF
-		"ATSP0", // プロトコル自動検出（DYデミオ向け）
+		"ATSP6", // CAN 11bit 500kbaud (ISO 15765-4)
 	}
 
 	for _, cmd := range initCmds {

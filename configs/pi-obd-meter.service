@@ -12,8 +12,8 @@ User=root
 StandardOutput=journal
 StandardError=journal
 
-# ELM327 Bluetooth接続（rfcomm）を待つ — serial_port を config.json から取得
-ExecStartPre=/bin/sh -c 'DEV=$(grep -o "\"serial_port\":[[:space:]]*\"[^\"]*\"" /opt/pi-obd-meter/configs/config.json | grep -o "/[^\"]*"); until [ -e "$DEV" ]; do sleep 1; done'
+# ELM327 Bluetooth接続（rfcomm）を待つ
+ExecStartPre=/bin/sh -c 'until [ -e /dev/rfcomm0 ]; do sleep 1; done'
 
 [Install]
 WantedBy=multi-user.target
