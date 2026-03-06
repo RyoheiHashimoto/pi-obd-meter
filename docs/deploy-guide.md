@@ -89,19 +89,46 @@ sudo chown -R $(whoami):$(whoami) /opt/pi-obd-meter
 
 ### 1-4. ELM327 Bluetooth ペアリング
 
+> **注意**: Pi 4 は WiFi と Bluetooth が同じチップを共有している。Bluetooth 操作中に WiFi が不安定になることがある。
+
+#### Step 1: Bluetooth アダプタ準備
+
+Pi のデフォルト設定では Classic Bluetooth (BR/EDR) のスキャンが動かないことがある。以下を先に実行する：
+
 ```bash
-# ラズパイで実行
+# Bluetooth がブロックされている場合
+sudo rfkill unblock bluetooth
+sudo systemctl restart bluetooth
+
+# Device Class を設定（BR/EDR スキャンに必要）
+sudo hciconfig hci0 class 0x200000
+sudo hciconfig hci0 piscan
+```
+
+#### Step 2: ELM327 スキャン & ペアリング
+
+ELM327 の電源スイッチを ON にし、車のキーを ACC 以上にしてから実行：
+
+```bash
+# Classic Bluetooth スキャンで ELM327 を探す
+hcitool scan
+# → 00:1D:A5:XX:XX:XX  OBDII のように表示される
+
+# ペアリング
 bluetoothctl
-  power on
-  agent on
   scan on
-  # ELM327のアドレスが表示されるのを待つ (例: XX:XX:XX:XX:XX:XX)
   pair XX:XX:XX:XX:XX:XX
   # PINを聞かれたら 1234 を入力
   trust XX:XX:XX:XX:XX:XX
   quit
+```
 
-# rfcommバインド（シリアルポート化）
+> `bluetoothctl` の `scan on` だけでは BLE デバイスしか見えないことがある。先に `hcitool scan` で Classic Bluetooth のアドレスを確認するのが確実。
+
+#### Step 3: rfcomm バインド
+
+```bash
+# rfcommバインド（Bluetooth SPP → シリアルポート変換）
 sudo rfcomm bind 0 XX:XX:XX:XX:XX:XX
 # → /dev/rfcomm0 が作成される
 
@@ -109,8 +136,13 @@ sudo rfcomm bind 0 XX:XX:XX:XX:XX:XX
 ls -la /dev/rfcomm0
 ```
 
-rfcommを起動時に自動バインドするには `/etc/rc.local` に追記：
+#### 起動時の自動バインド
+
+rfcomm bind は再起動で消えるため、`/etc/rc.local` の `exit 0` の前に追記：
 ```bash
+# Bluetooth Class 設定 + ELM327 rfcomm バインド
+hciconfig hci0 class 0x200000
+hciconfig hci0 piscan
 rfcomm bind 0 XX:XX:XX:XX:XX:XX
 ```
 

@@ -29,7 +29,9 @@ OBD-2対応車であれば車種を問わず利用可能。
 
 ### 動作確認済み車種
 
-- マツダ DYデミオ (DBA-DY3W / ZJ-VE 1.3L)
+| 車種 | 型式 | エンジン | 燃費方式 | OBDプロトコル | 検出PID数 |
+|------|------|----------|----------|---------------|-----------|
+| マツダ DYデミオ | DBA-DY3W | ZJ-VE 1.3L | MAF方式 | CAN 11bit 500kbaud (ATSP6) | 28 |
 
 ## アーキテクチャ
 
@@ -64,6 +66,13 @@ OBD-2対応車であれば車種を問わず利用可能。
 ## セットアップ
 
 詳細は [docs/deploy-guide.md](docs/deploy-guide.md) を参照。
+
+### ELM327 Bluetooth 接続の注意
+
+- Pi 4 のデフォルト設定では Classic Bluetooth (BR/EDR) のスキャンが動かないことがある。`hciconfig hci0 class 0x200000` と `hciconfig hci0 piscan` を先に実行する
+- `bluetoothctl` の `scan on` は BLE しか検出しない場合がある。`hcitool scan` で Classic Bluetooth のスキャンを行う
+- ELM327 のプロトコル自動検出 (ATSP0) が失敗する車種がある。DY デミオは CAN 11bit 500kbaud (ATSP6) を明示指定する必要がある
+- Pi 4 は WiFi と Bluetooth が同じチップを共有しており、Bluetooth 操作中に WiFi が不安定になることがある
 
 ### ディスプレイ設定
 
