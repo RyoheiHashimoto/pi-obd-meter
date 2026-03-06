@@ -40,20 +40,42 @@ type Config struct {
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh    float64              `json:"speed_kmh"`
-	RPM         float64              `json:"rpm"`
-	EngineLoad  float64              `json:"engine_load"`
-	ThrottlePos float64              `json:"throttle_pos"`
-	Trip        *trip.TripData       `json:"trip"`
-	Alerts      []maintenance.Status `json:"alerts"`
+	SpeedKmh     float64              `json:"speed_kmh"`
+	RPM          float64              `json:"rpm"`
+	EngineLoad   float64              `json:"engine_load"`
+	ThrottlePos  float64              `json:"throttle_pos"`
+	Trip         *trip.TripData       `json:"trip"`
+	Alerts       []maintenance.Status `json:"alerts"`
+	Notification string               `json:"notification,omitempty"`
 }
 
 var version = "dev"
 
 var (
-	latestData RealtimeData
-	dataMu     sync.RWMutex
+	latestData      RealtimeData
+	dataMu          sync.RWMutex
+	notification    string
+	notificationMu  sync.RWMutex
+	notificationExp time.Time
 )
+
+// setNotification はメーター画面に表示する一時通知をセットする
+func setNotification(msg string, duration time.Duration) {
+	notificationMu.Lock()
+	defer notificationMu.Unlock()
+	notification = msg
+	notificationExp = time.Now().Add(duration)
+}
+
+// getNotification は有効期限内の通知を返す（期限切れなら空文字列）
+func getNotification() string {
+	notificationMu.RLock()
+	defer notificationMu.RUnlock()
+	if time.Now().After(notificationExp) {
+		return ""
+	}
+	return notification
+}
 
 func loadConfig(path string) Config {
 	cfg := Config{
@@ -207,12 +229,13 @@ func main() {
 
 			dataMu.Lock()
 			latestData = RealtimeData{
-				SpeedKmh:    data.SpeedKmh,
-				RPM:         data.RPM,
-				EngineLoad:  data.EngineLoad,
-				ThrottlePos: data.ThrottlePos,
-				Trip:        &current,
-				Alerts:      maintMgr.GetAlerts(),
+				SpeedKmh:     data.SpeedKmh,
+				RPM:          data.RPM,
+				EngineLoad:   data.EngineLoad,
+				ThrottlePos:  data.ThrottlePos,
+				Trip:         &current,
+				Alerts:       maintMgr.GetAlerts(),
+				Notification: getNotification(),
 			}
 			dataMu.Unlock()
 
@@ -283,6 +306,7 @@ func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Cl
 			fuelEcon := completed.DistanceKm / fuelUsedL
 			fmt.Printf("   前回区間: %.1f km / %.1f L = %.1f km/L\n",
 				completed.DistanceKm, fuelUsedL, fuelEcon)
+			setNotification(fmt.Sprintf("⛽ %.1f km/L (%.0fkm)", fuelEcon, completed.DistanceKm), 15*time.Second)
 
 			// GASに給油データを送信
 			client.Send("refuel", map[string]interface{}{
@@ -302,6 +326,10 @@ func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Cl
 			})
 		}
 
+		if getNotification() == "" {
+			// 燃費算出できなかった場合（距離不足等）
+			setNotification(fmt.Sprintf("⛽ 給油 +%.0fL", refuelAmountL), 10*time.Second)
+		}
 		tracker.ResetFuelBaseline(currentPct)
 	} else if delta > 3.0 {
 		fmt.Printf("  タンク微増 +%.1f%% (しきい値%.0f%%未満、給油判定せず)\n", delta, minIncrease)

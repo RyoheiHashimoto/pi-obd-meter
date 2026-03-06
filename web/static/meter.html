@@ -51,6 +51,25 @@
     text-overflow: ellipsis;
   }
   .alert-bar.active { visibility: visible; }
+  .toast {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10, 10, 15, 0.92);
+    border: 1px solid #ffb74d;
+    border-radius: 8px;
+    padding: 16px 32px;
+    font-family: 'Orbitron', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: #ffd54f;
+    text-align: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease-in-out;
+  }
+  .toast.show { opacity: 1; }
   .gauges {
     display: flex;
     justify-content: center;
@@ -136,6 +155,7 @@
     <svg id="gr" width="400" height="370" viewBox="0 0 400 370"></svg>
   </div>
 </div>
+<div id="toast" class="toast"></div>
 
 <script>
 const D = Math.PI / 180;
@@ -317,6 +337,20 @@ function updateBars(rpm, load, throttle, speed) {
   }
 }
 
+// --- Toast notification ---
+const toastEl = document.getElementById('toast');
+let lastNotification = '';
+let toastTimer = null;
+
+function showToast(msg) {
+  if (msg === lastNotification) return;
+  lastNotification = msg;
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toastEl.classList.remove('show'); }, 5000);
+}
+
 // --- Config defaults ---
 const DEFAULTS = {
   redline_rpm: 6500,
@@ -364,6 +398,13 @@ function applyData(d) {
     alerts = [];
   }
   if (alerts.length !== prev) updateAlert();
+
+  // Toast notification
+  if (d.notification) {
+    showToast(d.notification);
+  } else if (lastNotification) {
+    lastNotification = '';
+  }
 }
 
 async function fetchRealtime() {
