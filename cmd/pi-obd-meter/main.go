@@ -158,6 +158,8 @@ func main() {
 
 	sampleCount := 0
 	var lastFuelTank float64
+	var errCount int
+	const maxConsecutiveErrors = 10
 	for {
 		select {
 		case <-ticker.C:
@@ -172,9 +174,24 @@ func main() {
 				data, err = reader.ReadFast()
 			}
 			if err != nil {
-				log.Printf("OBD読み取りエラー: %v", err)
+				errCount++
+				if errCount >= maxConsecutiveErrors {
+					log.Printf("連続 %d 回エラー、再接続を試みます...", errCount)
+					if reconnErr := reconnect(elm, reader); reconnErr != nil {
+						backoff := time.Duration(errCount/maxConsecutiveErrors) * time.Second
+						if backoff > 30*time.Second {
+							backoff = 30 * time.Second
+						}
+						log.Printf("再接続失敗: %v（%v後にリトライ）", reconnErr, backoff)
+						time.Sleep(backoff)
+					} else {
+						log.Println("✓ 再接続成功")
+						errCount = 0
+					}
+				}
 				continue
 			}
+			errCount = 0
 
 			dtSec := float64(fastIntervalMs) / 1000.0
 
@@ -327,6 +344,14 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager)
 		"sent_at":  time.Now(),
 	})
 	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
+}
+
+// reconnect はELM327に再接続してReaderを再初期化する
+func reconnect(elm *obd.ELM327, reader *obd.Reader) error {
+	if err := elm.Reconnect(); err != nil {
+		return err
+	}
+	return reader.DetectCapabilities()
 }
 
 // corsMiddleware はCORSヘッダーを付与する

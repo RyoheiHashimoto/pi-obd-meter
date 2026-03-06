@@ -1,0 +1,124 @@
+package sender
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
+	"testing"
+)
+
+func TestSendSuccess(t *testing.T) {
+	var received GASPayload
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &received)
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.Send("trip", map[string]string{"id": "abc"})
+	if err != nil {
+		t.Fatalf("Send failed: %v", err)
+	}
+
+	if received.Type != "trip" {
+		t.Errorf("type: got %q, want trip", received.Type)
+	}
+}
+
+func TestSendServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	err := c.Send("trip", map[string]string{"id": "abc"})
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+
+	// エラー時はリトライキューに入る
+	if c.QueueSize() != 1 {
+		t.Errorf("queue size: got %d, want 1", c.QueueSize())
+	}
+}
+
+func TestSendNetworkError(t *testing.T) {
+	c := NewClient("http://127.0.0.1:1") // 接続不可
+	err := c.Send("trip", map[string]string{"id": "abc"})
+	if err == nil {
+		t.Fatal("expected error on unreachable server")
+	}
+	if c.QueueSize() != 1 {
+		t.Errorf("queue size: got %d, want 1", c.QueueSize())
+	}
+}
+
+func TestRetryPending(t *testing.T) {
+	var callCount atomic.Int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n <= 1 {
+			w.WriteHeader(500) // 初回失敗
+		} else {
+			w.WriteHeader(200) // リトライ成功
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_ = c.Send("trip", map[string]string{"id": "abc"}) // 失敗 → キュー
+	if c.QueueSize() != 1 {
+		t.Fatalf("queue should have 1 item, got %d", c.QueueSize())
+	}
+
+	c.RetryPending() // 成功
+	if c.QueueSize() != 0 {
+		t.Errorf("queue should be empty after retry, got %d", c.QueueSize())
+	}
+}
+
+func TestQueueMaxSize(t *testing.T) {
+	c := NewClient("http://127.0.0.1:1")
+
+	// 100件まで溜まる
+	for i := 0; i < 110; i++ {
+		c.enqueue(GASPayload{Type: "test"})
+	}
+	if c.QueueSize() != 100 {
+		t.Errorf("queue max: got %d, want 100", c.QueueSize())
+	}
+}
+
+func TestRetryPendingEmpty(t *testing.T) {
+	c := NewClient("http://example.com")
+	c.RetryPending() // キュー空でもパニックしない
+	if c.QueueSize() != 0 {
+		t.Error("queue should remain empty")
+	}
+}
+
+func TestPayloadJSON(t *testing.T) {
+	p := GASPayload{Type: "refuel", Data: map[string]float64{"fuel_economy": 12.5}}
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var decoded map[string]interface{}
+	json.Unmarshal(b, &decoded)
+
+	if decoded["type"] != "refuel" {
+		t.Errorf("type: got %v, want refuel", decoded["type"])
+	}
+	data := decoded["data"].(map[string]interface{})
+	if data["fuel_economy"] != 12.5 {
+		t.Errorf("fuel_economy: got %v, want 12.5", data["fuel_economy"])
+	}
+}
