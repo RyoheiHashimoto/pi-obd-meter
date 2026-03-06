@@ -14,6 +14,7 @@ const (
 	PIDEngineLoad        byte = 0x04 // エンジン負荷 (%)
 	PIDCoolantTemp       byte = 0x05 // 冷却水温度
 	PIDIntakeManifold    byte = 0x0B // インマニ圧 (kPa) ← DYデミオはMAP式の可能性
+	PIDThrottlePosition  byte = 0x11 // スロットル開度 (%)
 	PIDFuelTankLevel     byte = 0x2F // 燃料タンクレベル (%)
 	PIDRunTimeSinceStart byte = 0x1F // エンジン始動後の経過時間
 )
@@ -27,6 +28,7 @@ type OBDData struct {
 	IntakeManifold float64      // kPa
 	IntakeAirTemp  float64      // ℃
 	CoolantTemp    float64      // ℃
+	ThrottlePos    float64      // 0-100%
 	FuelTankLevel  float64      // 0-100%
 	HasMAF         bool         // MAFセンサーが使えるか
 	engineCfg      EngineConfig // 計算用
@@ -127,38 +129,79 @@ func (r *Reader) testMultiPID() {
 	r.multiTested = true
 }
 
-// ReadFast はRPM+速度のみを最速で取得する（メーター追従性優先）
+// ReadFast はRPM+速度+負荷+スロットルを1回の通信で取得する（メーター追従性優先）
+// 4 PIDでもCAN 1フレームに収まるため、2 PIDと通信回数は同じ
 func (r *Reader) ReadFast() (*OBDData, error) {
 	data := &OBDData{HasMAF: r.hasMAF, engineCfg: r.EngineCfg}
+	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition}
 
 	if r.supportsMulti {
-		result, err := r.elm.QueryMultiPID([]byte{PIDEngineRPM, PIDVehicleSpeed})
+		result, err := r.elm.QueryMultiPID(pids)
 		if err != nil {
 			// フォールバック: 個別クエリ
-			if raw, err := r.elm.QueryPID(PIDEngineRPM); err == nil && len(raw) >= 2 {
-				data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
-			}
-			if raw, err := r.elm.QueryPID(PIDVehicleSpeed); err == nil && len(raw) >= 1 {
-				data.SpeedKmh = float64(raw[0])
+			for _, pid := range pids {
+				raw, err := r.elm.QueryPID(pid)
+				if err != nil {
+					continue
+				}
+				r.parsePID(data, pid, raw)
 			}
 			return data, nil
 		}
-		if raw, ok := result[PIDEngineRPM]; ok && len(raw) >= 2 {
-			data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
-		}
-		if raw, ok := result[PIDVehicleSpeed]; ok && len(raw) >= 1 {
-			data.SpeedKmh = float64(raw[0])
+		for pid, raw := range result {
+			r.parsePID(data, pid, raw)
 		}
 	} else {
-		if raw, err := r.elm.QueryPID(PIDEngineRPM); err == nil && len(raw) >= 2 {
-			data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
-		}
-		if raw, err := r.elm.QueryPID(PIDVehicleSpeed); err == nil && len(raw) >= 1 {
-			data.SpeedKmh = float64(raw[0])
+		for _, pid := range pids {
+			if raw, err := r.elm.QueryPID(pid); err == nil {
+				r.parsePID(data, pid, raw)
+			}
 		}
 	}
 
 	return data, nil
+}
+
+// parsePID は1つのPIDレスポンスをOBDDataにセットする
+func (r *Reader) parsePID(data *OBDData, pid byte, raw []byte) {
+	switch pid {
+	case PIDEngineRPM:
+		if len(raw) >= 2 {
+			data.RPM = float64(uint16(raw[0])<<8|uint16(raw[1])) / 4.0
+		}
+	case PIDVehicleSpeed:
+		if len(raw) >= 1 {
+			data.SpeedKmh = float64(raw[0])
+		}
+	case PIDEngineLoad:
+		if len(raw) >= 1 {
+			data.EngineLoad = float64(raw[0]) * 100.0 / 255.0
+		}
+	case PIDThrottlePosition:
+		if len(raw) >= 1 {
+			data.ThrottlePos = float64(raw[0]) * 100.0 / 255.0
+		}
+	case PIDMAF:
+		if len(raw) >= 2 {
+			data.MAF = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
+		}
+	case PIDIntakeManifold:
+		if len(raw) >= 1 {
+			data.IntakeManifold = float64(raw[0])
+		}
+	case PIDIntakeAirTemp:
+		if len(raw) >= 1 {
+			data.IntakeAirTemp = float64(raw[0]) - 40.0
+		}
+	case PIDCoolantTemp:
+		if len(raw) >= 1 {
+			data.CoolantTemp = float64(raw[0]) - 40.0
+		}
+	case PIDFuelTankLevel:
+		if len(raw) >= 1 {
+			data.FuelTankLevel = float64(raw[0]) * 100.0 / 255.0
+		}
+	}
 }
 
 // ReadAll は全データを一度に読み取る

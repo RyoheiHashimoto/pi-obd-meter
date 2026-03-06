@@ -53,6 +53,7 @@ type RealtimeData struct {
 	EstPowerPS  float64              `json:"est_power_ps"`
 	EstTorqueNm float64              `json:"est_torque_nm"`
 	EngineLoad  float64              `json:"engine_load"`
+	ThrottlePos float64              `json:"throttle_pos"`
 	Trip        *trip.TripData       `json:"trip"`
 	Alerts      []maintenance.Status `json:"alerts"`
 	DTCs        *obd.DTCResult       `json:"dtcs,omitempty"`
@@ -198,7 +199,7 @@ func main() {
 
 	sampleCount := 0
 	// 前回のフルデータを保持（高速ループ時に燃費等を補完する）
-	var lastFuelRate, lastInstantEcon, lastCoolant, lastFuelTank, lastLoad float64
+	var lastFuelRate, lastInstantEcon, lastCoolant, lastFuelTank float64
 	var lastPowerKW, lastPowerPS, lastTorqueNm float64
 	for {
 		select {
@@ -226,7 +227,6 @@ func main() {
 				lastInstantEcon = data.CalcInstantFuelEconomy()
 				lastCoolant = data.CoolantTemp
 				lastFuelTank = data.FuelTankLevel
-				lastLoad = data.EngineLoad
 				lastPowerKW = data.CalcEstimatedPowerKW()
 				lastPowerPS = data.CalcEstimatedPowerPS()
 				lastTorqueNm = data.CalcEstimatedTorqueNm()
@@ -249,7 +249,8 @@ func main() {
 				EstPowerKW:  lastPowerKW,
 				EstPowerPS:  lastPowerPS,
 				EstTorqueNm: lastTorqueNm,
-				EngineLoad:  lastLoad,
+				EngineLoad:  data.EngineLoad,
+				ThrottlePos: data.ThrottlePos,
 				Trip:        &current,
 				Alerts:      maintMgr.GetAlerts(),
 				DTCs:        latestDTCs,
