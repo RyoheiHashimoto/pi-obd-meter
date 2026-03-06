@@ -44,10 +44,11 @@ type Status struct {
 
 // Manager はメンテナンスリマインダーを管理する
 type Manager struct {
-	mu        sync.RWMutex
-	reminders map[string]*Reminder
-	filePath  string
-	totalKm   float64 // 累計走行距離
+	mu             sync.RWMutex
+	reminders      map[string]*Reminder
+	filePath       string
+	totalKm        float64 // 累計走行距離
+	saveErrLogged  bool    // 書き込みエラーを既にログ出力したか
 }
 
 // NewManager は新しいManagerを作成する
@@ -252,8 +253,17 @@ func (m *Manager) GetAll() []*Reminder {
 // --- 永続化 ---
 
 func (m *Manager) save() {
-	data, _ := json.MarshalIndent(m.reminders, "", "  ")
-	os.WriteFile(m.filePath, data, 0644)
+	data, err := json.MarshalIndent(m.reminders, "", "  ")
+	if err != nil {
+		log.Printf("maintenance state marshal error: %v", err)
+		return
+	}
+	if err := os.WriteFile(m.filePath, data, 0644); err != nil {
+		if !m.saveErrLogged {
+			log.Printf("maintenance state save failed (overlayFS?): %v", err)
+			m.saveErrLogged = true
+		}
+	}
 }
 
 func (m *Manager) load() {

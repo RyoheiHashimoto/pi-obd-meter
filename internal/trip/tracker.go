@@ -3,6 +3,7 @@ package trip
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -37,7 +38,8 @@ type Tracker struct {
 	resetThreshold float64 // km - この距離以下になったらリセットと判定
 
 	// 永続化パス
-	statePath string
+	statePath     string
+	saveErrLogged bool // 書き込みエラーを既にログ出力したか
 
 	// トリップ完了コールバック
 	onTripComplete func(TripData)
@@ -210,7 +212,12 @@ func (t *Tracker) saveState() {
 	if err != nil {
 		return
 	}
-	os.WriteFile(t.statePath, data, 0644)
+	if err := os.WriteFile(t.statePath, data, 0644); err != nil {
+		if !t.saveErrLogged {
+			log.Printf("trip state save failed (overlayFS?): %v", err)
+			t.saveErrLogged = true
+		}
+	}
 }
 
 func (t *Tracker) loadState() {
