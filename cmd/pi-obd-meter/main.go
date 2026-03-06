@@ -14,7 +14,6 @@ import (
 
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
-	"github.com/hashimoto/pi-obd-meter/internal/notify"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
@@ -126,13 +125,6 @@ func main() {
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 	fmt.Printf("送信先: Google Sheets (GAS Webhook)\n")
 
-	// --- Discord通知（メンテナンス警告のみ。トリップ通知はGAS側で行う） ---
-	var discord *notify.Discord
-	if cfg.DiscordWebhook != "" {
-		discord = notify.NewDiscord(cfg.DiscordWebhook)
-		fmt.Println("✓ Discord通知 有効")
-	}
-
 	// --- ELM327接続 ---
 	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	if err := elm.Connect(); err != nil {
@@ -187,9 +179,6 @@ func main() {
 
 	retryTicker := time.NewTicker(5 * time.Minute)
 	defer retryTicker.Stop()
-
-	maintTicker := time.NewTicker(10 * time.Minute)
-	defer maintTicker.Stop()
 
 	// DTC（故障コード）チェック: 起動時 + 1分ごと
 	dtcTicker := time.NewTicker(1 * time.Minute)
@@ -272,21 +261,6 @@ func main() {
 				dataMu.Lock()
 				latestDTCs = result
 				dataMu.Unlock()
-			}
-
-		case <-maintTicker.C:
-			if discord != nil {
-				for _, alert := range maintMgr.GetAlerts() {
-					var remaining string
-					if alert.Reminder.Type == maintenance.TypeDistance {
-						remaining = fmt.Sprintf("%.0f km", alert.RemainingKm)
-					} else {
-						remaining = fmt.Sprintf("%d 日", alert.DaysLeft)
-					}
-					discord.SendMaintenanceAlert(
-						alert.Reminder.Name, remaining, alert.IsOverdue)
-					maintMgr.MarkNotified(alert.Reminder.ID)
-				}
 			}
 
 		case sig := <-sigCh:
