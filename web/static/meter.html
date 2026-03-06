@@ -18,28 +18,23 @@
   }
   .dashboard {
     display: grid;
-    grid-template-rows: 32px auto auto 44px;
-    align-content: center;
+    grid-template-rows: 24px 1fr auto;
     height: 100%;
-    padding: 0 4px;
   }
   .header {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
-    padding: 0 8px;
-    font-size: 16px;
-    color: #999;
+    gap: 8px;
+    padding: 0 12px;
     border-bottom: 1px solid #111;
   }
-  .header > :last-child { text-align: right; }
   .status-dot {
     display: inline-block;
     width: 8px; height: 8px;
     border-radius: 50%;
     background: #4caf50;
     box-shadow: 0 0 6px rgba(76,175,80,0.6);
-    margin-right: 4px;
+    flex-shrink: 0;
     animation: pulse-dot 2s ease-in-out infinite;
   }
   @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
@@ -48,69 +43,63 @@
     border: 1px solid #ff6600;
     border-radius: 2px;
     padding: 1px 8px;
-    font-size: 14px;
+    font-size: 13px;
     color: #ffb74d;
     visibility: hidden;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .alert-bar.active { visibility: visible; }
-  .top-gauges {
+  .gauges {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 0;
+  }
+  .gauges svg { margin: 0 -20px; }
+  .footer {
+    padding: 4px 16px 8px;
+  }
+  .eff-bar {
+    height: 26px;
+    background: #111;
+    border-radius: 3px;
     position: relative;
+    overflow: hidden;
   }
-  .top-gauges svg { margin: 0 -24px; }
-  .gear-indicator {
+  .eff-fill {
+    height: 100%;
+    width: 0%;
+    background: #555;
+    transition: width 0.3s ease-out, background-color 0.3s;
+    border-radius: 3px;
+  }
+  .eff-label {
     position: absolute;
-    left: 50%; top: 45%;
+    top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ddd;
+    text-shadow: 0 0 6px #000;
   }
-  .gear-box {
-    width: 40px; height: 40px;
-    border: 1px solid #333;
-    border-radius: 5px;
-    background: #0a0a0c;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .shift-alert {
+    text-align: center;
     font-family: 'Orbitron', monospace;
     font-size: 20px;
-    font-weight: 700;
-    color: #333;
-    transition: all 0.3s ease-out;
+    font-weight: 900;
+    color: #f44336;
+    height: 28px;
+    line-height: 28px;
+    visibility: hidden;
+    text-shadow: 0 0 12px rgba(244,67,54,0.6);
   }
-  .gear-box.active {
-    border-color: #69f0ae;
-    color: #69f0ae;
-    box-shadow: 0 0 8px rgba(105,240,174,0.4);
+  .shift-alert.active {
+    visibility: visible;
+    animation: pulse-shift 0.6s ease-in-out infinite;
   }
-  .mid-gauges {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 0;
-    margin-top: -6px;
-  }
-  .sub-strip {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 2px;
-    padding: 2px 16px;
-    border-top: 1px solid #111;
-    align-items: center;
-  }
-  .sub-item { text-align: center; }
-  .sub-item .val {
-    font-family: 'Orbitron', monospace;
-    font-size: 24px; font-weight: 700; color: #ccc;
-  }
-  .sub-item .lbl { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 1px; }
-  .sub-item .unt { font-size: 11px; color: #555; }
+  @keyframes pulse-shift { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; text-anchor: middle; }
   .g-lbl { font-family: 'Share Tech Mono', monospace; text-anchor: middle; letter-spacing: 2px; }
@@ -120,31 +109,19 @@
 <body>
 <div class="dashboard">
   <div class="header">
-    <span><span class="status-dot"></span> <span id="date">----/--/--</span></span>
+    <span class="status-dot"></span>
     <span id="alert-bar" class="alert-bar"></span>
-    <span id="clock">--:--</span>
   </div>
-  <div class="top-gauges">
-    <svg id="gs" width="380" height="210" viewBox="0 0 380 210"></svg>
-    <div class="gear-indicator">
-      <div class="gear-box" id="g4">4</div>
-      <div class="gear-box" id="g3">3</div>
-      <div class="gear-box" id="g2">2</div>
-      <div class="gear-box" id="g1">1</div>
+  <div class="gauges">
+    <svg id="gs" width="400" height="370" viewBox="0 0 400 370"></svg>
+    <svg id="gr" width="400" height="370" viewBox="0 0 400 370"></svg>
+  </div>
+  <div class="footer">
+    <div class="eff-bar">
+      <div class="eff-fill" id="eff-fill"></div>
+      <span class="eff-label" id="eff-label">LOAD --%</span>
     </div>
-    <svg id="gr" width="380" height="210" viewBox="0 0 380 210"></svg>
-  </div>
-  <div class="mid-gauges">
-    <svg id="ge" width="248" height="148" viewBox="0 0 248 148"></svg>
-    <svg id="gp" width="248" height="148" viewBox="0 0 248 148"></svg>
-    <svg id="gt" width="248" height="148" viewBox="0 0 248 148"></svg>
-  </div>
-  <div class="sub-strip">
-    <div class="sub-item"><div class="lbl">平均燃費</div><div class="val" id="v-ae">--.-</div><div class="unt">km/L</div></div>
-    <div class="sub-item"><div class="lbl">走行距離</div><div class="val" id="v-di">---.-</div><div class="unt">km</div></div>
-    <div class="sub-item"><div class="lbl">燃料消費</div><div class="val" id="v-fu">--.--</div><div class="unt">L</div></div>
-    <div class="sub-item"><div class="lbl">水温</div><div class="val" id="v-ct">--</div><div class="unt">℃</div></div>
-    <div class="sub-item"><div class="lbl">負荷</div><div class="val" id="v-ld">--</div><div class="unt">%</div></div>
+    <div class="shift-alert" id="shift-alert">▼ SHIFT DOWN ▼</div>
   </div>
 </div>
 
@@ -182,20 +159,17 @@ function ensureFilter(svg) {
 
 function buildGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
-  const { cx, cy, r, min, max, label, unit, mj, mn, numSz, rzStart, big } = cfg;
-  const trackW = big ? 4 : 2.5;
-  const arcW = big ? 4 : 2.5;
-  const needleW = big ? 2.5 : 1.5;
+  const { cx, cy, r, min, max, label, unit, mj, mn, numSz, rzStart } = cfg;
 
   ensureFilter(svg);
 
   // Track
-  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#15151e', 'stroke-width': trackW, 'stroke-linecap': 'round' });
+  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#15151e', 'stroke-width': 5, 'stroke-linecap': 'round' });
 
   // Red zone
   if (rzStart != null) {
     const rzA = SA + ((rzStart - min) / (max - min)) * SW;
-    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': trackW, 'stroke-linecap': 'round', opacity: '0.15' });
+    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 5, 'stroke-linecap': 'round', opacity: '0.15' });
   }
 
   // Ticks
@@ -203,49 +177,72 @@ function buildGauge(svgId, cfg) {
   for (let i = 0; i <= total; i++) {
     const a = SA + (i / total) * SW;
     const isMj = i % mn === 0;
-    const ri = isMj ? r - 14 : r - 8;
+    const ri = isMj ? r - 20 : r - 10;
     const ro = r + 2;
     const [x1, y1] = p2xy(cx, cy, ri, a);
     const [x2, y2] = p2xy(cx, cy, ro, a);
     el(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#444' : '#1e1e28', 'stroke-width': isMj ? 1.5 : 0.8 });
     if (isMj) {
       const v = min + (i / total) * (max - min);
-      const [lx, ly] = p2xy(cx, cy, r - 24, a);
-      const fs = big ? 13 : 11;
-      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': fs });
+      const [lx, ly] = p2xy(cx, cy, r - 34, a);
+      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': 15 });
       t.textContent = Math.round(v);
     }
   }
 
-  // Value arc (same radius as track)
-  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': arcW, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+  // Value arc
+  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 5, 'stroke-linecap': 'round', filter: 'url(#gl)' });
 
   // Needle
-  const [nx0, ny0] = p2xy(cx, cy, r - 18, SA);
-  const [tx0, ty0] = p2xy(cx, cy, -10, SA);
-  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': needleW, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
-  nd.style.transition = 'transform 0.4s ease-out';
+  const [nx0, ny0] = p2xy(cx, cy, r - 24, SA);
+  const [tx0, ty0] = p2xy(cx, cy, -14, SA);
+  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 3, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
+  nd.style.transition = 'transform 0.3s ease-out';
 
   // Center dot
-  el(svg, 'circle', { cx, cy, r: big ? 5 : 3.5, fill: '#1a1a22', stroke: '#333', 'stroke-width': 1.5 });
+  el(svg, 'circle', { cx, cy, r: 6, fill: '#1a1a22', stroke: '#333', 'stroke-width': 1.5 });
 
   // Number
-  const numY = big ? cy + r * 0.42 : cy + r * 0.1;
+  const numY = cy + r * 0.38;
   const nm = el(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
   nm.textContent = '--';
 
   // Unit
-  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.7, class: 'g-unit', fill: '#666', 'font-size': big ? 14 : 12 });
+  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#666', 'font-size': 16 });
   ut.textContent = unit;
 
   // Label
   if (label) {
-    const lb = el(svg, 'text', { x: cx, y: cy - r - 6, class: 'g-lbl', fill: '#555', 'font-size': 12 });
+    const lb = el(svg, 'text', { x: cx, y: cy - r - 8, class: 'g-lbl', fill: '#555', 'font-size': 14 });
     lb.textContent = label;
+  }
+
+  // Lerp interpolation for smooth arc + number
+  let curVal = min;
+  let tgtVal = min;
+  let rafId = 0;
+
+  function lerp() {
+    const d = tgtVal - curVal;
+    if (Math.abs(d) > 0.05) {
+      curVal += d * 0.15;
+    } else {
+      curVal = tgtVal;
+    }
+    const c = Math.max(min, Math.min(max, curVal));
+    const a = SA + ((c - min) / (max - min)) * SW;
+    va.setAttribute('d', c > min + 0.001 ? arcPath(cx, cy, r, SA, a) : '');
+    nm.textContent = cfg.fmt(curVal);
+    if (Math.abs(curVal - tgtVal) > 0.01) {
+      rafId = requestAnimationFrame(lerp);
+    } else {
+      rafId = 0;
+    }
   }
 
   return {
     update(value, col) {
+      tgtVal = value;
       const clamped = Math.max(min, Math.min(max, value));
       const angle = SA + ((clamped - min) / (max - min)) * SW;
       nd.style.transform = `rotate(${angle - SA}deg)`;
@@ -254,8 +251,7 @@ function buildGauge(svgId, cfg) {
         va.setAttribute('stroke', col);
         nm.setAttribute('fill', col);
       }
-      va.setAttribute('d', clamped > min + 0.001 ? arcPath(cx, cy, r, SA, angle) : '');
-      nm.textContent = cfg.fmt(value);
+      if (!rafId) rafId = requestAnimationFrame(lerp);
     }
   };
 }
@@ -277,49 +273,46 @@ function rpmCol(v) {
   if (v >= 1000) return '#42a5f5';
   return '#78909c';
 }
-function ecoCol(v) {
-  if (v >= 20) return '#00e676';
-  if (v >= 15) return '#69f0ae';
-  if (v >= 10) return '#ffeb3b';
-  if (v >= 5) return '#ff9800';
-  return '#f44336';
+
+// --- Efficiency indicator ---
+const effFill = document.getElementById('eff-fill');
+const effLabel = document.getElementById('eff-label');
+const shiftAlert = document.getElementById('shift-alert');
+
+function updateEfficiency(rpm, load, speed) {
+  effFill.style.width = Math.min(100, load) + '%';
+  effLabel.textContent = load > 0 ? `LOAD ${Math.round(load)}%` : 'LOAD --%';
+
+  // 停車・アイドル中は判定しない
+  if (speed < 15 || rpm < 500) {
+    effFill.style.backgroundColor = '#555';
+    shiftAlert.classList.remove('active');
+    return;
+  }
+
+  // ラギング指数 = 負荷 / RPM × 1000
+  // 高いほど低回転で高負荷（非効率）
+  const lugging = load / rpm * 1000;
+  if (lugging > 30) {
+    effFill.style.backgroundColor = '#f44336';
+    shiftAlert.classList.add('active');
+  } else if (lugging > 22) {
+    effFill.style.backgroundColor = '#ff9800';
+    shiftAlert.classList.remove('active');
+  } else {
+    effFill.style.backgroundColor = '#4caf50';
+    shiftAlert.classList.remove('active');
+  }
 }
 
-// --- Config defaults (fallback for file:// preview) ---
+// --- Config defaults ---
 const DEFAULTS = {
   redline_rpm: 6500,
   max_speed_kmh: 180,
-  max_rpm: 8000,
-  power_max_ps: 100,
-  torque_max_kgfm: 15,
-  gear_ratios: [
-    { gear: 1, ratio: 105.2 },
-    { gear: 2, ratio: 57.1 },
-    { gear: 3, ratio: 37.4 },
-    { gear: 4, ratio: 26.4 }
-  ]
+  max_rpm: 8000
 };
 
-// --- Gauge & gear variables (initialized in initApp) ---
-let gs, gr, ge, gp, gtt;
-let GEAR_RATIOS = DEFAULTS.gear_ratios;
-const GEAR_TOLERANCE = 0.15;
-const gearEls = [null, document.getElementById('g1'), document.getElementById('g2'), document.getElementById('g3'), document.getElementById('g4')];
-
-function estimateGear(rpm, speed) {
-  if (speed < 3) return 0;
-  const ratio = rpm / speed;
-  for (const g of GEAR_RATIOS) {
-    if (Math.abs(ratio - g.ratio) / g.ratio <= GEAR_TOLERANCE) return g.gear;
-  }
-  return 0;
-}
-
-function updateGearIndicator(gear) {
-  for (let i = 1; i <= 4; i++) {
-    gearEls[i].classList.toggle('active', i === gear);
-  }
-}
+let gs, gr;
 
 // --- Realtime API polling ---
 const statusDot = document.querySelector('.status-dot');
@@ -338,32 +331,11 @@ function setConnected(ok) {
 function applyData(d) {
   const spd = d.speed_kmh || 0;
   const rpm = d.rpm || 0;
-  const econ = d.instant_econ || 0;
-  const powerPS = d.est_power_ps || 0;
-  const torqueKgm = (d.est_torque_nm || 0) / 9.80665;
-  const cool = d.coolant_temp || 0;
   const load = d.engine_load || 0;
 
   gs.update(spd, spdCol(spd));
   gr.update(rpm, rpmCol(rpm));
-  if (spd > 2) {
-    ge.update(Math.min(30, econ), ecoCol(econ));
-  } else {
-    ge.update(0, '#555');
-  }
-  gp.update(powerPS);
-  gtt.update(torqueKgm);
-  updateGearIndicator(estimateGear(rpm, spd));
-
-  // Sub-strip
-  const trip = d.trip;
-  if (trip) {
-    document.getElementById('v-ae').textContent = trip.avg_fuel_econ_km_per_l > 0.1 ? trip.avg_fuel_econ_km_per_l.toFixed(1) : '--.-';
-    document.getElementById('v-di').textContent = trip.distance_km.toFixed(1);
-    document.getElementById('v-fu').textContent = trip.fuel_used_l.toFixed(2);
-  }
-  document.getElementById('v-ct').textContent = cool > 0 ? Math.round(cool) : '--';
-  document.getElementById('v-ld').textContent = load > 0 ? Math.round(load) : '--';
+  updateEfficiency(rpm, load, spd);
 
   // Alerts from API
   const prev = alerts.length;
@@ -396,9 +368,9 @@ async function fetchRealtime() {
   }
 }
 
-// --- Simulation fallback (for preview / no API) ---
+// --- Simulation fallback ---
 let simMode = false;
-let simT = 0, simTripDist = 14.6, simTripFuel = 0.83;
+let simT = 0;
 
 function startSimMode() {
   simMode = true;
@@ -407,59 +379,39 @@ function startSimMode() {
 
 function simTick() {
   simT += 0.02;
-  const phase = simT % 12;
-  let speed, rpm, econ, powerPS, torqueKgm, cool, load;
+  const phase = simT % 16;
+  let speed, rpm, load;
 
   if (phase < 3) {
+    // 発進加速
     const p = phase / 3;
-    speed = p * p * 65; rpm = 800 + p * 3200;
-    econ = 6 + p * 8; powerPS = p * p * 35; torqueKgm = p * 8.5;
-    cool = 88; load = 20 + p * 40;
+    speed = p * p * 60; rpm = 800 + p * 3200; load = 25 + p * 45;
   } else if (phase < 7) {
-    const w = Math.sin(simT * 3) * 3;
-    speed = 60 + w; rpm = 2200 + Math.sin(simT * 2) * 200;
-    econ = 16 + Math.sin(simT * 1.5) * 3; powerPS = 12 + Math.sin(simT * 2) * 3;
-    torqueKgm = 3.5 + Math.sin(simT * 2) * 0.8; cool = 90; load = 30 + Math.sin(simT * 2) * 5;
-  } else if (phase < 9) {
-    const p = (phase - 7) / 2;
-    speed = 60 + p * 60; rpm = 2200 + p * 3800;
-    econ = 5 + (1 - p) * 4; powerPS = 15 + p * p * 55; torqueKgm = 4 + p * 8;
-    cool = 92; load = 50 + p * 45;
+    // 巡航（効率的）
+    speed = 60 + Math.sin(simT * 3) * 3;
+    rpm = 2200 + Math.sin(simT * 2) * 200;
+    load = 28 + Math.sin(simT * 2) * 5;
+  } else if (phase < 10) {
+    // ラギング（低回転+高負荷）→ SHIFT DOWN 表示
+    speed = 45 + Math.sin(simT * 2) * 3;
+    rpm = 1300 + Math.sin(simT * 3) * 100;
+    load = 65 + Math.sin(simT * 1.5) * 8;
+  } else if (phase < 13) {
+    // シフトダウン後の加速
+    const p = (phase - 10) / 3;
+    speed = 45 + p * 40; rpm = 2800 + p * 2000;
+    load = 45 + p * 30;
   } else {
-    const p = (phase - 9) / 3;
-    speed = 120 * (1 - p * p); rpm = 5500 * (1 - p) + 800 * p;
-    econ = 25 + p * 5; powerPS = 2; torqueKgm = 0.5;
-    cool = 91; load = 10 * (1 - p) + 8;
+    // 減速
+    const p = (phase - 13) / 3;
+    speed = 85 * (1 - p * p); rpm = 4800 * (1 - p) + 800 * p;
+    load = 8 + (1 - p) * 5;
   }
-
-  const dt = 0.05 / 3600;
-  simTripDist += Math.max(0, speed) * dt;
-  simTripFuel += (speed > 2 ? speed / Math.max(econ, 1) : 0.8) * dt;
-  const avgEco = simTripFuel > 0.001 ? simTripDist / simTripFuel : 0;
 
   gs.update(Math.max(0, speed), spdCol(speed));
   gr.update(Math.max(0, rpm), rpmCol(rpm));
-  if (speed > 2) { ge.update(Math.min(30, econ), ecoCol(econ)); } else { ge.update(0, '#555'); }
-  gp.update(Math.max(0, powerPS));
-  gtt.update(Math.max(0, torqueKgm));
-  updateGearIndicator(estimateGear(rpm, speed));
-
-  document.getElementById('v-ae').textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--.-';
-  document.getElementById('v-di').textContent = simTripDist.toFixed(1);
-  document.getElementById('v-fu').textContent = simTripFuel.toFixed(2);
-  document.getElementById('v-ct').textContent = Math.round(cool);
-  document.getElementById('v-ld').textContent = Math.round(load);
+  updateEfficiency(rpm, load, speed);
 }
-
-// --- Clock & Date (Asia/Tokyo) ---
-function updateClock() {
-  const now = new Date();
-  const tz = { timeZone: 'Asia/Tokyo' };
-  document.getElementById('clock').textContent = now.toLocaleTimeString('ja-JP', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  document.getElementById('date').textContent = now.toLocaleDateString('ja-JP', { ...tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-}
-updateClock();
-setInterval(updateClock, 1000);
 
 // --- Alert rotation (10s) ---
 function updateAlert() {
@@ -478,37 +430,21 @@ async function initApp() {
   try {
     const resp = await fetch('/api/config');
     if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
-  } catch (e) { /* file:// mode, use defaults */ }
+  } catch (e) { /* file:// mode */ }
 
   gs = buildGauge('gs', {
-    cx: 190, cy: 120, r: 98, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 38, big: true,
+    cx: 200, cy: 190, r: 148, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 48,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
   gr = buildGauge('gr', {
-    cx: 190, cy: 120, r: 98, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 38, rzStart: conf.redline_rpm, big: true,
+    cx: 200, cy: 190, r: 148, min: 0, max: conf.max_rpm, color: '#78909c',
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 48, rzStart: conf.redline_rpm,
     fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
-  ge = buildGauge('ge', {
-    cx: 124, cy: 78, r: 62, min: 0, max: 30, color: '#69f0ae',
-    label: '瞬間燃費', unit: 'km/L', mj: 6, mn: 5, numSz: 26,
-    fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
-  });
-  gp = buildGauge('gp', {
-    cx: 124, cy: 78, r: 62, min: 0, max: conf.power_max_ps, color: '#ff7043',
-    label: '推定出力', unit: 'PS', mj: 5, mn: 4, numSz: 26,
-    fmt: v => v > 0.1 ? v.toFixed(1) : '--.-'
-  });
-  gtt = buildGauge('gt', {
-    cx: 124, cy: 78, r: 62, min: 0, max: conf.torque_max_kgfm, color: '#ffa726',
-    label: '推定トルク', unit: 'kgf·m', mj: 5, mn: 3, numSz: 26,
-    fmt: v => v > 0.05 ? v.toFixed(1) : '--.-'
-  });
-  if (conf.gear_ratios) GEAR_RATIOS = conf.gear_ratios;
 
   fetchRealtime();
-  setInterval(fetchRealtime, 500);
+  setInterval(fetchRealtime, 200);
 }
 initApp();
 </script>

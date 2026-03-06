@@ -15,12 +15,6 @@
   "max_rpm": 8000,
   "power_max_ps": 100,
   "torque_max_kgfm": 15,
-  "gear_ratios": [
-    { "gear": 1, "ratio": 105.2 },
-    { "gear": 2, "ratio": 57.1 },
-    { "gear": 3, "ratio": 37.4 },
-    { "gear": 4, "ratio": 26.4 }
-  ],
   "maintenance_reminders": [
     { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8 },
     { "id": "air_filter", "name": "エアフィルター交換", "type": "distance", "interval_km": 20000, "warning_pct": 0.85 },
