@@ -6,15 +6,11 @@
  * 2. シート名を「トリップ」「給油記録」「メンテナンス」「ダッシュボード」に変更
  * 3. 拡張機能 → Apps Script を開く
  * 4. このコードを貼り付け
- * 5. DISCORD_WEBHOOK_URL を設定（不要なら空文字のまま）
- * 6. デプロイ → 新しいデプロイ → ウェブアプリ
+ * 5. デプロイ → 新しいデプロイ → ウェブアプリ
  *    - 実行するユーザー: 自分
  *    - アクセスできるユーザー: 全員
  * 7. 表示されたURLをラズパイの config.json の webhook_url に設定
  */
-
-// === 設定 ===
-const DISCORD_WEBHOOK_URL = ''; // Discord Webhook URL（空なら通知しない）
 
 // === Webhook エンドポイント ===
 function doPost(e) {
@@ -58,18 +54,6 @@ function handleTrip(data) {
     drivingMin,
     idleMin
   ]);
-  
-  // Discord通知
-  if (DISCORD_WEBHOOK_URL) {
-    sendDiscord(
-      '🚗 トリップ完了',
-      `距離: **${round(data.distance_km, 1)} km** | ` +
-      `燃費: **${round(data.avg_fuel_econ || 0, 1)} km/L** | ` +
-      `燃料: **${round(data.fuel_used_l, 2)} L** | ` +
-      `最高速度: ${round(data.max_speed_kmh || 0, 0)} km/h | ` +
-      `走行: ${drivingMin}分`
-    );
-  }
   
   // ダッシュボード更新
   updateDashboard();
@@ -268,23 +252,3 @@ function jsonResponse(data, statusCode) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function sendDiscord(title, description) {
-  if (!DISCORD_WEBHOOK_URL) return;
-  
-  try {
-    UrlFetchApp.fetch(DISCORD_WEBHOOK_URL, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({
-        embeds: [{
-          title: title,
-          description: description,
-          color: 0x42a5f5,
-          timestamp: new Date().toISOString()
-        }]
-      })
-    });
-  } catch (err) {
-    Logger.log('Discord通知エラー: ' + err.message);
-  }
-}

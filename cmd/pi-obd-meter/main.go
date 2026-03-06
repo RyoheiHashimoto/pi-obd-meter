@@ -29,7 +29,6 @@ type GearRatio struct {
 type Config struct {
 	SerialPort           string                   `json:"serial_port"`
 	WebhookURL           string                   `json:"webhook_url"`
-	DiscordWebhook       string                   `json:"discord_webhook"`
 	PollIntervalMs       int                      `json:"poll_interval_ms"`
 	ResetThreshold       float64                  `json:"reset_threshold_km"`
 	LocalAPIPort         int                      `json:"local_api_port"`
@@ -78,7 +77,6 @@ func loadConfig(path string) Config {
 	cfg := Config{
 		SerialPort:           "/dev/rfcomm0",
 		WebhookURL:           "", // Google Apps Script Webhook URL
-		DiscordWebhook:       "",
 		PollIntervalMs:       500,
 		ResetThreshold:       0.5,
 		LocalAPIPort:         9090,

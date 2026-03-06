@@ -1,7 +1,6 @@
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
-  "discord_webhook": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
   "poll_interval_ms": 500,
   "reset_threshold_km": 0.5,
   "local_api_port": 9090,
