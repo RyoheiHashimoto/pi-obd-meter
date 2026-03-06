@@ -3,9 +3,16 @@
 # kiosk.service (systemd) から自動起動される
 # 手動実行: bash /opt/pi-obd-meter/configs/kiosk.sh
 
-# Wayland 環境設定（Raspberry Pi OS bookworm+ は labwc）
-export WAYLAND_DISPLAY=wayland-0
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+# 画面設定
+export DISPLAY=:0
+
+# スクリーンセーバー無効化
+xset s off
+xset -dpms
+xset s noblank
+
+# マウスカーソル非表示
+unclutter -idle 0.5 -root &
 
 # config.jsonからポート番号を取得
 CONFIG="/opt/pi-obd-meter/configs/config.json"
@@ -19,6 +26,7 @@ until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do
 done
 
 # Chromiumをキオスクモードで起動（800x480 フルスクリーン）
+# Chromium翻訳無効化の設定を配置
 KIOSK_PROFILE="/tmp/chromium-kiosk"
 mkdir -p "${KIOSK_PROFILE}/Default"
 cat > "${KIOSK_PROFILE}/Default/Preferences" << 'EOF'
@@ -39,5 +47,4 @@ chromium \
     --disk-cache-dir=/dev/null \
     --window-size=800,480 \
     --window-position=0,0 \
-    --ozone-platform=wayland \
     "http://localhost:${PORT}/meter.html"

@@ -6,8 +6,7 @@ Wants=pi-obd-meter.service
 [Service]
 Type=simple
 User=laurel
-Environment=WAYLAND_DISPLAY=wayland-0
-Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DISPLAY=:0
 ExecStart=/bin/bash /opt/pi-obd-meter/configs/kiosk.sh
 Restart=on-failure
 RestartSec=10
