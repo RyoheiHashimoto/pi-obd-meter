@@ -149,21 +149,9 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, pid, raw)
 	}
 
-	// バッチ2: 冷却水温 + 燃料タンク
-	batch2 := []byte{PIDCoolantTemp, PIDFuelTankLevel}
-	result2, err := r.elm.QueryMultiPID(batch2)
-	if err == nil {
-		for pid, raw := range result2 {
-			parsePID(data, pid, raw)
-		}
-	} else {
-		// バッチ2失敗は個別に取る
-		if raw, err := r.elm.QueryPID(PIDCoolantTemp); err == nil {
-			parsePID(data, PIDCoolantTemp, raw)
-		}
-		if raw, err := r.elm.QueryPID(PIDFuelTankLevel); err == nil {
-			parsePID(data, PIDFuelTankLevel, raw)
-		}
+	// 燃料タンク（個別クエリ、給油検出用）
+	if raw, err := r.elm.QueryPID(PIDFuelTankLevel); err == nil {
+		parsePID(data, PIDFuelTankLevel, raw)
 	}
 
 	return data, nil
@@ -172,7 +160,7 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 // readAllSingle は従来の個別PIDクエリで読み取る（フォールバック）
 func (r *Reader) readAllSingle() (*OBDData, error) {
 	data := &OBDData{}
-	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDCoolantTemp, PIDFuelTankLevel}
+	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDFuelTankLevel}
 
 	for _, pid := range pids {
 		if raw, err := r.elm.QueryPID(pid); err == nil {
