@@ -60,33 +60,43 @@ func NewManager(filePath string) *Manager {
 	return m
 }
 
-// InitDefaults はDYデミオ用のデフォルトリマインダーを設定する
-func (m *Manager) InitDefaults() {
+// InitDefaults はリマインダーを初期化する。
+// configReminders が指定されていればそれを使い、空ならハードコードのデフォルト値を使う。
+func (m *Manager) InitDefaults(configReminders []Reminder) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	defaults := []*Reminder{
-		{
-			ID: "oil_change", Name: "エンジンオイル交換",
-			Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8,
-		},
-		{
-			ID: "air_filter", Name: "エアフィルター交換",
-			Type: TypeDistance, IntervalKm: 20000, WarningPct: 0.85,
-		},
-		{
-			ID: "tire_rotation", Name: "タイヤローテーション",
-			Type: TypeDistance, IntervalKm: 10000, WarningPct: 0.8,
-		},
-		{
-			ID: "shaken", Name: "車検",
-			Type: TypeDate, IntervalDays: 730, WarningPct: 0.9, // 2年、残り2ヶ月で警告
-		},
-		{
-			ID: "atf_change", Name: "ATF交換",
-			Type: TypeDistance, IntervalKm: 40000, WarningPct: 0.9, // 残り4,000kmで警告
-			LastResetKm: 80000, // 前回交換: ODO 80,000km → 次回: 120,000km
-		},
+	var defaults []*Reminder
+
+	if len(configReminders) > 0 {
+		defaults = make([]*Reminder, len(configReminders))
+		for i := range configReminders {
+			r := configReminders[i]
+			defaults[i] = &r
+		}
+	} else {
+		defaults = []*Reminder{
+			{
+				ID: "oil_change", Name: "エンジンオイル交換",
+				Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8,
+			},
+			{
+				ID: "air_filter", Name: "エアフィルター交換",
+				Type: TypeDistance, IntervalKm: 20000, WarningPct: 0.85,
+			},
+			{
+				ID: "tire_rotation", Name: "タイヤローテーション",
+				Type: TypeDistance, IntervalKm: 10000, WarningPct: 0.8,
+			},
+			{
+				ID: "shaken", Name: "車検",
+				Type: TypeDate, IntervalDays: 730, WarningPct: 0.9,
+			},
+			{
+				ID: "atf_change", Name: "ATF交換",
+				Type: TypeDistance, IntervalKm: 40000, WarningPct: 0.9,
+			},
+		}
 	}
 
 	for _, r := range defaults {

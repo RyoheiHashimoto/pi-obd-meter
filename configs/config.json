@@ -21,6 +21,13 @@
     { "gear": 3, "ratio": 37.4 },
     { "gear": 4, "ratio": 26.4 }
   ],
+  "maintenance_reminders": [
+    { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8 },
+    { "id": "air_filter", "name": "エアフィルター交換", "type": "distance", "interval_km": 20000, "warning_pct": 0.85 },
+    { "id": "tire_rotation", "name": "タイヤローテーション", "type": "distance", "interval_km": 10000, "warning_pct": 0.8 },
+    { "id": "shaken", "name": "車検", "type": "date", "interval_days": 730, "warning_pct": 0.9 },
+    { "id": "atf_change", "name": "ATF交換", "type": "distance", "interval_km": 40000, "warning_pct": 0.9 }
+  ],
   "brightness": {
     "hdmi_output": "HDMI-1",
     "schedule": [

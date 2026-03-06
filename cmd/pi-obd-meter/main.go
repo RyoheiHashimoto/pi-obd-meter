@@ -45,6 +45,7 @@ type Config struct {
 	PowerMaxPS           int                      `json:"power_max_ps"`
 	TorqueMaxKgfm        float64                  `json:"torque_max_kgfm"`
 	GearRatios           []GearRatio              `json:"gear_ratios"`
+	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
 
@@ -152,7 +153,7 @@ func main() {
 
 	// --- メンテナンスマネージャー ---
 	maintMgr := maintenance.NewManager(cfg.MaintenancePath)
-	maintMgr.InitDefaults()
+	maintMgr.InitDefaults(cfg.MaintenanceReminders)
 	fmt.Printf("✓ メンテナンスリマインダー: %d 項目\n", len(maintMgr.GetAll()))
 
 	// --- トリップトラッカー ---
