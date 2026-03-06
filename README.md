@@ -155,7 +155,6 @@ pi-obd-meter/
 │   ├── obd/               # ELM327通信、PID定義、DTC
 │   ├── trip/              # トリップ追跡
 │   ├── sender/            # Google Sheets送信（GAS webhook）
-│   ├── notify/            # Discord通知
 │   ├── display/           # 画面輝度制御
 │   └── maintenance/       # メンテナンスリマインダー
 ├── web/static/

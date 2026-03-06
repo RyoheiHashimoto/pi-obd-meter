@@ -213,7 +213,7 @@ Goの再ビルドをスキップして、HTMLだけ転送。
 ### 判断の目安
 
 overlayFSをONにしていいタイミング：
-- ELM327接続、メーター表示、Google Sheets送信、Discord通知、すべて正常動作を確認済み
+- ELM327接続、メーター表示、Google Sheets送信、すべて正常動作を確認済み
 - 1週間くらい普通に使って問題が出ていない
 - 「しばらくコードは変更しない」と思える
 
@@ -279,9 +279,8 @@ sleep 30
 
 1. 拡張機能 → Apps Script
 2. `gas/webhook.gs` の内容をまるごと貼り付け
-3. `DISCORD_WEBHOOK_URL` を設定（Discordで Webhook URLを発行）
-4. `setup()` 関数を1回実行（シートの初期化）
-5. デプロイ → 新しいデプロイ → ウェブアプリ
+3. `setup()` 関数を1回実行（シートの初期化）
+4. デプロイ → 新しいデプロイ → ウェブアプリ
    - 実行するユーザー: 自分
    - アクセスできるユーザー: 全員
 6. 表示されたURLをコピー
@@ -292,7 +291,6 @@ sleep 30
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
-  "discord_webhook": "https://discord.com/api/webhooks/XXXXXX",
   "poll_interval_ms": 500,
   "local_api_port": 9090
 }
@@ -345,7 +343,6 @@ pi-obd-meter/
 │   ├── obd/                   # ELM327通信、PID、DTC
 │   ├── trip/                  # トリップ追跡
 │   ├── sender/                # Google Sheets送信
-│   ├── notify/                # Discord通知
 │   ├── display/               # 画面輝度制御
 │   └── maintenance/           # メンテナンスリマインダー
 ├── web/static/
