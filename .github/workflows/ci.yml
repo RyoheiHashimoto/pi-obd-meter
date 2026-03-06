@@ -19,10 +19,16 @@ jobs:
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64
 
       - name: Test
         run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: |
+          go tool cover -func=coverage.out
+          COVERAGE=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}' | tr -d '%')
+          echo "## Test Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
 
       - name: Build (host)
         run: |

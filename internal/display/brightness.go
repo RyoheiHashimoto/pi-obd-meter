@@ -39,7 +39,7 @@ func DefaultConfig() BrightnessConfig {
 type BrightnessController struct {
 	mu       sync.RWMutex
 	config   BrightnessConfig
-	current  float64 // 現在の輝度（0.0〜1.0）
+	current  float64  // 現在の輝度（0.0〜1.0）
 	manual   *float64 // 手動オーバーライド（nilなら自動）
 	manualAt time.Time
 	stopCh   chan struct{}
@@ -191,12 +191,12 @@ func (bc *BrightnessController) setBrightness(value float64) {
 
 // Status は現在の輝度状態を返す
 type BrightnessStatus struct {
-	Current    float64              `json:"current"`     // 現在の輝度 0.0〜1.0
-	Percent    int                  `json:"percent"`     // 現在の輝度 %
-	IsManual   bool                 `json:"is_manual"`   // 手動オーバーライド中か
-	Scheduled  float64              `json:"scheduled"`   // スケジュール上の輝度
-	TimeLabel  string               `json:"time_label"`  // 現在の時間帯ラベル
-	Schedule   []BrightnessSchedule `json:"schedule"`    // 全スケジュール
+	Current   float64              `json:"current"`    // 現在の輝度 0.0〜1.0
+	Percent   int                  `json:"percent"`    // 現在の輝度 %
+	IsManual  bool                 `json:"is_manual"`  // 手動オーバーライド中か
+	Scheduled float64              `json:"scheduled"`  // スケジュール上の輝度
+	TimeLabel string               `json:"time_label"` // 現在の時間帯ラベル
+	Schedule  []BrightnessSchedule `json:"schedule"`   // 全スケジュール
 }
 
 func (bc *BrightnessController) Status() BrightnessStatus {

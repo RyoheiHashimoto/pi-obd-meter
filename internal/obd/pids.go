@@ -7,28 +7,28 @@ import (
 
 // PID定義（DYデミオで使いそうなもの）
 const (
-	PIDEngineRPM        byte = 0x0C // エンジン回転数
-	PIDVehicleSpeed     byte = 0x0D // 車速 (km/h)
-	PIDIntakeAirTemp    byte = 0x0F // 吸気温度
-	PIDMAF              byte = 0x10 // MAFセンサー (g/s)
-	PIDEngineLoad       byte = 0x04 // エンジン負荷 (%)
-	PIDCoolantTemp      byte = 0x05 // 冷却水温度
-	PIDIntakeManifold   byte = 0x0B // インマニ圧 (kPa) ← DYデミオはMAP式の可能性
-	PIDFuelTankLevel    byte = 0x2F // 燃料タンクレベル (%)
+	PIDEngineRPM         byte = 0x0C // エンジン回転数
+	PIDVehicleSpeed      byte = 0x0D // 車速 (km/h)
+	PIDIntakeAirTemp     byte = 0x0F // 吸気温度
+	PIDMAF               byte = 0x10 // MAFセンサー (g/s)
+	PIDEngineLoad        byte = 0x04 // エンジン負荷 (%)
+	PIDCoolantTemp       byte = 0x05 // 冷却水温度
+	PIDIntakeManifold    byte = 0x0B // インマニ圧 (kPa) ← DYデミオはMAP式の可能性
+	PIDFuelTankLevel     byte = 0x2F // 燃料タンクレベル (%)
 	PIDRunTimeSinceStart byte = 0x1F // エンジン始動後の経過時間
 )
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
-	RPM            float64 // rpm
-	SpeedKmh       float64 // km/h
-	MAF            float64 // g/s (取得できない場合は0)
-	EngineLoad     float64 // 0-100%
-	IntakeManifold float64 // kPa
-	IntakeAirTemp  float64 // ℃
-	CoolantTemp    float64 // ℃
-	FuelTankLevel  float64 // 0-100%
-	HasMAF         bool    // MAFセンサーが使えるか
+	RPM            float64      // rpm
+	SpeedKmh       float64      // km/h
+	MAF            float64      // g/s (取得できない場合は0)
+	EngineLoad     float64      // 0-100%
+	IntakeManifold float64      // kPa
+	IntakeAirTemp  float64      // ℃
+	CoolantTemp    float64      // ℃
+	FuelTankLevel  float64      // 0-100%
+	HasMAF         bool         // MAFセンサーが使えるか
 	engineCfg      EngineConfig // 計算用
 }
 
@@ -46,18 +46,18 @@ const (
 
 // EngineConfig はエンジン固有の設定値（外部から注入）
 type EngineConfig struct {
-	DisplacementL          float64 // 排気量 (L) — ZJ-VE: 1.348, ZY-VE: 1.498
-	ThermalEfficiency      float64 // 熱効率 (0.25〜0.30)
-	VolumetricEfficiency   float64 // 体積効率 (0.80〜0.90、満タン法で校正)
+	DisplacementL        float64 // 排気量 (L) — ZJ-VE: 1.348, ZY-VE: 1.498
+	ThermalEfficiency    float64 // 熱効率 (0.25〜0.30)
+	VolumetricEfficiency float64 // 体積効率 (0.80〜0.90、満タン法で校正)
 }
 
 // Reader はOBD-2データを読み取る
 type Reader struct {
-	elm             *ELM327
-	hasMAF          bool
-	supportsMulti   bool   // マルチPIDリクエスト対応フラグ
-	multiTested     bool   // マルチPID対応テスト済みフラグ
-	EngineCfg       EngineConfig
+	elm           *ELM327
+	hasMAF        bool
+	supportsMulti bool // マルチPIDリクエスト対応フラグ
+	multiTested   bool // マルチPID対応テスト済みフラグ
+	EngineCfg     EngineConfig
 }
 
 // NewReader は新しいReaderを作成する

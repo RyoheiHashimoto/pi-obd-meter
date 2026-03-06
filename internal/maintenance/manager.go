@@ -13,32 +13,32 @@ type ReminderType string
 
 const (
 	TypeDistance ReminderType = "distance" // 距離ベース（オイル交換等）
-	TypeDate    ReminderType = "date"     // 日付ベース（車検等）
+	TypeDate     ReminderType = "date"     // 日付ベース（車検等）
 )
 
 // Reminder はメンテナンスリマインダー
 type Reminder struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Type        ReminderType `json:"type"`
-	IntervalKm  float64      `json:"interval_km,omitempty"`  // 距離ベース: 交換間隔 (km)
-	IntervalDays int         `json:"interval_days,omitempty"` // 日付ベース: 間隔 (日)
-	LastResetKm float64      `json:"last_reset_km"`           // 前回リセット時の総走行距離
-	LastResetAt time.Time    `json:"last_reset_at"`           // 前回リセット日時
-	NotifiedAt  *time.Time   `json:"notified_at,omitempty"`   // 最後に通知した日時
-	WarningPct  float64      `json:"warning_pct"`             // 警告を出す割合 (0.8 = 80%到達時)
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	Type         ReminderType `json:"type"`
+	IntervalKm   float64      `json:"interval_km,omitempty"`   // 距離ベース: 交換間隔 (km)
+	IntervalDays int          `json:"interval_days,omitempty"` // 日付ベース: 間隔 (日)
+	LastResetKm  float64      `json:"last_reset_km"`           // 前回リセット時の総走行距離
+	LastResetAt  time.Time    `json:"last_reset_at"`           // 前回リセット日時
+	NotifiedAt   *time.Time   `json:"notified_at,omitempty"`   // 最後に通知した日時
+	WarningPct   float64      `json:"warning_pct"`             // 警告を出す割合 (0.8 = 80%到達時)
 }
 
 // Status はリマインダーの現在状態
 type Status struct {
 	Reminder    Reminder `json:"reminder"`
-	CurrentKm   float64  `json:"current_km,omitempty"`     // 前回リセットからの走行距離
-	RemainingKm float64  `json:"remaining_km,omitempty"`   // 残り距離
-	DaysElapsed int      `json:"days_elapsed,omitempty"`   // 前回リセットからの経過日数
-	DaysLeft    int      `json:"days_left,omitempty"`      // 残り日数
-	Progress    float64  `json:"progress"`                 // 進捗 0.0 - 1.0+
-	NeedsAlert  bool     `json:"needs_alert"`              // 通知が必要か
-	IsOverdue   bool     `json:"is_overdue"`               // 超過しているか
+	CurrentKm   float64  `json:"current_km,omitempty"`   // 前回リセットからの走行距離
+	RemainingKm float64  `json:"remaining_km,omitempty"` // 残り距離
+	DaysElapsed int      `json:"days_elapsed,omitempty"` // 前回リセットからの経過日数
+	DaysLeft    int      `json:"days_left,omitempty"`    // 残り日数
+	Progress    float64  `json:"progress"`               // 進捗 0.0 - 1.0+
+	NeedsAlert  bool     `json:"needs_alert"`            // 通知が必要か
+	IsOverdue   bool     `json:"is_overdue"`             // 超過しているか
 }
 
 // Manager はメンテナンスリマインダーを管理する
@@ -250,5 +250,5 @@ func (m *Manager) load() {
 	if err != nil {
 		return
 	}
-	json.Unmarshal(data, &m.reminders)
+	_ = json.Unmarshal(data, &m.reminders)
 }

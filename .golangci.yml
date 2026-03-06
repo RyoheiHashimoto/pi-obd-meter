@@ -1,0 +1,31 @@
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosimple
+    - gofmt
+    - misspell
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      # HTTP handler helpers (error already sent to client)
+      - (net/http.ResponseWriter).Write
+      - (*encoding/json.Encoder).Encode
+      # Fire-and-forget persistence (overlayFS may be read-only)
+      - os.WriteFile
+      # Fire-and-forget sends (retried by queue or non-critical)
+      - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).SendTrip
+      - (*github.com/hashimoto/pi-obd-meter/internal/notify.Discord).SendMaintenanceAlert
+      # Server start (blocks forever, error only on bind failure)
+      - net/http.ListenAndServe
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

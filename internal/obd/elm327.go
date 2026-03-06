@@ -40,7 +40,9 @@ func (e *ELM327) Connect() error {
 		return fmt.Errorf("シリアルポートを開けません %s: %w", e.portName, err)
 	}
 
-	port.SetReadTimeout(2 * time.Second)
+	if err := port.SetReadTimeout(2 * time.Second); err != nil {
+		return fmt.Errorf("read timeout設定失敗: %w", err)
+	}
 	e.port = port
 	e.reader = bufio.NewReader(port)
 
@@ -71,7 +73,7 @@ func (e *ELM327) Connect() error {
 func (e *ELM327) Close() error {
 	if e.port != nil {
 		// ELM327チップをLow Powerモードに移行（BT基板は起きたまま）
-		e.sendCommand("AT LP")
+		_, _ = e.sendCommand("AT LP")
 		return e.port.Close()
 	}
 	return nil
@@ -88,17 +90,16 @@ func (e *ELM327) sendCommand(cmd string) (string, error) {
 	}
 
 	var response strings.Builder
-	for {
-		line, err := e.reader.ReadString('>')
-		if err != nil {
-			// タイムアウトの場合、それまでに読めた分を返す
-			if response.Len() > 0 {
-				break
-			}
+	line, err := e.reader.ReadString('>')
+	if err != nil {
+		// タイムアウトの場合、それまでに読めた分を返す
+		if response.Len() > 0 {
+			response.WriteString(line)
+		} else {
 			return "", fmt.Errorf("受信エラー: %w", err)
 		}
+	} else {
 		response.WriteString(line)
-		break
 	}
 
 	result := strings.TrimSpace(response.String())

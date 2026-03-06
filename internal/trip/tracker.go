@@ -10,17 +10,17 @@ import (
 
 // TripData は1トリップ分の集計データ
 type TripData struct {
-	TripID        string    `json:"trip_id"`
-	StartTime     time.Time `json:"start_time"`
-	EndTime       time.Time `json:"end_time"`
-	DistanceKm    float64   `json:"distance_km"`
-	FuelUsedL     float64   `json:"fuel_used_l"`
-	AvgFuelEconKm float64   `json:"avg_fuel_econ_km_per_l"`
-	MaxSpeedKmh   float64   `json:"max_speed_kmh"`
-	AvgSpeedKmh   float64   `json:"avg_speed_kmh"`
-	DrivingTimeSec float64  `json:"driving_time_sec"`
-	IdleTimeSec   float64   `json:"idle_time_sec"`
-	Samples       int       `json:"samples"`
+	TripID         string    `json:"trip_id"`
+	StartTime      time.Time `json:"start_time"`
+	EndTime        time.Time `json:"end_time"`
+	DistanceKm     float64   `json:"distance_km"`
+	FuelUsedL      float64   `json:"fuel_used_l"`
+	AvgFuelEconKm  float64   `json:"avg_fuel_econ_km_per_l"`
+	MaxSpeedKmh    float64   `json:"max_speed_kmh"`
+	AvgSpeedKmh    float64   `json:"avg_speed_kmh"`
+	DrivingTimeSec float64   `json:"driving_time_sec"`
+	IdleTimeSec    float64   `json:"idle_time_sec"`
+	Samples        int       `json:"samples"`
 }
 
 // Tracker はトリップの走行距離・燃料消費を追跡する
@@ -33,8 +33,8 @@ type Tracker struct {
 	speedSum      float64
 
 	// リセット検知
-	prevDistanceKm  float64
-	resetThreshold  float64 // km - この距離以下になったらリセットと判定
+	prevDistanceKm float64
+	resetThreshold float64 // km - この距離以下になったらリセットと判定
 
 	// 永続化パス
 	statePath string
@@ -195,13 +195,13 @@ func (t *Tracker) GetCurrent() TripData {
 
 type persistedState struct {
 	Current       TripData `json:"current"`
-	PrevDistance   float64  `json:"prev_distance"`
-	LastTimestamp  int64    `json:"last_timestamp"`
+	PrevDistance  float64  `json:"prev_distance"`
+	LastTimestamp int64    `json:"last_timestamp"`
 }
 
 func (t *Tracker) saveState() {
 	state := persistedState{
-		Current:      t.current,
+		Current:       t.current,
 		PrevDistance:  t.prevDistanceKm,
 		LastTimestamp: t.lastTimestamp.Unix(),
 	}

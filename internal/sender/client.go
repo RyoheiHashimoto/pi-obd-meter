@@ -25,7 +25,7 @@ func NewClient(webhookURL string) *Client {
 	return &Client{
 		webhookURL: webhookURL,
 		httpClient: &http.Client{
-			Timeout:       30 * time.Second, // GASは応答が遅いことがある
+			Timeout: 30 * time.Second, // GASは応答が遅いことがある
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return nil // GASのリダイレクトを許可
 			},

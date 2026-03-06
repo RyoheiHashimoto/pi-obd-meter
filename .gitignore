@@ -16,6 +16,9 @@ bin/
 .DS_Store
 Thumbs.db
 
+# Test coverage
+coverage.out
+
 # Serena
 .serena/
 

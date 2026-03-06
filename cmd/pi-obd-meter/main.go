@@ -22,36 +22,36 @@ import (
 
 // Config はアプリケーション設定
 type Config struct {
-	SerialPort          string  `json:"serial_port"`
-	WebhookURL          string  `json:"webhook_url"`
-	DiscordWebhook      string  `json:"discord_webhook"`
-	PollIntervalMs      int     `json:"poll_interval_ms"`
-	ResetThreshold      float64 `json:"reset_threshold_km"`
-	LocalAPIPort        int     `json:"local_api_port"`
-	MaintenancePath     string  `json:"maintenance_path"`
-	WebStaticDir        string  `json:"web_static_dir"`
-	EngineDisplacementCC float64               `json:"engine_displacement_cc"`
-	VECoefficient        float64               `json:"ve_coefficient"`
-	ThermalEfficiency    float64               `json:"thermal_efficiency"`
-	RedlineRPM           int                   `json:"redline_rpm"`
+	SerialPort           string                   `json:"serial_port"`
+	WebhookURL           string                   `json:"webhook_url"`
+	DiscordWebhook       string                   `json:"discord_webhook"`
+	PollIntervalMs       int                      `json:"poll_interval_ms"`
+	ResetThreshold       float64                  `json:"reset_threshold_km"`
+	LocalAPIPort         int                      `json:"local_api_port"`
+	MaintenancePath      string                   `json:"maintenance_path"`
+	WebStaticDir         string                   `json:"web_static_dir"`
+	EngineDisplacementCC float64                  `json:"engine_displacement_cc"`
+	VECoefficient        float64                  `json:"ve_coefficient"`
+	ThermalEfficiency    float64                  `json:"thermal_efficiency"`
+	RedlineRPM           int                      `json:"redline_rpm"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh       float64              `json:"speed_kmh"`
-	RPM            float64              `json:"rpm"`
-	InstantEcon    float64              `json:"instant_econ"`
-	FuelRateLph    float64              `json:"fuel_rate_lph"`
-	CoolantTemp    float64              `json:"coolant_temp"`
-	FuelTank       float64              `json:"fuel_tank_pct"`
-	EstPowerKW     float64              `json:"est_power_kw"`
-	EstPowerPS     float64              `json:"est_power_ps"`
-	EstTorqueNm    float64              `json:"est_torque_nm"`
-	EngineLoad     float64              `json:"engine_load"`
-	Trip           *trip.TripData       `json:"trip"`
-	Alerts         []maintenance.Status `json:"alerts"`
-	DTCs           *obd.DTCResult       `json:"dtcs,omitempty"`
+	SpeedKmh    float64              `json:"speed_kmh"`
+	RPM         float64              `json:"rpm"`
+	InstantEcon float64              `json:"instant_econ"`
+	FuelRateLph float64              `json:"fuel_rate_lph"`
+	CoolantTemp float64              `json:"coolant_temp"`
+	FuelTank    float64              `json:"fuel_tank_pct"`
+	EstPowerKW  float64              `json:"est_power_kw"`
+	EstPowerPS  float64              `json:"est_power_ps"`
+	EstTorqueNm float64              `json:"est_torque_nm"`
+	EngineLoad  float64              `json:"engine_load"`
+	Trip        *trip.TripData       `json:"trip"`
+	Alerts      []maintenance.Status `json:"alerts"`
+	DTCs        *obd.DTCResult       `json:"dtcs,omitempty"`
 }
 
 var (
@@ -62,19 +62,19 @@ var (
 
 func loadConfig(path string) Config {
 	cfg := Config{
-		SerialPort:          "/dev/rfcomm0",
-		WebhookURL:          "", // Google Apps Script Webhook URL
-		DiscordWebhook:      "",
-		PollIntervalMs:      500,
-		ResetThreshold:      0.5,
-		LocalAPIPort:        9090,
-		MaintenancePath:     "/var/lib/pi-obd-meter/maintenance.json",
-		WebStaticDir:        "/opt/pi-obd-meter/web/static",
+		SerialPort:           "/dev/rfcomm0",
+		WebhookURL:           "", // Google Apps Script Webhook URL
+		DiscordWebhook:       "",
+		PollIntervalMs:       500,
+		ResetThreshold:       0.5,
+		LocalAPIPort:         9090,
+		MaintenancePath:      "/var/lib/pi-obd-meter/maintenance.json",
+		WebStaticDir:         "/opt/pi-obd-meter/web/static",
 		EngineDisplacementCC: 1348, // ZJ-VE 1.3L
 		VECoefficient:        0.85, // 体積効率、満タン法で校正
 		ThermalEfficiency:    0.28, // 初期値、全開加速で校正
 		RedlineRPM:           6500, // ZJ-VE レッドゾーン開始
-		Brightness:          display.DefaultConfig(),
+		Brightness:           display.DefaultConfig(),
 	}
 
 	data, err := os.ReadFile(path)
@@ -82,7 +82,7 @@ func loadConfig(path string) Config {
 		log.Printf("設定ファイルが見つかりません、デフォルト設定を使用: %v", err)
 		return cfg
 	}
-	json.Unmarshal(data, &cfg)
+	_ = json.Unmarshal(data, &cfg)
 	return cfg
 }
 
@@ -296,7 +296,7 @@ func startLocalAPI(cfg Config, tracker *trip.Tracker, maintMgr *maintenance.Mana
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"redline_rpm":           cfg.RedlineRPM,
+			"redline_rpm":            cfg.RedlineRPM,
 			"engine_displacement_cc": cfg.EngineDisplacementCC,
 		})
 	})

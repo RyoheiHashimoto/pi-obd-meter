@@ -47,7 +47,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer elm.Close()
-	fmt.Println("✓ ELM327接続完了\n")
+	fmt.Println("✓ ELM327接続完了")
 
 	fmt.Println("対応PIDをスキャン中...")
 	supported, err := elm.ScanSupportedPIDs()
@@ -112,7 +112,7 @@ func main() {
 	// リアルタイムテスト
 	fmt.Println("\nリアルタイムデータテスト（Ctrl+Cで終了）:")
 	reader := obd.NewReader(elm, obd.EngineConfig{})
-	reader.DetectCapabilities()
+	_ = reader.DetectCapabilities()
 
 	data, err := reader.ReadAll()
 	if err != nil {
