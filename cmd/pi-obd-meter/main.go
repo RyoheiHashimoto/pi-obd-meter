@@ -80,7 +80,7 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 			fuelRateLH = 0.8 // アイドリング最低消費量
 		} else {
 			airFlowEstimate := (rpm / 2.0) * (load / 100.0) * displacementL / 60.0 // L/s of air
-			airMassGS := airFlowEstimate * 1.225 * 1000.0                           // g/s (空気密度1.225 kg/m³)
+			airMassGS := airFlowEstimate * 1.225                                    // g/s (空気密度1.225 kg/m³ = 1.225 g/L)
 			fuelRateLH = airMassGS * 3600.0 / (14.7 * 750.0)
 		}
 	}
@@ -88,8 +88,8 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 	if fuelRateLH < 0.01 {
 		return 99.9 // エンブレ・コースティング
 	}
-	if speed < 0.5 {
-		return 0 // 停車中はアイドリング消費のみ → 0 km/L
+	if speed < 10 {
+		return 0 // 低速域（クリープ等）は燃費表示しない
 	}
 	kmL := speed / fuelRateLH
 	if kmL > 99.9 {
