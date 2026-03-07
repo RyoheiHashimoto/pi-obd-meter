@@ -546,6 +546,9 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager,
 				if odoApplied != nil {
 					*odoApplied = true
 				}
+				// 補正後のステータスを即座に再送信（GASシートを更新するため）
+				sendMaintenanceStatus(client, maintMgr, totalKm, odoApplied, tracker)
+				return
 			} else if odoApplied != nil && *odoApplied {
 				// GASが補正をクリア済み → フラグをリセット
 				*odoApplied = false

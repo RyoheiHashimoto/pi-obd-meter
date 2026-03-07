@@ -343,7 +343,9 @@ function updateIndicators(d) {
 
   // ECO (instantaneous fuel economy km/L)
   const eco = d.fuel_economy || 0;
-  if (eco >= 15) {
+  if (eco < 0.1) {
+    indEco.className = 'ind-dot';
+  } else if (eco >= 15) {
     indEco.className = 'ind-dot on-green';
   } else if (eco >= 10) {
     indEco.className = 'ind-dot on-orange';
