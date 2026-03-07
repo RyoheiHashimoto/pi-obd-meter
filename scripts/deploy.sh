@@ -36,7 +36,7 @@ cmd_deploy() {
 cmd_deploy_web() {
   echo "Deploying web UI to ${PI}:${DEST}/web/static/..."
   rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
-  ssh "$PI" "sudo systemctl restart ${SERVICE}"
+  ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
   echo "✓ Web UIのみデプロイ完了"
 }
 
@@ -58,7 +58,7 @@ cmd_setup() {
 cmd_ssh()           { ssh "$PI"; }
 cmd_logs()          { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
 cmd_status()        { ssh "$PI" "systemctl status ${SERVICE}"; }
-cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
+cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"; }
 cmd_kiosk_logs()    { ssh "$PI" "journalctl -u kiosk -f"; }
 cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart kiosk"; }
 cmd_shutdown()      { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
