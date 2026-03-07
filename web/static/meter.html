@@ -12,7 +12,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #050508;
-    color: #ccc;
+    color: #fff;
     font-family: 'Share Tech Mono', 'Courier New', monospace;
     width: 800px; height: 480px;
     overflow: hidden;
@@ -66,10 +66,11 @@
   }
   .hbar-name {
     font-family: 'Share Tech Mono', monospace;
-    font-size: 16px;
-    color: #555;
+    font-size: 18px;
+    font-weight: 700;
+    color: #fff;
     letter-spacing: 2px;
-    width: 52px;
+    width: 56px;
   }
   .hbar-wrap {
     flex: 1;
@@ -90,10 +91,10 @@
   }
   .hbar-val {
     font-family: 'Orbitron', monospace;
-    font-size: 18px;
-    font-weight: 700;
-    color: #aaa;
-    width: 36px;
+    font-size: 20px;
+    font-weight: 900;
+    color: #fff;
+    width: 40px;
     text-align: right;
   }
   .indicators {
@@ -123,7 +124,8 @@
   .ind-label {
     font-family: 'Share Tech Mono', monospace;
     font-size: 14px;
-    color: #444;
+    font-weight: 700;
+    color: #fff;
     letter-spacing: 1px;
   }
   .ind-dot.on-green { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
@@ -132,9 +134,9 @@
   .ind-dot.blink-red { background: #f44336; box-shadow: 0 0 6px #f44336; animation: blink 1s infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
-  .g-unit { font-family: 'Share Tech Mono', monospace; text-anchor: middle; }
-  .g-lbl { font-family: 'Share Tech Mono', monospace; text-anchor: middle; letter-spacing: 2px; }
-  .tk-lbl { font-family: 'Share Tech Mono', monospace; text-anchor: middle; dominant-baseline: middle; }
+  .g-unit { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; }
+  .g-lbl { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; letter-spacing: 2px; }
+  .tk-lbl { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
 </style>
 </head>
 <body>
@@ -204,12 +206,12 @@ function buildGauge(svgId, cfg) {
   ensureFilter(svg);
 
   // Track
-  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#15151e', 'stroke-width': 5, 'stroke-linecap': 'round' });
+  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#15151e', 'stroke-width': 7, 'stroke-linecap': 'round' });
 
   // Red zone
   if (rzStart != null) {
     const rzA = SA + ((rzStart - min) / (max - min)) * SW;
-    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 5, 'stroke-linecap': 'round', opacity: '0.15' });
+    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 7, 'stroke-linecap': 'round', opacity: '0.15' });
   }
 
   // Ticks
@@ -221,22 +223,22 @@ function buildGauge(svgId, cfg) {
     const ro = r + 2;
     const [x1, y1] = p2xy(cx, cy, ri, a);
     const [x2, y2] = p2xy(cx, cy, ro, a);
-    el(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#444' : '#1e1e28', 'stroke-width': isMj ? 1.5 : 0.8 });
+    el(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#888' : '#2a2a35', 'stroke-width': isMj ? 2.5 : 1.2 });
     if (isMj) {
       const v = min + (i / total) * (max - min);
       const [lx, ly] = p2xy(cx, cy, r - 34, a);
-      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#666', 'font-size': tickFontSize });
+      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': tickFontSize });
       t.textContent = Math.round(v);
     }
   }
 
   // Value arc
-  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 5, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 7, 'stroke-linecap': 'round', filter: 'url(#gl)' });
 
   // Needle
   const [nx0, ny0] = p2xy(cx, cy, r - 24, SA);
   const [tx0, ty0] = p2xy(cx, cy, -14, SA);
-  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 3, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
+  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 4, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
   nd.style.transition = 'transform 0.3s ease-out';
 
   // Center dot
@@ -248,12 +250,12 @@ function buildGauge(svgId, cfg) {
   nm.textContent = '--';
 
   // Unit
-  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#666', 'font-size': 18 });
+  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#fff', 'font-size': 20 });
   ut.textContent = unit;
 
   // Label
   if (label) {
-    const lb = el(svg, 'text', { x: cx, y: cy - r - 10, class: 'g-lbl', fill: '#555', 'font-size': 16 });
+    const lb = el(svg, 'text', { x: cx, y: cy - r - 10, class: 'g-lbl', fill: '#fff', 'font-size': 18 });
     lb.textContent = label;
   }
 
@@ -492,12 +494,12 @@ async function initApp() {
 
   gs = buildGauge('gs', {
     cx: 200, cy: 235, r: 185, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 54, tkSz: 17,
+    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 58, tkSz: 19,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
   gr = buildGauge('gr', {
     cx: 200, cy: 235, r: 185, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 54, tkSz: 17, rzStart: conf.redline_rpm,
+    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 58, tkSz: 19, rzStart: conf.redline_rpm,
     fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
 
