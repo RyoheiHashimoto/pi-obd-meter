@@ -20,7 +20,7 @@
     { "id": "atf_change", "name": "ATF交換", "type": "distance", "interval_km": 40000, "warning_pct": 0.9 }
   ],
   "brightness": {
-    "hdmi_output": "HDMI-1",
+    "hdmi_output": "HDMI-A-1",
     "schedule": [
       {"hour": 5,  "brightness": 0.6, "label": "早朝"},
       {"hour": 7,  "brightness": 1.0, "label": "昼間"},
