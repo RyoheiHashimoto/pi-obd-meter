@@ -265,7 +265,7 @@ func main() {
 	retryTicker := time.NewTicker(5 * time.Minute)
 	defer retryTicker.Stop()
 
-	maintTicker := time.NewTicker(30 * time.Minute)
+	maintTicker := time.NewTicker(5 * time.Minute)
 	defer maintTicker.Stop()
 
 	obdRetryTicker := time.NewTicker(10 * time.Second)
