@@ -154,7 +154,8 @@ func main() {
 	fmt.Printf("✓ メンテナンスリマインダー: %d 項目\n", len(maintMgr.GetAll()))
 
 	// --- トリップトラッカー（距離積算 + 燃料状態管理用） ---
-	var totalKmAccum float64
+	totalKmAccum := maintMgr.TotalKm() // 前回保存値から復元
+	fmt.Printf("✓ 累計走行距離: %.1f km（復元済み）\n", totalKmAccum)
 	tracker := trip.NewTracker(trip.TrackerConfig{
 		ResetThresholdKm: cfg.ResetThreshold,
 	})
@@ -180,6 +181,9 @@ func main() {
 
 	retryTicker := time.NewTicker(5 * time.Minute)
 	defer retryTicker.Stop()
+
+	maintTicker := time.NewTicker(30 * time.Minute)
+	defer maintTicker.Stop()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -258,6 +262,9 @@ func main() {
 
 		case <-retryTicker.C:
 			client.RetryPending()
+
+		case <-maintTicker.C:
+			sendMaintenanceStatus(client, maintMgr)
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)

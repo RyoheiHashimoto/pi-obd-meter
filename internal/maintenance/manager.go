@@ -111,11 +111,16 @@ func (m *Manager) InitDefaults(configReminders []Reminder) {
 	m.save()
 }
 
-// UpdateTotalKm は累計走行距離を更新する
+// UpdateTotalKm は累計走行距離を更新する。1kmごとにファイルに永続化する。
 func (m *Manager) UpdateTotalKm(totalKm float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	prev := m.totalKm
 	m.totalKm = totalKm
+	// 1km刻みで永続化（頻繁な書き込みを防ぐ）
+	if int(totalKm) > int(prev) {
+		m.save()
+	}
 }
 
 // CheckAll は全リマインダーの状態をチェックする
@@ -250,10 +255,27 @@ func (m *Manager) GetAll() []*Reminder {
 	return result
 }
 
+// TotalKm は永続化された累計走行距離を返す（起動時の復元用）
+func (m *Manager) TotalKm() float64 {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.totalKm
+}
+
 // --- 永続化 ---
 
+// persistState はファイルに保存する状態（reminders + totalKm）
+type persistState struct {
+	TotalKm   float64              `json:"total_km"`
+	Reminders map[string]*Reminder `json:"reminders"`
+}
+
 func (m *Manager) save() {
-	data, err := json.MarshalIndent(m.reminders, "", "  ")
+	state := persistState{
+		TotalKm:   m.totalKm,
+		Reminders: m.reminders,
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		log.Printf("maintenance state marshal error: %v", err)
 		return
@@ -271,7 +293,20 @@ func (m *Manager) load() {
 	if err != nil {
 		return
 	}
-	if err := json.Unmarshal(data, &m.reminders); err != nil {
-		log.Printf("maintenance state parse error, using defaults: %v", err)
+
+	// 新フォーマット（persistState）を試す
+	var state persistState
+	if err := json.Unmarshal(data, &state); err == nil && state.Reminders != nil {
+		m.reminders = state.Reminders
+		m.totalKm = state.TotalKm
+		return
 	}
+
+	// 旧フォーマット（map[string]*Reminder のみ）からのマイグレーション
+	var old map[string]*Reminder
+	if err := json.Unmarshal(data, &old); err != nil {
+		log.Printf("maintenance state parse error, using defaults: %v", err)
+		return
+	}
+	m.reminders = old
 }
