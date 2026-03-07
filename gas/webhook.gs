@@ -297,6 +297,7 @@ function buildDashboardHtml() {
   var fuelData = getSheetData('給油記録');
   var maintData = getSheetData('メンテ状態');
   var completedIds = getCompletedIds();
+  var currentOdo = parseFloat(getSettingValue('total_km')) || 0;
 
   // 給油: 新しい順、最大10件
   var recentFuel = fuelData.length > 0 ? fuelData.slice(-10).reverse() : [];
@@ -442,7 +443,10 @@ function buildDashboardHtml() {
   // === ODO補正フォーム ===
   html += '<div class="card">';
   html += '<h2>🔧 ODO補正</h2>';
-  html += '<div class="form-group"><label>現在のODOメーター (km)</label><input type="number" id="odo-val" class="form-input" inputmode="numeric" placeholder="98500"></div>';
+  if (currentOdo > 0) {
+    html += '<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在の記録値: <b style="color:#fff">' + Math.round(currentOdo).toLocaleString() + ' km</b></div>';
+  }
+  html += '<div class="form-group"><label>現在のODOメーター (km)</label><input type="number" id="odo-val" class="form-input" inputmode="numeric" placeholder="' + (currentOdo > 0 ? Math.round(currentOdo) : '98500') + '"></div>';
   html += '<div class="form-hint">車のメーターと合わせて補正します。次回メンテナンス送信時にPiに反映されます。</div>';
   html += '<button class="form-submit" id="odo-btn" onclick="submitOdo()">ODOを補正</button>';
   html += '<div class="form-result" id="odo-result"></div>';
