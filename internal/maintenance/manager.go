@@ -200,6 +200,24 @@ func (m *Manager) TotalKm() float64 {
 	return m.totalKm
 }
 
+// ResetReminder は指定IDのリマインダーをリセットする
+func (m *Manager) ResetReminder(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	r, exists := m.reminders[id]
+	if !exists {
+		return false
+	}
+
+	now := time.Now()
+	r.LastResetKm = m.totalKm
+	r.LastResetAt = now
+	r.NotifiedAt = nil
+	m.save()
+	return true
+}
+
 // --- 永続化 ---
 
 // persistState はファイルに保存する状態（reminders + totalKm）

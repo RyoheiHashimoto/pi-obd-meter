@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"sync"
 	"time"
-
 )
 
 // Client はGoogle Apps Script Webhookへデータを送信するクライアント
@@ -43,6 +43,47 @@ type GASPayload struct {
 func (c *Client) Send(payloadType string, data interface{}) error {
 	payload := GASPayload{Type: payloadType, Data: data}
 	return c.sendPayload(payload)
+}
+
+// SendWithResponse はデータをGASに送信し、レスポンスボディを返す
+func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte, error) {
+	payload := GASPayload{Type: payloadType, Data: data}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("JSON変換エラー: %w", err)
+	}
+
+	c.mu.Lock()
+	c.sending = true
+	c.mu.Unlock()
+
+	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
+
+	c.mu.Lock()
+	c.sending = false
+	c.mu.Unlock()
+
+	if err != nil {
+		log.Printf("送信失敗（リトライキューに追加）[%s]: %v", payload.Type, err)
+		c.enqueue(payload)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		c.enqueue(payload)
+		return nil, fmt.Errorf("Webhook エラー [%s]: status %d", payload.Type, resp.StatusCode)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("レスポンス読み取りエラー [%s]: %v", payload.Type, err)
+		return nil, nil // 送信自体は成功
+	}
+
+	log.Printf("✓ %s データ送信完了", payload.Type)
+	return respBody, nil
 }
 
 // sendPayload はペイロードを送信する

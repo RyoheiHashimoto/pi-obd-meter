@@ -481,11 +481,28 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager)
 		items = append(items, item)
 	}
 
-	client.Send("maintenance", map[string]interface{}{
+	respBody, err := client.SendWithResponse("maintenance", map[string]interface{}{
 		"statuses": items,
 		"sent_at":  time.Now(),
 	})
+	if err != nil {
+		return
+	}
 	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
+
+	// GASレスポンスからpending_resetsを処理
+	if len(respBody) > 0 {
+		var gasResp struct {
+			PendingResets []string `json:"pending_resets"`
+		}
+		if json.Unmarshal(respBody, &gasResp) == nil {
+			for _, id := range gasResp.PendingResets {
+				if maintMgr.ResetReminder(id) {
+					log.Printf("✓ メンテナンスリセット: %s", id)
+				}
+			}
+		}
+	}
 }
 
 // corsMiddleware はCORSヘッダーを付与する
