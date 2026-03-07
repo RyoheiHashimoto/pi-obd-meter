@@ -230,7 +230,7 @@ function buildSpeedGauge(svgId, cfg) {
   // THR inner arc (track, thick)
   const thrR = r - 80;
   el(svg, 'path', { d: arcPath(cx, cy, thrR, SA, EA), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  thrArc = el(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  thrArc = el(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round', filter: 'url(#gl)' });
 
   // THROTTLE label (between THR arc top and center)
   thrLabel = el(svg, 'text', { x: cx, y: cy - Math.round(thrR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
