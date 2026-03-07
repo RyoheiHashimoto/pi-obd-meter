@@ -197,28 +197,33 @@ function buildDashboardHtml() {
   html += '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
   html += '<title>DYデミオ</title>';
   html += '<style>';
-  html += 'body{margin:0;padding:16px;background:#0a0a10;color:#ccc;font-family:-apple-system,sans-serif;font-size:14px}';
-  html += 'h1{font-size:18px;color:#fff;margin:0 0 4px}';
-  html += '.sub{font-size:11px;color:#666;margin-bottom:16px}';
-  html += '.card{background:#12121a;border-radius:8px;padding:12px;margin-bottom:12px}';
-  html += '.card h2{font-size:14px;color:#888;margin:0 0 8px;letter-spacing:1px}';
-  html += 'table{width:100%;border-collapse:collapse;font-size:12px}';
-  html += 'th{text-align:left;color:#666;padding:4px 6px;border-bottom:1px solid #1a1a24}';
-  html += 'td{padding:4px 6px;border-bottom:1px solid #0f0f18}';
-  html += '.bar-bg{height:6px;background:#1a1a24;border-radius:3px;overflow:hidden;margin-top:4px}';
-  html += '.bar-fg{height:100%;border-radius:3px}';
+  html += '*{box-sizing:border-box}';
+  html += 'html,body{margin:0;padding:0;width:100%;min-height:100%;background:#0a0a10;color:#ccc;font-family:-apple-system,sans-serif;font-size:16px;-webkit-text-size-adjust:100%}';
+  html += '.wrap{width:100%;padding:16px}';
+  html += 'h1{font-size:20px;color:#fff;margin:0 0 4px}';
+  html += '.sub{font-size:12px;color:#666;margin-bottom:16px}';
+  html += '.card{background:#12121a;border-radius:10px;padding:14px;margin-bottom:14px}';
+  html += '.card h2{font-size:15px;color:#888;margin:0 0 10px;letter-spacing:1px}';
+  html += '.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}';
+  html += 'table{width:100%;border-collapse:collapse;font-size:14px}';
+  html += 'th{text-align:left;color:#666;padding:6px 8px;border-bottom:1px solid #1a1a24}';
+  html += 'td{padding:6px 8px;border-bottom:1px solid #0f0f18}';
+  html += '.bar-bg{height:8px;background:#1a1a24;border-radius:4px;overflow:hidden;margin-top:6px}';
+  html += '.bar-fg{height:100%;border-radius:4px}';
   html += '.ok{background:#4caf50} .warn{background:#ff9800} .danger{background:#f44336}';
-  html += '.maint-item{padding:8px 0;border-bottom:1px solid #1a1a24}';
+  html += '.maint-item{padding:10px 0;border-bottom:1px solid #1a1a24}';
   html += '.maint-item:last-child{border:none}';
-  html += '.maint-name{font-weight:600;color:#ddd}';
-  html += '.maint-detail{font-size:12px;color:#888;margin-top:2px}';
-  html += '.maint-row{display:flex;justify-content:space-between;align-items:center}';
-  html += '.done-btn{background:#2a2a35;color:#888;border:1px solid #3a3a45;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;white-space:nowrap}';
-  html += '.toggle-btn{background:none;border:none;color:#666;cursor:pointer;padding:8px 0;font-size:12px;width:100%;text-align:center}';
-  html += '.completed-date{font-size:11px;color:#4caf50}';
+  html += '.maint-name{font-weight:600;color:#ddd;font-size:15px}';
+  html += '.maint-detail{font-size:13px;color:#888;margin-top:3px}';
+  html += '.maint-row{display:flex;justify-content:space-between;align-items:center;gap:8px}';
+  html += '.done-btn{background:#2a2a35;color:#aaa;border:1px solid #3a3a45;border-radius:6px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent}';
+  html += '.done-btn:active{background:#3a3a45}';
+  html += '.toggle-btn{background:none;border:none;color:#666;cursor:pointer;padding:10px 0;font-size:13px;width:100%;text-align:center;-webkit-tap-highlight-color:transparent}';
+  html += '.completed-date{font-size:12px;color:#4caf50}';
   html += '</style></head><body>';
 
   // ヘッダー
+  html += '<div class="wrap">';
   html += '<h1>DYデミオ ダッシュボード</h1>';
   html += '<div class="sub">更新: ' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') + '</div>';
 
@@ -226,18 +231,18 @@ function buildDashboardHtml() {
   if (recentFuel.length > 0) {
     html += '<div class="card">';
     html += '<h2>📊 給油履歴</h2>';
-    html += '<table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th></tr>';
+    html += '<div class="tbl-wrap"><table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th></tr>';
     var fuelLimit = Math.min(5, recentFuel.length);
     for (var i = 0; i < fuelLimit; i++) {
       html += renderFuelRow(recentFuel[i]);
     }
-    html += '</table>';
+    html += '</table></div>';
     if (recentFuel.length > 5) {
-      html += '<div id="fuel-extra" style="display:none"><table>';
+      html += '<div id="fuel-extra" style="display:none"><div class="tbl-wrap"><table>';
       for (var i = 5; i < recentFuel.length; i++) {
         html += renderFuelRow(recentFuel[i]);
       }
-      html += '</table></div>';
+      html += '</table></div></div>';
       html += '<button class="toggle-btn" id="fuel-extra-btn" onclick="toggleSection(\'fuel-extra\')">もっと見る ▼</button>';
     }
     html += '</div>';
@@ -296,6 +301,7 @@ function buildDashboardHtml() {
   html += '}';
   html += '</script>';
 
+  html += '</div>';
   html += '</body></html>';
   return html;
 }
