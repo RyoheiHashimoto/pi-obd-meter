@@ -326,10 +326,19 @@ function updateIndicators(d) {
   indWifi.className = 'ind-dot ' + (wifiOk ? 'on-green' : 'on-red');
   wifiVal.textContent = wifiOk ? 'OK' : 'NG';
 
-  // SEND (queue count: 0=green, 1=orange, 2+=red)
+  // SEND (sending=orange, failed in queue=red, idle=green)
   const pending = d.pending_count || 0;
-  indSend.className = 'ind-dot ' + (pending >= 2 ? 'on-red' : pending > 0 ? 'on-orange' : 'on-green');
-  sendVal.textContent = String(pending);
+  const sending = d.send_sending || false;
+  if (pending > 0) {
+    indSend.className = 'ind-dot on-red';
+    sendVal.textContent = String(pending);
+  } else if (sending) {
+    indSend.className = 'ind-dot on-orange';
+    sendVal.textContent = '...';
+  } else {
+    indSend.className = 'ind-dot on-green';
+    sendVal.textContent = 'OK';
+  }
 
   // MAINT (alert count)
   const alerts = d.alerts || [];

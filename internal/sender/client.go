@@ -17,6 +17,7 @@ type Client struct {
 	httpClient *http.Client
 	retryQueue []GASPayload // メモリ上のリトライキュー（overlayFSのためファイル保存しない）
 	mu         sync.Mutex
+	sending    bool // 送信中フラグ
 }
 
 // NewClient は新しいクライアントを作成する
@@ -51,7 +52,16 @@ func (c *Client) sendPayload(payload GASPayload) error {
 		return fmt.Errorf("JSON変換エラー: %w", err)
 	}
 
+	c.mu.Lock()
+	c.sending = true
+	c.mu.Unlock()
+
 	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
+
+	c.mu.Lock()
+	c.sending = false
+	c.mu.Unlock()
+
 	if err != nil {
 		log.Printf("送信失敗（リトライキューに追加）[%s]: %v", payload.Type, err)
 		c.enqueue(payload)
@@ -95,6 +105,13 @@ func (c *Client) QueueSize() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return len(c.retryQueue)
+}
+
+// IsSending は送信中かどうかを返す
+func (c *Client) IsSending() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sending
 }
 
 // sendDirect はリトライキューに入れずに直接送信する

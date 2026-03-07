@@ -53,6 +53,7 @@ type RealtimeData struct {
 	OBDConnected   bool                 `json:"obd_connected"`
 	WiFiConnected  bool                 `json:"wifi_connected"`
 	PendingCount   int                  `json:"pending_count"`
+	SendSending    bool                 `json:"send_sending"`
 }
 
 var version = "dev"
@@ -277,6 +278,7 @@ func main() {
 						OBDConnected:  false,
 						WiFiConnected: wifiConnected,
 						PendingCount:  client.QueueSize(),
+				SendSending:   client.IsSending(),
 					}
 					dataMu.Unlock()
 				}
