@@ -11,7 +11,7 @@
   @font-face { font-family: 'Share Tech Mono'; font-style: normal; font-weight: 400; src: url('fonts/ShareTechMono-Regular.woff2') format('woff2'); }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #050508;
+    background: #000;
     color: #fff;
     font-family: 'Share Tech Mono', 'Courier New', monospace;
     width: 800px; height: 480px;
@@ -21,14 +21,27 @@
   }
   .dashboard {
     display: flex;
-    flex-direction: column;
-    height: 100%;
+    width: 100%; height: 100%;
   }
+  .gauge-area {
+    width: 560px; height: 480px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .panel {
+    width: 240px; height: 480px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    align-items: stretch;
+    padding: 8px 10px;
+  }
+  /* --- Toast --- */
   .toast {
     position: fixed;
-    top: 50%; left: 50%;
+    top: 50%; left: 280px;
     transform: translate(-50%, -50%);
-    background: rgba(10, 10, 15, 0.92);
+    background: rgba(0, 0, 0, 0.95);
     border: 1px solid #ffb74d;
     border-radius: 8px;
     padding: 16px 32px;
@@ -43,124 +56,105 @@
     transition: opacity 0.5s ease-in-out;
   }
   .toast.show { opacity: 1; }
-  .gauges {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-  }
-  .gauges svg { margin: 0; }
-  .bottom-bars {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 24px;
-    height: 80px;
-    padding: 0 20px;
-  }
-  .hbar-group {
+  /* --- Right panel indicators --- */
+  .ind-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    flex: 1;
-  }
-  .hbar-name {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 18px;
-    font-weight: 700;
-    color: #fff;
-    letter-spacing: 2px;
-    width: 56px;
-  }
-  .hbar-wrap {
-    flex: 1;
-    height: 22px;
-    background: #111;
-    border-radius: 3px;
-    position: relative;
-    overflow: hidden;
-  }
-  .hbar-fill {
-    position: absolute;
-    left: 0;
-    height: 100%;
-    width: 0%;
-    background: #555;
-    transition: width 0.3s ease-out, background-color 0.3s;
-    border-radius: 3px;
-  }
-  .hbar-val {
-    font-family: 'Orbitron', monospace;
-    font-size: 20px;
-    font-weight: 900;
-    color: #fff;
-    width: 40px;
-    text-align: right;
-  }
-  .indicators {
-    position: absolute;
-    top: 6px;
-    left: 0;
-    right: 0;
-    display: flex;
-    justify-content: space-between;
-    padding: 0 16px;
-    z-index: 20;
-    pointer-events: none;
-  }
-  .ind {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+    gap: 14px;
+    padding: 0 8px;
   }
   .ind-dot {
-    width: 14px;
-    height: 14px;
+    width: 30px; height: 30px;
     border-radius: 50%;
-    background: #222;
-    border: 1px solid #333;
+    background: #1a1a22;
+    border: 2px solid #333;
+    flex-shrink: 0;
     transition: background-color 0.5s, box-shadow 0.5s;
   }
+  .ind-dot.on-green { background: #4caf50; box-shadow: 0 0 14px #4caf50; }
+  .ind-dot.on-orange { background: #ff9800; box-shadow: 0 0 14px #ff9800; }
+  .ind-dot.on-red { background: #f44336; box-shadow: 0 0 14px #f44336; }
   .ind-label {
     font-family: 'Share Tech Mono', monospace;
-    font-size: 14px;
+    font-size: 26px;
+    font-weight: 700;
+    color: #888;
+    letter-spacing: 1px;
+    flex: 1;
+  }
+  .ind-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 26px;
     font-weight: 700;
     color: #fff;
-    letter-spacing: 1px;
+    text-align: right;
   }
-  .ind-dot.on-green { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
-  .ind-dot.on-red { background: #f44336; box-shadow: 0 0 6px #f44336; }
-  .ind-dot.on-orange { background: #ff9800; box-shadow: 0 0 6px #ff9800; }
-  .ind-dot.blink-red { background: #f44336; box-shadow: 0 0 6px #f44336; animation: blink 1s infinite; }
-  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  /* --- Outside temp (large) --- */
+  .temp-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    padding: 0 8px;
+  }
+  .temp-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 26px;
+    color: #888;
+    margin-right: 8px;
+  }
+  .temp-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 54px;
+    font-weight: 900;
+    color: #fff;
+  }
+  .temp-unit {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 26px;
+    color: #888;
+    margin-left: 4px;
+  }
+  /* --- SVG classes --- */
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; }
-  .g-lbl { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; letter-spacing: 2px; }
   .tk-lbl { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
 </style>
 </head>
 <body>
 <div class="dashboard">
-  <div class="gauges">
-    <div class="indicators">
-      <div class="ind"><div class="ind-dot" id="ind-obd"></div><span class="ind-label">OBD</span></div>
-      <div class="ind"><div class="ind-dot" id="ind-maint"></div><span class="ind-label">MAINT</span></div>
-      <div class="ind"><div class="ind-dot" id="ind-lug"></div><span class="ind-label">LUG</span></div>
-      <div class="ind"><div class="ind-dot" id="ind-wifi"></div><span class="ind-label">WiFi</span></div>
-    </div>
-    <svg id="gs" width="400" height="400" viewBox="0 0 400 400"></svg>
-    <svg id="gr" width="400" height="400" viewBox="0 0 400 400"></svg>
+  <div class="gauge-area">
+    <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
   </div>
-  <div class="bottom-bars">
-    <div class="hbar-group">
-      <span class="hbar-name">THR</span>
-      <div class="hbar-wrap"><div class="hbar-fill" id="throttle-fill"></div></div>
-      <span class="hbar-val" id="throttle-val">--</span>
+  <div class="panel">
+    <div class="temp-row">
+      <span class="temp-label">TEMP</span>
+      <span class="temp-val" id="outside-temp">--</span>
+      <span class="temp-unit">&deg;C</span>
     </div>
-    <div class="hbar-group">
-      <span class="hbar-name">LOAD</span>
-      <div class="hbar-wrap"><div class="hbar-fill" id="load-fill"></div></div>
-      <span class="hbar-val" id="load-val">--</span>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-eco"></div>
+      <span class="ind-label">ECO</span>
+      <span class="ind-val" id="eco-val"></span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-send"></div>
+      <span class="ind-label">SEND</span>
+      <span class="ind-val" id="send-val"></span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-maint"></div>
+      <span class="ind-label">MAINT</span>
+      <span class="ind-val" id="maint-val"></span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-obd"></div>
+      <span class="ind-label">OBD</span>
+      <span class="ind-val" id="obd-val"></span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-wifi"></div>
+      <span class="ind-label">WiFi</span>
+      <span class="ind-val" id="wifi-val"></span>
     </div>
   </div>
 </div>
@@ -198,88 +192,81 @@ function ensureFilter(svg) {
   defs.innerHTML = '<filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 }
 
-function buildGauge(svgId, cfg) {
+// --- Build speed gauge with inner THR arc ---
+let thrArc, thrLabel;
+function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
-  const { cx, cy, r, min, max, label, unit, mj, mn, numSz, tkSz, rzStart } = cfg;
-  const tickFontSize = tkSz || 15;
+  const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz, rzStart } = cfg;
 
   ensureFilter(svg);
 
-  // Track
-  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#15151e', 'stroke-width': 7, 'stroke-linecap': 'round' });
+  // Track (thick bezel)
+  el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
 
   // Red zone
   if (rzStart != null) {
     const rzA = SA + ((rzStart - min) / (max - min)) * SW;
-    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 7, 'stroke-linecap': 'round', opacity: '0.15' });
+    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: '0.15' });
   }
 
-  // Ticks
+  // Ticks (bold)
   const total = mj * mn;
   for (let i = 0; i <= total; i++) {
     const a = SA + (i / total) * SW;
     const isMj = i % mn === 0;
-    const ri = isMj ? r - 20 : r - 10;
-    const ro = r + 2;
+    const ri = isMj ? r - 30 : r - 18;
+    const ro = r + 4;
     const [x1, y1] = p2xy(cx, cy, ri, a);
     const [x2, y2] = p2xy(cx, cy, ro, a);
-    el(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#888' : '#2a2a35', 'stroke-width': isMj ? 2.5 : 1.2 });
+    el(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 5 : 2.5 });
     if (isMj) {
       const v = min + (i / total) * (max - min);
-      const [lx, ly] = p2xy(cx, cy, r - 34, a);
-      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': tickFontSize });
+      const [lx, ly] = p2xy(cx, cy, r - 50, a);
+      const t = el(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': tkSz });
       t.textContent = Math.round(v);
     }
   }
 
-  // Value arc
-  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 7, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+  // THR inner arc (track, thick)
+  const thrR = r - 80;
+  el(svg, 'path', { d: arcPath(cx, cy, thrR, SA, EA), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  thrArc = el(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
-  // Needle
+  // THROTTLE label (between THR arc top and center)
+  thrLabel = el(svg, 'text', { x: cx, y: cy - Math.round(thrR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
+  thrLabel.textContent = 'THROTTLE';
+
+  // Value arc (thick)
+  const va = el(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+
+  // Needle (bold)
   const [nx0, ny0] = p2xy(cx, cy, r - 24, SA);
-  const [tx0, ty0] = p2xy(cx, cy, -14, SA);
-  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 4, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
+  const [tx0, ty0] = p2xy(cx, cy, -16, SA);
+  const nd = el(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
   nd.style.transition = 'transform 0.3s ease-out';
 
   // Center dot
-  el(svg, 'circle', { cx, cy, r: 6, fill: '#1a1a22', stroke: '#333', 'stroke-width': 1.5 });
+  el(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
   // Number
-  const numY = cy + r * 0.38;
+  const numY = cy + r * 0.35;
   const nm = el(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
   nm.textContent = '--';
 
   // Unit
-  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.65, class: 'g-unit', fill: '#fff', 'font-size': 20 });
+  const ut = el(svg, 'text', { x: cx, y: numY + numSz * 0.55, class: 'g-unit', fill: '#fff', 'font-size': 28 });
   ut.textContent = unit;
 
-  // Label
-  if (label) {
-    const lb = el(svg, 'text', { x: cx, y: cy - r - 10, class: 'g-lbl', fill: '#fff', 'font-size': 18 });
-    lb.textContent = label;
-  }
-
-  // Lerp interpolation for smooth arc + number
-  let curVal = min;
-  let tgtVal = min;
-  let rafId = 0;
-
+  // Lerp
+  let curVal = min, tgtVal = min, rafId = 0;
   function lerp() {
     const d = tgtVal - curVal;
-    if (Math.abs(d) > 0.05) {
-      curVal += d * 0.15;
-    } else {
-      curVal = tgtVal;
-    }
+    if (Math.abs(d) > 0.05) { curVal += d * 0.15; } else { curVal = tgtVal; }
     const c = Math.max(min, Math.min(max, curVal));
     const a = SA + ((c - min) / (max - min)) * SW;
     va.setAttribute('d', c > min + 0.001 ? arcPath(cx, cy, r, SA, a) : '');
     nm.textContent = cfg.fmt(curVal);
-    if (Math.abs(curVal - tgtVal) > 0.01) {
-      rafId = requestAnimationFrame(lerp);
-    } else {
-      rafId = 0;
-    }
+    if (Math.abs(curVal - tgtVal) > 0.01) { rafId = requestAnimationFrame(lerp); } else { rafId = 0; }
   }
 
   return {
@@ -288,17 +275,24 @@ function buildGauge(svgId, cfg) {
       const clamped = Math.max(min, Math.min(max, value));
       const angle = SA + ((clamped - min) / (max - min)) * SW;
       nd.style.transform = `rotate(${angle - SA}deg)`;
-      if (col) {
-        nd.setAttribute('stroke', col);
-        va.setAttribute('stroke', col);
-        nm.setAttribute('fill', col);
-      }
+      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); }
       if (!rafId) rafId = requestAnimationFrame(lerp);
     }
   };
 }
 
-// --- Color functions ---
+// --- THR update (blue→green→yellow→red smooth gradient) ---
+function updateThrottle(cx, cy, r, pct) {
+  const thrR = r - 80;
+  const a = SA + (Math.min(100, pct) / 100) * SW;
+  thrArc.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, thrR, SA, a) : '');
+  const hue = 210 - (Math.min(100, pct) / 100) * 210;
+  const col = pct > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#333';
+  thrArc.setAttribute('stroke', col);
+  thrLabel.setAttribute('fill', col);
+}
+
+// --- Speed color ---
 function spdCol(v) {
   if (v >= 120) return '#f44336';
   if (v >= 100) return '#ff9800';
@@ -307,48 +301,64 @@ function spdCol(v) {
   if (v >= 30) return '#42a5f5';
   return '#78909c';
 }
-function rpmCol(v) {
-  if (v >= 5000) return '#f44336';
-  if (v >= 4000) return '#ff9800';
-  if (v >= 3000) return '#ffeb3b';
-  if (v >= 2000) return '#69f0ae';
-  if (v >= 1000) return '#42a5f5';
-  return '#78909c';
-}
 
-// --- Efficiency indicator (horizontal bars) ---
-const throttleFill = document.getElementById('throttle-fill');
-const throttleVal = document.getElementById('throttle-val');
-const loadFill = document.getElementById('load-fill');
-const loadVal = document.getElementById('load-val');
-function updateBars(rpm, load, throttle, speed) {
-  throttleFill.style.width = Math.min(100, throttle) + '%';
-  throttleVal.textContent = throttle > 0 ? Math.round(throttle) : '--';
-  throttleFill.style.backgroundColor = throttle > 80 ? '#e040fb' : throttle > 50 ? '#29b6f6' : '#78909c';
+// --- Indicator elements ---
+const indEco = document.getElementById('ind-eco');
+const ecoVal = document.getElementById('eco-val');
+const indSend = document.getElementById('ind-send');
+const sendVal = document.getElementById('send-val');
+const indMaint = document.getElementById('ind-maint');
+const maintVal = document.getElementById('maint-val');
+const indObd = document.getElementById('ind-obd');
+const obdVal = document.getElementById('obd-val');
+const indWifi = document.getElementById('ind-wifi');
+const wifiVal = document.getElementById('wifi-val');
+const outsideTempEl = document.getElementById('outside-temp');
 
-  loadFill.style.width = Math.min(100, load) + '%';
-  loadVal.textContent = load > 0 ? Math.round(load) : '--';
+function updateIndicators(d) {
+  // OBD
+  const obdOk = d.obd_connected;
+  indObd.className = 'ind-dot ' + (obdOk ? 'on-green' : 'on-red');
+  obdVal.textContent = obdOk ? 'OK' : 'NG';
 
-  if (speed < 15 || rpm < 500) {
-    loadFill.style.backgroundColor = '#555';
-    return;
-  }
+  // WiFi
+  const wifiOk = d.wifi_connected;
+  indWifi.className = 'ind-dot ' + (wifiOk ? 'on-green' : 'on-red');
+  wifiVal.textContent = wifiOk ? 'OK' : 'NG';
 
-  const lugging = load / rpm * 1000;
-  if (lugging > 30) {
-    loadFill.style.backgroundColor = '#f44336';
-  } else if (lugging > 22) {
-    loadFill.style.backgroundColor = '#ff9800';
+  // SEND (queue count: 0=green, 1=orange, 2+=red)
+  const pending = d.pending_count || 0;
+  indSend.className = 'ind-dot ' + (pending >= 2 ? 'on-red' : pending > 0 ? 'on-orange' : 'on-green');
+  sendVal.textContent = String(pending);
+
+  // MAINT (alert count)
+  const alerts = d.alerts || [];
+  const hasOverdue = alerts.some(a => a.is_overdue);
+  const hasWarning = alerts.length > 0;
+  indMaint.className = 'ind-dot ' + (hasOverdue ? 'on-red' : hasWarning ? 'on-orange' : 'on-green');
+  maintVal.textContent = String(alerts.length);
+
+  // ECO (instantaneous fuel economy km/L)
+  const eco = d.fuel_economy || 0;
+  if (eco > 20) {
+    indEco.className = 'ind-dot on-green';
+  } else if (eco > 10) {
+    indEco.className = 'ind-dot on-orange';
   } else {
-    loadFill.style.backgroundColor = '#4caf50';
+    indEco.className = 'ind-dot on-red';
+  }
+  ecoVal.textContent = eco > 0.1 ? eco.toFixed(1) : '0';
+
+  // Outside temp
+  if (d.has_outside_temp) {
+    outsideTempEl.textContent = Math.round(d.outside_temp);
   }
 }
 
-// --- Toast notification ---
+// --- Toast ---
 const toastEl = document.getElementById('toast');
 let lastNotification = '';
 let toastTimer = null;
-
 function showToast(msg) {
   if (msg === lastNotification) return;
   lastNotification = msg;
@@ -358,57 +368,25 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { toastEl.classList.remove('show'); }, 5000);
 }
 
-// --- Indicator lamps ---
-const indObd = document.getElementById('ind-obd');
-const indMaint = document.getElementById('ind-maint');
-const indLug = document.getElementById('ind-lug');
-const indWifi = document.getElementById('ind-wifi');
-
-function updateIndicators(d) {
-  indObd.className = 'ind-dot ' + (d.obd_connected ? 'on-green' : 'on-red');
-
-  const alertCount = d.alerts ? d.alerts.length : 0;
-  indMaint.className = 'ind-dot ' + (alertCount >= 2 ? 'on-red' : alertCount === 1 ? 'on-orange' : '');
-
-  const spd = d.speed_kmh || 0;
-  const rpm = d.rpm || 0;
-  const load = d.engine_load || 0;
-  let lugClass = '';
-  if (spd >= 15 && rpm >= 500) {
-    const lugging = load / rpm * 1000;
-    if (lugging > 30) lugClass = 'on-red';
-    else if (lugging > 22) lugClass = 'on-orange';
-  }
-  indLug.className = 'ind-dot ' + lugClass;
-
-  indWifi.className = 'ind-dot ' + (d.wifi_connected ? 'on-green' : 'on-red');
-}
-
 // --- Config defaults ---
-const DEFAULTS = {
-  redline_rpm: 6500,
-  max_speed_kmh: 180,
-  max_rpm: 8000
-};
+const DEFAULTS = { redline_rpm: 6500, max_speed_kmh: 180, max_rpm: 8000 };
+const GCX = 280, GCY = 260, GR = 220;
 
-let gs, gr;
+let gs;
 
-// --- Realtime API polling ---
+// --- Realtime API ---
 let connected = false;
 let prevAlertCount = 0;
 
 function applyData(d) {
   const spd = d.speed_kmh || 0;
-  const rpm = d.rpm || 0;
-  const load = d.engine_load || 0;
   const throttle = d.throttle_pos || 0;
 
   gs.update(spd, spdCol(spd));
-  gr.update(rpm, rpmCol(rpm));
-  updateBars(rpm, load, throttle, spd);
+  updateThrottle(GCX, GCY, GR, throttle);
   updateIndicators(d);
 
-  // Maintenance alerts as toast
+  // Maintenance toast
   const alertCount = d.alerts ? d.alerts.length : 0;
   if (alertCount > 0 && alertCount !== prevAlertCount) {
     const a = d.alerts[0];
@@ -420,12 +398,8 @@ function applyData(d) {
   }
   prevAlertCount = alertCount;
 
-  // Toast notification (refueling etc.)
-  if (d.notification) {
-    showToast(d.notification);
-  } else if (lastNotification) {
-    lastNotification = '';
-  }
+  if (d.notification) { showToast(d.notification); }
+  else if (lastNotification) { lastNotification = ''; }
 }
 
 async function fetchRealtime() {
@@ -455,33 +429,44 @@ function startSimMode() {
 function simTick() {
   simT += 0.02;
   const phase = simT % 16;
-  let speed, rpm, load, throttle;
+  let speed, throttle, fuelEco;
 
   if (phase < 3) {
     const p = phase / 3;
-    speed = p * p * 60; rpm = 800 + p * 3200;
-    load = 25 + p * 45; throttle = 20 + p * 50;
+    speed = p * p * 60; throttle = 20 + p * 50;
+    fuelEco = 3 + p * 12;
   } else if (phase < 7) {
     speed = 60 + Math.sin(simT * 3) * 3;
-    rpm = 2200 + Math.sin(simT * 2) * 200;
-    load = 28 + Math.sin(simT * 2) * 5; throttle = 18 + Math.sin(simT * 2) * 4;
+    throttle = 18 + Math.sin(simT * 2) * 4;
+    fuelEco = 18 + Math.sin(simT * 2) * 3;
   } else if (phase < 10) {
     speed = 45 + Math.sin(simT * 2) * 3;
-    rpm = 1300 + Math.sin(simT * 3) * 100;
-    load = 65 + Math.sin(simT * 1.5) * 8; throttle = 55 + Math.sin(simT * 1.5) * 10;
+    throttle = 55 + Math.sin(simT * 1.5) * 10;
+    fuelEco = 10 + Math.sin(simT * 1.5) * 2;
   } else if (phase < 13) {
     const p = (phase - 10) / 3;
-    speed = 45 + p * 40; rpm = 2800 + p * 2000;
-    load = 45 + p * 30; throttle = 40 + p * 40;
+    speed = 45 + p * 40; throttle = 40 + p * 40;
+    fuelEco = 6 + (1 - p) * 5;
   } else {
     const p = (phase - 13) / 3;
-    speed = 85 * (1 - p * p); rpm = 4800 * (1 - p) + 800 * p;
-    load = 8 + (1 - p) * 5; throttle = 3 + (1 - p) * 5;
+    speed = 85 * (1 - p * p); throttle = 3 + (1 - p) * 5;
+    fuelEco = 25 + p * 20;
   }
 
   gs.update(Math.max(0, speed), spdCol(speed));
-  gr.update(Math.max(0, rpm), rpmCol(rpm));
-  updateBars(rpm, load, throttle, speed);
+  updateThrottle(GCX, GCY, GR, throttle);
+
+  // Simulate indicators
+  indObd.className = 'ind-dot on-green'; obdVal.textContent = 'OK';
+  indWifi.className = 'ind-dot on-green'; wifiVal.textContent = 'OK';
+  indSend.className = 'ind-dot on-green'; sendVal.textContent = '0';
+  indMaint.className = 'ind-dot on-green'; maintVal.textContent = '0';
+  outsideTempEl.textContent = '18';
+
+  if (fuelEco > 20) indEco.className = 'ind-dot on-green';
+  else if (fuelEco > 10) indEco.className = 'ind-dot on-orange';
+  else indEco.className = 'ind-dot on-red';
+  ecoVal.textContent = fuelEco.toFixed(1);
 }
 
 // --- Start ---
@@ -492,15 +477,10 @@ async function initApp() {
     if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
   } catch (e) { /* file:// mode */ }
 
-  gs = buildGauge('gs', {
-    cx: 200, cy: 235, r: 185, min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    label: 'SPEED', unit: 'km/h', mj: 9, mn: 5, numSz: 58, tkSz: 19,
+  gs = buildSpeedGauge('gs', {
+    cx: GCX, cy: GCY, r: GR, min: 0, max: conf.max_speed_kmh, color: '#78909c',
+    unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
-  });
-  gr = buildGauge('gr', {
-    cx: 200, cy: 235, r: 185, min: 0, max: conf.max_rpm, color: '#78909c',
-    label: 'RPM', unit: 'r/min', mj: 8, mn: 5, numSz: 58, tkSz: 19, rzStart: conf.redline_rpm,
-    fmt: v => v > 50 ? String(Math.round(v)).padStart(4, '0') : '----'
   });
 
   fetchRealtime();

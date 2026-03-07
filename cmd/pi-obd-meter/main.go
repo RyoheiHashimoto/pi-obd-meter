@@ -34,6 +34,7 @@ type Config struct {
 	MaxRPM               int                      `json:"max_rpm"`
 	OBDProtocol          string                   `json:"obd_protocol"`
 	FuelTankCapacityL    float64                  `json:"fuel_tank_capacity_l"`
+	EngineDisplacementL  float64                  `json:"engine_displacement_l"`
 	RefuelMinIncreasePct float64                  `json:"refuel_min_increase_pct"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
@@ -41,17 +42,60 @@ type Config struct {
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh      float64              `json:"speed_kmh"`
-	RPM           float64              `json:"rpm"`
-	EngineLoad    float64              `json:"engine_load"`
-	ThrottlePos   float64              `json:"throttle_pos"`
-	Alerts        []maintenance.Status `json:"alerts"`
-	Notification  string               `json:"notification,omitempty"`
-	OBDConnected  bool                 `json:"obd_connected"`
-	WiFiConnected bool                 `json:"wifi_connected"`
+	SpeedKmh       float64              `json:"speed_kmh"`
+	RPM            float64              `json:"rpm"`
+	EngineLoad     float64              `json:"engine_load"`
+	ThrottlePos    float64              `json:"throttle_pos"`
+	FuelEconomy    float64              `json:"fuel_economy"`
+	OutsideTemp    float64              `json:"outside_temp"`
+	HasOutsideTemp bool                 `json:"has_outside_temp"`
+	Alerts         []maintenance.Status `json:"alerts"`
+	Notification   string               `json:"notification,omitempty"`
+	OBDConnected   bool                 `json:"obd_connected"`
+	WiFiConnected  bool                 `json:"wifi_connected"`
+	PendingCount   int                  `json:"pending_count"`
 }
 
 var version = "dev"
+
+// calcFuelEconomy は瞬間燃費(km/L)を計算する
+// MAF対応: 燃料レート = MAF(g/s) × 3600 / (14.7 × 750) L/h
+// MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
+func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) float64 {
+	if speed < 0.5 && rpm < 100 {
+		return 0 // エンジン停止
+	}
+
+	var fuelRateLH float64
+	if hasMAF && maf > 0 {
+		// MAFから直接計算: g/s → L/h
+		// AFR(空燃比)=14.7, ガソリン密度=750 g/L
+		fuelRateLH = maf * 3600.0 / (14.7 * 750.0)
+	} else {
+		// 負荷×RPM×排気量から推定
+		// 4ストロークなので吸気は2回転に1回
+		// 体積効率を負荷%で近似
+		if rpm < 100 || load < 0.1 {
+			fuelRateLH = 0.8 // アイドリング最低消費量
+		} else {
+			airFlowEstimate := (rpm / 2.0) * (load / 100.0) * displacementL / 60.0 // L/s of air
+			airMassGS := airFlowEstimate * 1.225 * 1000.0                           // g/s (空気密度1.225 kg/m³)
+			fuelRateLH = airMassGS * 3600.0 / (14.7 * 750.0)
+		}
+	}
+
+	if fuelRateLH < 0.01 {
+		return 99.9 // エンブレ・コースティング
+	}
+	if speed < 0.5 {
+		return 0 // 停車中はアイドリング消費のみ → 0 km/L
+	}
+	kmL := speed / fuelRateLH
+	if kmL > 99.9 {
+		kmL = 99.9
+	}
+	return kmL
+}
 
 var (
 	latestData      RealtimeData
@@ -105,6 +149,7 @@ func loadConfig(path string) Config {
 		MaxRPM:               8000,
 		OBDProtocol:          "6",
 		FuelTankCapacityL:    44,
+		EngineDisplacementL:  1.3,
 		RefuelMinIncreasePct: 5.0,
 		Brightness:           display.DefaultConfig(),
 	}
@@ -194,8 +239,12 @@ func main() {
 
 	sampleCount := 0
 	var lastFuelTank float64
+	var lastOutsideTemp float64
+	var lastFuelEconomy float64
 	var errCount int
 	var wifiConnected bool
+	hasMAF := reader.HasMAF()
+	hasOutsideTemp := reader.HasOutsideTemp()
 	const maxConsecutiveErrors = 10
 	for {
 		select {
@@ -236,6 +285,10 @@ func main() {
 				lastFuelTank = data.FuelTankLevel
 				tracker.UpdateFuelLevel(lastFuelTank)
 				wifiConnected = checkWiFi()
+				if hasOutsideTemp {
+					lastOutsideTemp = data.OutsideTemp
+				}
+				lastFuelEconomy = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
 			tracker.Update(data.SpeedKmh)
@@ -244,14 +297,18 @@ func main() {
 
 			dataMu.Lock()
 			latestData = RealtimeData{
-				SpeedKmh:      data.SpeedKmh,
-				RPM:           data.RPM,
-				EngineLoad:    data.EngineLoad,
-				ThrottlePos:   data.ThrottlePos,
-				Alerts:        maintMgr.GetAlerts(),
-				Notification:  getNotification(),
-				OBDConnected:  errCount == 0,
-				WiFiConnected: wifiConnected,
+				SpeedKmh:       data.SpeedKmh,
+				RPM:            data.RPM,
+				EngineLoad:     data.EngineLoad,
+				ThrottlePos:    data.ThrottlePos,
+				FuelEconomy:    lastFuelEconomy,
+				OutsideTemp:    lastOutsideTemp,
+				HasOutsideTemp: hasOutsideTemp,
+				Alerts:         maintMgr.GetAlerts(),
+				Notification:   getNotification(),
+				OBDConnected:   errCount == 0,
+				WiFiConnected:  wifiConnected,
+				PendingCount:   client.QueueSize(),
 			}
 			dataMu.Unlock()
 

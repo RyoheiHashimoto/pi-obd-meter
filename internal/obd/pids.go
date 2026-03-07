@@ -8,9 +8,11 @@ const (
 	PIDVehicleSpeed      byte = 0x0D // 車速 (km/h)
 	PIDEngineLoad        byte = 0x04 // エンジン負荷 (%)
 	PIDCoolantTemp       byte = 0x05 // 冷却水温度
+	PIDMAFAirFlow        byte = 0x10 // MAFエアフローレート (g/s)
 	PIDThrottlePosition  byte = 0x11 // スロットル開度 (%)
 	PIDFuelTankLevel     byte = 0x2F // 燃料タンクレベル (%)
 	PIDRunTimeSinceStart byte = 0x1F // エンジン始動後の経過時間
+	PIDOutsideTemp       byte = 0x46 // 外気温 (℃)
 )
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
@@ -19,8 +21,12 @@ type OBDData struct {
 	SpeedKmh      float64 // km/h
 	EngineLoad    float64 // 0-100%
 	CoolantTemp   float64 // ℃
+	MAFAirFlow    float64 // g/s (0=非対応)
 	ThrottlePos   float64 // 0-100%
 	FuelTankLevel float64 // 0-100%
+	OutsideTemp   float64 // ℃
+	HasMAF        bool    // MAFセンサー対応か
+	HasOutsideTemp bool   // 外気温PID対応か
 }
 
 // Reader はOBD-2データを読み取る
@@ -28,6 +34,8 @@ type Reader struct {
 	elm           *ELM327
 	supportsMulti bool // マルチPIDリクエスト対応フラグ
 	multiTested   bool // マルチPID対応テスト済みフラグ
+	hasMAF        bool // MAF (PID 0x10) 対応
+	hasOutsideTemp bool // 外気温 (PID 0x46) 対応
 }
 
 // NewReader は新しいReaderを作成する
@@ -43,9 +51,31 @@ func (r *Reader) DetectCapabilities() error {
 	}
 	fmt.Printf("✓ サポートPID: %d 個検出\n", len(supported))
 
+	// オプショナルPIDの対応チェック
+	pidSet := make(map[byte]bool)
+	for _, p := range supported {
+		pidSet[p] = true
+	}
+	r.hasMAF = pidSet[PIDMAFAirFlow]
+	r.hasOutsideTemp = pidSet[PIDOutsideTemp]
+	if r.hasMAF {
+		fmt.Println("✓ MAFエアフロー対応 → 燃費計算に使用")
+	} else {
+		fmt.Println("✗ MAF非対応 → 負荷×RPMで燃費推定")
+	}
+	if r.hasOutsideTemp {
+		fmt.Println("✓ 外気温PID対応")
+	}
+
 	r.testMultiPID()
 	return nil
 }
+
+// HasMAF はMAFセンサー対応かどうかを返す
+func (r *Reader) HasMAF() bool { return r.hasMAF }
+
+// HasOutsideTemp は外気温PID対応かどうかを返す
+func (r *Reader) HasOutsideTemp() bool { return r.hasOutsideTemp }
 
 // testMultiPID はマルチPIDリクエストの対応をテストする
 func (r *Reader) testMultiPID() {
@@ -117,6 +147,16 @@ func parsePID(data *OBDData, pid byte, raw []byte) {
 		if len(raw) >= 1 {
 			data.CoolantTemp = float64(raw[0]) - 40.0
 		}
+	case PIDMAFAirFlow:
+		if len(raw) >= 2 {
+			data.MAFAirFlow = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
+			data.HasMAF = true
+		}
+	case PIDOutsideTemp:
+		if len(raw) >= 1 {
+			data.OutsideTemp = float64(raw[0]) - 40.0
+			data.HasOutsideTemp = true
+		}
 	case PIDFuelTankLevel:
 		if len(raw) >= 1 {
 			data.FuelTankLevel = float64(raw[0]) * 100.0 / 255.0
@@ -154,6 +194,20 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, PIDFuelTankLevel, raw)
 	}
 
+	// MAFエアフロー（燃費計算用）
+	if r.hasMAF {
+		if raw, err := r.elm.QueryPID(PIDMAFAirFlow); err == nil {
+			parsePID(data, PIDMAFAirFlow, raw)
+		}
+	}
+
+	// 外気温
+	if r.hasOutsideTemp {
+		if raw, err := r.elm.QueryPID(PIDOutsideTemp); err == nil {
+			parsePID(data, PIDOutsideTemp, raw)
+		}
+	}
+
 	return data, nil
 }
 
@@ -161,6 +215,12 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 func (r *Reader) readAllSingle() (*OBDData, error) {
 	data := &OBDData{}
 	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDFuelTankLevel}
+	if r.hasMAF {
+		pids = append(pids, PIDMAFAirFlow)
+	}
+	if r.hasOutsideTemp {
+		pids = append(pids, PIDOutsideTemp)
+	}
 
 	for _, pid := range pids {
 		if raw, err := r.elm.QueryPID(pid); err == nil {
