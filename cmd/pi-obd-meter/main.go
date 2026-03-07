@@ -35,6 +35,7 @@ type Config struct {
 	FuelTankCapacityL    float64                  `json:"fuel_tank_capacity_l"`
 	EngineDisplacementL  float64                  `json:"engine_displacement_l"`
 	RefuelMinIncreasePct float64                  `json:"refuel_min_increase_pct"`
+	InitialOdometerKm    float64                  `json:"initial_odometer_km"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
@@ -46,8 +47,8 @@ type RealtimeData struct {
 	EngineLoad     float64              `json:"engine_load"`
 	ThrottlePos    float64              `json:"throttle_pos"`
 	FuelEconomy    float64              `json:"fuel_economy"`
-	OutsideTemp    float64              `json:"outside_temp"`
-	HasOutsideTemp bool                 `json:"has_outside_temp"`
+	TripKm         float64              `json:"trip_km"`
+	CoolantTemp    float64              `json:"coolant_temp"`
 	Alerts         []maintenance.Status `json:"alerts"`
 	Notification   string               `json:"notification,omitempty"`
 	OBDConnected   bool                 `json:"obd_connected"`
@@ -185,7 +186,16 @@ func main() {
 
 	// --- 累計走行距離 ---
 	totalKmAccum := maintMgr.TotalKm()
-	fmt.Printf("✓ 累計走行距離: %.1f km（復元済み）\n", totalKmAccum)
+	if totalKmAccum == 0 && cfg.InitialOdometerKm > 0 {
+		totalKmAccum = cfg.InitialOdometerKm
+		maintMgr.UpdateTotalKm(totalKmAccum)
+		fmt.Printf("✓ 初期ODO設定: %.0f km\n", totalKmAccum)
+	} else {
+		fmt.Printf("✓ 累計走行距離: %.1f km（復元済み）\n", totalKmAccum)
+	}
+
+	// --- ODO補正フラグ ---
+	odoApplied := false
 
 	// --- トリップトラッカー ---
 	tracker := trip.NewTracker(trip.TrackerConfig{})
@@ -199,14 +209,23 @@ func main() {
 	go startLocalAPI(cfg, maintMgr)
 	fmt.Printf("✓ LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 
-	// --- メンテナンス状態をGASに送信 ---
-	sendMaintenanceStatus(client, maintMgr)
+	// --- メンテナンス状態をGASに送信（WiFi接続後） ---
+	go func() {
+		for i := 0; i < 30; i++ {
+			if checkWiFi() {
+				sendMaintenanceStatus(client, maintMgr, &totalKmAccum, &odoApplied, tracker)
+				return
+			}
+			time.Sleep(2 * time.Second)
+		}
+		log.Printf("⚠ WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
+	}()
 
 	// --- ELM327接続（失敗してもクラッシュしない） ---
 	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	var reader *obd.Reader
 	obdConnected := false
-	var hasMAF, hasOutsideTemp bool
+	var hasMAF bool
 
 	tryConnectOBD := func() bool {
 		if err := elm.Connect(); err != nil {
@@ -221,14 +240,17 @@ func main() {
 		}
 		reader = r
 		hasMAF = reader.HasMAF()
-		hasOutsideTemp = reader.HasOutsideTemp()
 		fmt.Println("✓ ELM327接続完了")
 		return true
 	}
 
 	obdConnected = tryConnectOBD()
 	if obdConnected {
-		checkRefueling(reader, tracker, client, cfg)
+		if reader.HasFuelTank() {
+			checkRefueling(reader, tracker, client, cfg)
+		} else {
+			fmt.Println("✗ 燃料タンクレベルPID非対応 → 給油検出無効")
+		}
 	} else {
 		fmt.Println("⚠ OBD未接続 → メーター表示のみで起動、バックグラウンドでリトライ")
 	}
@@ -258,7 +280,7 @@ func main() {
 	sampleCount := 0
 	statusCount := 0
 	var lastFuelTank float64
-	var lastOutsideTemp float64
+	var lastCoolantTemp float64
 	var lastFuelEconomy float64
 	var errCount int
 	var wifiConnected bool
@@ -311,11 +333,9 @@ func main() {
 
 			if isFull {
 				lastFuelTank = data.FuelTankLevel
+				lastCoolantTemp = data.CoolantTemp
 				tracker.UpdateFuelLevel(lastFuelTank)
 				wifiConnected = checkWiFi()
-				if hasOutsideTemp {
-					lastOutsideTemp = data.OutsideTemp
-				}
 				lastFuelEconomy = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
@@ -330,8 +350,8 @@ func main() {
 				EngineLoad:     data.EngineLoad,
 				ThrottlePos:    data.ThrottlePos,
 				FuelEconomy:    lastFuelEconomy,
-				OutsideTemp:    lastOutsideTemp,
-				HasOutsideTemp: hasOutsideTemp,
+				TripKm:         tracker.DistanceKm(),
+				CoolantTemp:    lastCoolantTemp,
 				Alerts:         maintMgr.GetAlerts(),
 				Notification:   getNotification(),
 				OBDConnected:   true,
@@ -349,7 +369,9 @@ func main() {
 			if !obdConnected {
 				obdConnected = tryConnectOBD()
 				if obdConnected {
-					checkRefueling(reader, tracker, client, cfg)
+					if reader.HasFuelTank() {
+						checkRefueling(reader, tracker, client, cfg)
+					}
 					sampleCount = 0
 					errCount = 0
 				}
@@ -359,7 +381,7 @@ func main() {
 			client.RetryPending()
 
 		case <-maintTicker.C:
-			sendMaintenanceStatus(client, maintMgr)
+			sendMaintenanceStatus(client, maintMgr, &totalKmAccum, &odoApplied, tracker)
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
@@ -454,7 +476,9 @@ func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Cl
 }
 
 // sendMaintenanceStatus はメンテナンス状態をGASに送信する
-func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager) {
+// totalKm が非nilの場合、ODO補正値を受け取ったら更新する
+// odoApplied が非nilの場合、前回の補正適用フラグを送信・管理する
+func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager, totalKm *float64, odoApplied *bool, tracker *trip.Tracker) {
 	statuses := maintMgr.CheckAll()
 	if len(statuses) == 0 {
 		return
@@ -481,25 +505,56 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager)
 		items = append(items, item)
 	}
 
-	respBody, err := client.SendWithResponse("maintenance", map[string]interface{}{
+	payload := map[string]interface{}{
 		"statuses": items,
 		"sent_at":  time.Now(),
-	})
+		"total_km": maintMgr.TotalKm(),
+	}
+	if odoApplied != nil && *odoApplied {
+		payload["odometer_applied"] = true
+	}
+
+	respBody, err := client.SendWithResponse("maintenance", payload)
 	if err != nil {
 		return
 	}
 	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
 
-	// GASレスポンスからpending_resetsを処理
+	// GASレスポンスを処理
 	if len(respBody) > 0 {
 		var gasResp struct {
-			PendingResets []string `json:"pending_resets"`
+			PendingResets      []string `json:"pending_resets"`
+			OdometerCorrection *float64 `json:"odometer_correction"`
+			TripReset          bool     `json:"trip_reset"`
 		}
 		if json.Unmarshal(respBody, &gasResp) == nil {
+			// pending_resets処理
 			for _, id := range gasResp.PendingResets {
 				if maintMgr.ResetReminder(id) {
 					log.Printf("✓ メンテナンスリセット: %s", id)
 				}
+			}
+
+			// ODO補正処理
+			if gasResp.OdometerCorrection != nil && *gasResp.OdometerCorrection > 0 {
+				newOdo := *gasResp.OdometerCorrection
+				if totalKm != nil {
+					*totalKm = newOdo
+				}
+				maintMgr.UpdateTotalKm(newOdo)
+				log.Printf("✓ ODO補正適用: %.0f km", newOdo)
+				if odoApplied != nil {
+					*odoApplied = true
+				}
+			} else if odoApplied != nil && *odoApplied {
+				// GASが補正をクリア済み → フラグをリセット
+				*odoApplied = false
+			}
+
+			// トリップリセット処理
+			if gasResp.TripReset && tracker != nil {
+				tracker.ManualReset()
+				log.Printf("✓ トリップリセット（給油記録による）")
 			}
 		}
 	}

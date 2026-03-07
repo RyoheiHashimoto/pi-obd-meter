@@ -89,31 +89,7 @@
     color: #fff;
     text-align: right;
   }
-  /* --- Outside temp (large) --- */
-  .temp-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: center;
-    padding: 0 8px;
-  }
-  .temp-label {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 26px;
-    color: #888;
-    margin-right: 8px;
-  }
-  .temp-val {
-    font-family: 'Orbitron', monospace;
-    font-size: 54px;
-    font-weight: 900;
-    color: #fff;
-  }
-  .temp-unit {
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 26px;
-    color: #888;
-    margin-left: 4px;
-  }
+  .ind-dot.on-blue { background: #29b6f6; box-shadow: 0 0 14px #29b6f6; }
   /* --- SVG classes --- */
   .g-num { font-family: 'Orbitron', monospace; font-weight: 900; text-anchor: middle; }
   .g-unit { font-family: 'Share Tech Mono', monospace; font-weight: 700; text-anchor: middle; }
@@ -126,15 +102,20 @@
     <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
   </div>
   <div class="panel">
-    <div class="temp-row">
-      <span class="temp-label">TEMP</span>
-      <span class="temp-val" id="outside-temp">--</span>
-      <span class="temp-unit">&deg;C</span>
-    </div>
     <div class="ind-row">
       <div class="ind-dot" id="ind-eco"></div>
       <span class="ind-label">ECO</span>
       <span class="ind-val" id="eco-val"></span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-trip"></div>
+      <span class="ind-label">TRIP</span>
+      <span class="ind-val" id="trip-val">--</span>
+    </div>
+    <div class="ind-row">
+      <div class="ind-dot" id="ind-temp"></div>
+      <span class="ind-label">TEMP</span>
+      <span class="ind-val" id="temp-val">--</span>
     </div>
     <div class="ind-row">
       <div class="ind-dot" id="ind-maint"></div>
@@ -281,15 +262,25 @@ function buildSpeedGauge(svgId, cfg) {
   };
 }
 
-// --- THR update (blue→green→yellow→red smooth gradient) ---
-function updateThrottle(cx, cy, r, pct) {
-  const thrR = r - 80;
-  const a = SA + (Math.min(100, pct) / 100) * SW;
-  thrArc.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, thrR, SA, a) : '');
-  const hue = 210 - (Math.min(100, pct) / 100) * 210;
+// --- THR update (blue→green→yellow→red smooth gradient, lerp) ---
+const THR_IDLE = 11.5; // アイドル時のベースライン(%)を差し引く
+let thrCur = 0, thrTgt = 0, thrRafId = 0;
+function thrLerp() {
+  const d = thrTgt - thrCur;
+  if (Math.abs(d) > 0.05) { thrCur += d * 0.2; } else { thrCur = thrTgt; }
+  const pct = Math.max(0, Math.min(100, thrCur));
+  const thrR = GR - 80;
+  const a = SA + (pct / 100) * SW;
+  thrArc.setAttribute('d', pct > 0.5 ? arcPath(GCX, GCY, thrR, SA, a) : '');
+  const hue = 210 - (pct / 100) * 210;
   const col = pct > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#333';
   thrArc.setAttribute('stroke', col);
   thrLabel.setAttribute('fill', col);
+  if (Math.abs(thrCur - thrTgt) > 0.01) { thrRafId = requestAnimationFrame(thrLerp); } else { thrRafId = 0; }
+}
+function updateThrottle(cx, cy, r, pct) {
+  thrTgt = Math.max(0, pct - THR_IDLE);
+  if (!thrRafId) thrRafId = requestAnimationFrame(thrLerp);
 }
 
 // --- Speed color ---
@@ -313,7 +304,10 @@ const indObd = document.getElementById('ind-obd');
 const obdVal = document.getElementById('obd-val');
 const indWifi = document.getElementById('ind-wifi');
 const wifiVal = document.getElementById('wifi-val');
-const outsideTempEl = document.getElementById('outside-temp');
+const indTrip = document.getElementById('ind-trip');
+const tripVal = document.getElementById('trip-val');
+const indTemp = document.getElementById('ind-temp');
+const tempVal = document.getElementById('temp-val');
 
 function updateIndicators(d) {
   // OBD
@@ -349,18 +343,37 @@ function updateIndicators(d) {
 
   // ECO (instantaneous fuel economy km/L)
   const eco = d.fuel_economy || 0;
-  if (eco > 20) {
+  if (eco >= 15) {
     indEco.className = 'ind-dot on-green';
-  } else if (eco > 10) {
+  } else if (eco >= 10) {
     indEco.className = 'ind-dot on-orange';
   } else {
     indEco.className = 'ind-dot on-red';
   }
   ecoVal.textContent = eco > 0.1 ? eco.toFixed(1) : '0';
 
-  // Outside temp
-  if (d.has_outside_temp) {
-    outsideTempEl.textContent = Math.round(d.outside_temp);
+  // TRIP: 走行距離 (green=<100km, orange=100-200km, red=>200km)
+  const tripKm = d.trip_km || 0;
+  if (tripKm >= 0.1) {
+    tripVal.textContent = tripKm < 10 ? tripKm.toFixed(1) : Math.round(tripKm);
+    if (tripKm < 300) indTrip.className = 'ind-dot on-green';
+    else if (tripKm <= 500) indTrip.className = 'ind-dot on-orange';
+    else indTrip.className = 'ind-dot on-red';
+  } else {
+    tripVal.textContent = '0';
+    indTrip.className = 'ind-dot on-green';
+  }
+
+  // TEMP: 冷却水温 (blue=暖機中<70, green=正常70-105, red=過熱>105)
+  const ct = d.coolant_temp || 0;
+  if (ct > 0) {
+    tempVal.textContent = Math.round(ct) + '°';
+    if (ct < 70) indTemp.className = 'ind-dot on-orange';
+    else if (ct <= 100) indTemp.className = 'ind-dot on-green';
+    else indTemp.className = 'ind-dot on-red';
+  } else {
+    tempVal.textContent = '--';
+    indTemp.className = 'ind-dot';
   }
 }
 
@@ -386,6 +399,15 @@ let gs;
 // --- Realtime API ---
 let connected = false;
 let prevAlertCount = 0;
+let alertQueue = [];
+let alertQueueTimer = null;
+
+function showAlertQueue() {
+  if (alertQueue.length === 0) { alertQueueTimer = null; return; }
+  const msg = alertQueue.shift();
+  showToast(msg);
+  alertQueueTimer = setTimeout(showAlertQueue, 5500);
+}
 
 function applyData(d) {
   const spd = d.speed_kmh || 0;
@@ -395,15 +417,19 @@ function applyData(d) {
   updateThrottle(GCX, GCY, GR, throttle);
   updateIndicators(d);
 
-  // Maintenance toast
+  // Maintenance toast（全件を順番に表示）
   const alertCount = d.alerts ? d.alerts.length : 0;
   if (alertCount > 0 && alertCount !== prevAlertCount) {
-    const a = d.alerts[0];
-    const r = a.reminder;
-    const remain = r.type === 'distance'
-      ? `${Math.round(a.remaining_km).toLocaleString()} km`
-      : `${a.days_left} 日`;
-    showToast(`⚠ ${r.name}まで ${remain}`);
+    alertQueue = [];
+    if (alertQueueTimer) { clearTimeout(alertQueueTimer); alertQueueTimer = null; }
+    d.alerts.forEach(a => {
+      const r = a.reminder;
+      const remain = r.type === 'distance'
+        ? `${Math.round(a.remaining_km).toLocaleString()} km`
+        : `${a.days_left} 日`;
+      alertQueue.push(`⚠ ${r.name}まで ${remain}`);
+    });
+    showAlertQueue();
   }
   prevAlertCount = alertCount;
 
@@ -470,10 +496,11 @@ function simTick() {
   indWifi.className = 'ind-dot on-green'; wifiVal.textContent = 'OK';
   indSend.className = 'ind-dot on-green'; sendVal.textContent = '0';
   indMaint.className = 'ind-dot on-green'; maintVal.textContent = '0';
-  outsideTempEl.textContent = '18';
+  indTrip.className = 'ind-dot on-green'; tripVal.textContent = '12.3';
+  indTemp.className = 'ind-dot on-green'; tempVal.textContent = '82°';
 
-  if (fuelEco > 20) indEco.className = 'ind-dot on-green';
-  else if (fuelEco > 10) indEco.className = 'ind-dot on-orange';
+  if (fuelEco >= 15) indEco.className = 'ind-dot on-green';
+  else if (fuelEco >= 10) indEco.className = 'ind-dot on-orange';
   else indEco.className = 'ind-dot on-red';
   ecoVal.textContent = fuelEco.toFixed(1);
 }

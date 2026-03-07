@@ -101,8 +101,9 @@ func (m *Manager) InitDefaults(configReminders []Reminder) {
 
 	for _, r := range defaults {
 		if _, exists := m.reminders[r.ID]; !exists {
-			now := time.Now()
-			r.LastResetAt = now
+			if r.LastResetAt.IsZero() {
+				r.LastResetAt = time.Now()
+			}
 			m.reminders[r.ID] = r
 		}
 	}

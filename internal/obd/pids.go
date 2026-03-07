@@ -32,9 +32,10 @@ type OBDData struct {
 // Reader はOBD-2データを読み取る
 type Reader struct {
 	elm           *ELM327
-	supportsMulti bool // マルチPIDリクエスト対応フラグ
-	multiTested   bool // マルチPID対応テスト済みフラグ
-	hasMAF        bool // MAF (PID 0x10) 対応
+	supportsMulti  bool // マルチPIDリクエスト対応フラグ
+	multiTested    bool // マルチPID対応テスト済みフラグ
+	hasMAF         bool // MAF (PID 0x10) 対応
+	hasFuelTank    bool // 燃料タンクレベル (PID 0x2F) 対応
 	hasOutsideTemp bool // 外気温 (PID 0x46) 対応
 }
 
@@ -57,11 +58,17 @@ func (r *Reader) DetectCapabilities() error {
 		pidSet[p] = true
 	}
 	r.hasMAF = pidSet[PIDMAFAirFlow]
+	r.hasFuelTank = pidSet[PIDFuelTankLevel]
 	r.hasOutsideTemp = pidSet[PIDOutsideTemp]
 	if r.hasMAF {
 		fmt.Println("✓ MAFエアフロー対応 → 燃費計算に使用")
 	} else {
 		fmt.Println("✗ MAF非対応 → 負荷×RPMで燃費推定")
+	}
+	if r.hasFuelTank {
+		fmt.Println("✓ 燃料タンクレベルPID対応")
+	} else {
+		fmt.Println("✗ 燃料タンクレベルPID非対応")
 	}
 	if r.hasOutsideTemp {
 		fmt.Println("✓ 外気温PID対応")
@@ -73,6 +80,9 @@ func (r *Reader) DetectCapabilities() error {
 
 // HasMAF はMAFセンサー対応かどうかを返す
 func (r *Reader) HasMAF() bool { return r.hasMAF }
+
+// HasFuelTank は燃料タンクレベルPID対応かどうかを返す
+func (r *Reader) HasFuelTank() bool { return r.hasFuelTank }
 
 // HasOutsideTemp は外気温PID対応かどうかを返す
 func (r *Reader) HasOutsideTemp() bool { return r.hasOutsideTemp }
@@ -189,9 +199,16 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, pid, raw)
 	}
 
+	// 冷却水温
+	if raw, err := r.elm.QueryPID(PIDCoolantTemp); err == nil {
+		parsePID(data, PIDCoolantTemp, raw)
+	}
+
 	// 燃料タンク（個別クエリ、給油検出用）
-	if raw, err := r.elm.QueryPID(PIDFuelTankLevel); err == nil {
-		parsePID(data, PIDFuelTankLevel, raw)
+	if r.hasFuelTank {
+		if raw, err := r.elm.QueryPID(PIDFuelTankLevel); err == nil {
+			parsePID(data, PIDFuelTankLevel, raw)
+		}
 	}
 
 	// MAFエアフロー（燃費計算用）
@@ -214,7 +231,10 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 // readAllSingle は従来の個別PIDクエリで読み取る（フォールバック）
 func (r *Reader) readAllSingle() (*OBDData, error) {
 	data := &OBDData{}
-	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDFuelTankLevel}
+	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDCoolantTemp}
+	if r.hasFuelTank {
+		pids = append(pids, PIDFuelTankLevel)
+	}
 	if r.hasMAF {
 		pids = append(pids, PIDMAFAirFlow)
 	}

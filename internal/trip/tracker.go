@@ -163,6 +163,13 @@ func (t *Tracker) GetFuelState() (tripStartPct, lastPct float64, valid bool) {
 	return t.tripStartFuelPct, t.lastFuelPct, t.fuelStateValid
 }
 
+// DistanceKm は現在のトリップ走行距離を返す
+func (t *Tracker) DistanceKm() float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.current.DistanceKm
+}
+
 // ResetFuelBaseline は給油後にトリップ開始時の燃料レベルをリセットする
 func (t *Tracker) ResetFuelBaseline(pct float64) {
 	t.mu.Lock()
