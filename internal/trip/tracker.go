@@ -31,10 +31,6 @@ type Tracker struct {
 	lastTimestamp time.Time
 	speedSum      float64
 
-	// リセット検知
-	prevDistanceKm float64
-	resetThreshold float64 // km - この距離以下になったらリセットと判定
-
 	// 燃料状態（給油検出用）
 	lastFuelPct      float64 // 直近のタンク残量%
 	tripStartFuelPct float64 // 現トリップ開始時のタンク残量%
@@ -43,31 +39,21 @@ type Tracker struct {
 	// 永続化パス
 	statePath     string
 	saveErrLogged bool // 書き込みエラーを既にログ出力したか
-
-	// トリップ完了コールバック
-	onTripComplete func(TripData)
 }
 
 // TrackerConfig はトラッカーの設定
 type TrackerConfig struct {
-	ResetThresholdKm float64 // リセット検知閾値 (default: 0.5km)
-	StatePath        string  // 状態保存パス
-	OnTripComplete   func(TripData)
+	StatePath string // 状態保存パス
 }
 
 // NewTracker は新しいトラッカーを作成する
 func NewTracker(cfg TrackerConfig) *Tracker {
-	if cfg.ResetThresholdKm <= 0 {
-		cfg.ResetThresholdKm = 0.5
-	}
 	if cfg.StatePath == "" {
 		cfg.StatePath = "/var/lib/pi-obd-meter/trip_state.json"
 	}
 
 	t := &Tracker{
-		resetThreshold: cfg.ResetThresholdKm,
-		statePath:      cfg.StatePath,
-		onTripComplete: cfg.OnTripComplete,
+		statePath: cfg.StatePath,
 	}
 
 	// 前回の状態を復元（電源断対応）
@@ -121,17 +107,6 @@ func (t *Tracker) Update(speedKmh float64) {
 	}
 }
 
-// CheckReset はトリップリセットを検知する
-func (t *Tracker) CheckReset() bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.prevDistanceKm > 5.0 && t.current.DistanceKm < t.resetThreshold {
-		return true
-	}
-	return false
-}
-
 // ManualReset はトリップを手動リセットする
 func (t *Tracker) ManualReset() *TripData {
 	t.mu.Lock()
@@ -154,13 +129,7 @@ func (t *Tracker) finalize() *TripData {
 
 	completed := t.current
 
-	// コールバック
-	if t.onTripComplete != nil {
-		go t.onTripComplete(completed)
-	}
-
 	// 新しいトリップを開始
-	t.prevDistanceKm = t.current.DistanceKm
 	t.current = TripData{
 		TripID:    fmt.Sprintf("trip_%d", time.Now().Unix()),
 		StartTime: time.Now(),
@@ -171,14 +140,6 @@ func (t *Tracker) finalize() *TripData {
 	t.saveState()
 
 	return &completed
-}
-
-// GetCurrent は現在のトリップデータを取得する
-func (t *Tracker) GetCurrent() TripData {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	return t.current
 }
 
 // --- 燃料状態管理（給油検出用） ---
@@ -217,7 +178,6 @@ func (t *Tracker) ResetFuelBaseline(pct float64) {
 
 type persistedState struct {
 	Current          TripData `json:"current"`
-	PrevDistance     float64  `json:"prev_distance"`
 	LastTimestamp    int64    `json:"last_timestamp"`
 	LastFuelPct      float64  `json:"last_fuel_pct"`
 	TripStartFuelPct float64  `json:"trip_start_fuel_pct"`
@@ -227,7 +187,6 @@ type persistedState struct {
 func (t *Tracker) saveState() {
 	state := persistedState{
 		Current:          t.current,
-		PrevDistance:     t.prevDistanceKm,
 		LastTimestamp:    t.lastTimestamp.Unix(),
 		LastFuelPct:      t.lastFuelPct,
 		TripStartFuelPct: t.tripStartFuelPct,
@@ -258,7 +217,6 @@ func (t *Tracker) loadState() {
 	}
 
 	t.current = state.Current
-	t.prevDistanceKm = state.PrevDistance
 	if state.LastTimestamp > 0 {
 		t.lastTimestamp = time.Unix(state.LastTimestamp, 0)
 	}

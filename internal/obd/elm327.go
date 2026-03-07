@@ -85,16 +85,6 @@ func (e *ELM327) Close() error {
 	return nil
 }
 
-// Reconnect はシリアルポートを閉じて再接続する
-func (e *ELM327) Reconnect() error {
-	if e.port != nil {
-		e.port.Close()
-		e.port = nil
-		e.reader = nil
-	}
-	return e.Connect()
-}
-
 // sendCommand はELM327にコマンドを送信しレスポンスを取得する
 func (e *ELM327) sendCommand(cmd string) (string, error) {
 	e.mu.Lock()

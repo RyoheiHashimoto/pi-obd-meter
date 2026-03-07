@@ -2,7 +2,6 @@ package maintenance
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"sync"
@@ -180,67 +179,6 @@ func (m *Manager) checkOne(r *Reminder) Status {
 	}
 
 	return s
-}
-
-// ResetReminder はリマインダーをリセットする（メンテナンス実施時）
-func (m *Manager) ResetReminder(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	r, ok := m.reminders[id]
-	if !ok {
-		return fmt.Errorf("リマインダーが見つかりません: %s", id)
-	}
-
-	now := time.Now()
-	r.LastResetKm = m.totalKm
-	r.LastResetAt = now
-	r.NotifiedAt = nil
-
-	m.save()
-	return nil
-}
-
-// MarkNotified は通知済みにマークする
-func (m *Manager) MarkNotified(id string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if r, ok := m.reminders[id]; ok {
-		now := time.Now()
-		r.NotifiedAt = &now
-		m.save()
-	}
-}
-
-// AddReminder はカスタムリマインダーを追加する
-func (m *Manager) AddReminder(r *Reminder) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if r.LastResetAt.IsZero() {
-		r.LastResetAt = time.Now()
-	}
-	if r.WarningPct == 0 {
-		r.WarningPct = 0.8
-	}
-	r.LastResetKm = m.totalKm
-	m.reminders[r.ID] = r
-	m.save()
-}
-
-// RemoveReminder はリマインダーを削除する
-func (m *Manager) RemoveReminder(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, ok := m.reminders[id]; !ok {
-		return fmt.Errorf("リマインダーが見つかりません: %s", id)
-	}
-
-	delete(m.reminders, id)
-	m.save()
-	return nil
 }
 
 // GetAll は全リマインダーを返す

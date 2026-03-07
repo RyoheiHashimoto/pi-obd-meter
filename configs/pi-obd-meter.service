@@ -12,8 +12,5 @@ User=root
 StandardOutput=journal
 StandardError=journal
 
-# ELM327 Bluetooth接続（rfcomm）を待つ
-ExecStartPre=/bin/sh -c 'until [ -e /dev/rfcomm0 ]; do sleep 1; done'
-
 [Install]
 WantedBy=multi-user.target

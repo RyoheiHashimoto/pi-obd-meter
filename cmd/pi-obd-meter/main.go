@@ -25,7 +25,6 @@ type Config struct {
 	SerialPort           string                   `json:"serial_port"`
 	WebhookURL           string                   `json:"webhook_url"`
 	PollIntervalMs       int                      `json:"poll_interval_ms"`
-	ResetThreshold       float64                  `json:"reset_threshold_km"`
 	LocalAPIPort         int                      `json:"local_api_port"`
 	MaintenancePath      string                   `json:"maintenance_path"`
 	WebStaticDir         string                   `json:"web_static_dir"`
@@ -140,7 +139,6 @@ func loadConfig(path string) Config {
 		SerialPort:           "/dev/rfcomm0",
 		WebhookURL:           "",
 		PollIntervalMs:       500,
-		ResetThreshold:       0.5,
 		LocalAPIPort:         9090,
 		MaintenancePath:      "/var/lib/pi-obd-meter/maintenance.json",
 		WebStaticDir:         "/opt/pi-obd-meter/web/static",
@@ -176,20 +174,6 @@ func main() {
 	fmt.Println("=================================")
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 
-	// --- ELM327接続 ---
-	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
-	if err := elm.Connect(); err != nil {
-		log.Fatalf("ELM327接続失敗: %v", err)
-	}
-	defer elm.Close()
-	fmt.Println("✓ ELM327接続完了")
-
-	// --- PID検出 ---
-	reader := obd.NewReader(elm)
-	if err := reader.DetectCapabilities(); err != nil {
-		log.Fatalf("OBDケイパビリティ検出失敗: %v", err)
-	}
-
 	// --- 送信クライアント（Google Sheets） ---
 	client := sender.NewClient(cfg.WebhookURL)
 
@@ -198,26 +182,57 @@ func main() {
 	maintMgr.InitDefaults(cfg.MaintenanceReminders)
 	fmt.Printf("✓ メンテナンスリマインダー: %d 項目\n", len(maintMgr.GetAll()))
 
-	// --- トリップトラッカー（距離積算 + 燃料状態管理用） ---
-	totalKmAccum := maintMgr.TotalKm() // 前回保存値から復元
+	// --- 累計走行距離 ---
+	totalKmAccum := maintMgr.TotalKm()
 	fmt.Printf("✓ 累計走行距離: %.1f km（復元済み）\n", totalKmAccum)
-	tracker := trip.NewTracker(trip.TrackerConfig{
-		ResetThresholdKm: cfg.ResetThreshold,
-	})
 
-	// --- 給油検出（エンジン始動時） ---
-	checkRefueling(reader, tracker, client, cfg)
+	// --- トリップトラッカー ---
+	tracker := trip.NewTracker(trip.TrackerConfig{})
+
+	// --- 輝度制御 ---
+	brightness := display.NewBrightnessController(cfg.Brightness)
+	brightness.Start()
+	defer brightness.Stop()
+
+	// --- ローカルAPI + Web UI（OBD接続前に起動） ---
+	go startLocalAPI(cfg, maintMgr)
+	fmt.Printf("✓ LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 
 	// --- メンテナンス状態をGASに送信 ---
 	sendMaintenanceStatus(client, maintMgr)
 
-	// --- ローカルAPI + Web UI ---
-	brightness := display.NewBrightnessController(cfg.Brightness)
-	brightness.Start()
-	defer brightness.Stop()
-	go startLocalAPI(cfg, maintMgr)
+	// --- ELM327接続（失敗してもクラッシュしない） ---
+	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
+	var reader *obd.Reader
+	obdConnected := false
+	var hasMAF, hasOutsideTemp bool
 
-	// --- メインループ（2層ポーリング） ---
+	tryConnectOBD := func() bool {
+		if err := elm.Connect(); err != nil {
+			log.Printf("⚠ ELM327接続失敗: %v", err)
+			return false
+		}
+		r := obd.NewReader(elm)
+		if err := r.DetectCapabilities(); err != nil {
+			log.Printf("⚠ OBDケイパビリティ検出失敗: %v", err)
+			elm.Close()
+			return false
+		}
+		reader = r
+		hasMAF = reader.HasMAF()
+		hasOutsideTemp = reader.HasOutsideTemp()
+		fmt.Println("✓ ELM327接続完了")
+		return true
+	}
+
+	obdConnected = tryConnectOBD()
+	if obdConnected {
+		checkRefueling(reader, tracker, client, cfg)
+	} else {
+		fmt.Println("⚠ OBD未接続 → メーター表示のみで起動、バックグラウンドでリトライ")
+	}
+
+	// --- メインループ ---
 	const fastIntervalMs = 150
 	const fullEveryN = 5
 
@@ -230,25 +245,44 @@ func main() {
 	maintTicker := time.NewTicker(30 * time.Minute)
 	defer maintTicker.Stop()
 
+	obdRetryTicker := time.NewTicker(10 * time.Second)
+	defer obdRetryTicker.Stop()
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	fmt.Println("\n▶ データ収集開始...")
-	fmt.Printf("  高速ポーリング: %dms (RPM+速度+負荷+スロットル), 全PID: %dmsごと\n", fastIntervalMs, fastIntervalMs*fullEveryN)
 	fmt.Printf("  LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 
 	sampleCount := 0
+	statusCount := 0
 	var lastFuelTank float64
 	var lastOutsideTemp float64
 	var lastFuelEconomy float64
 	var errCount int
 	var wifiConnected bool
-	hasMAF := reader.HasMAF()
-	hasOutsideTemp := reader.HasOutsideTemp()
 	const maxConsecutiveErrors = 10
 	for {
 		select {
 		case <-ticker.C:
+			if !obdConnected {
+				// OBD未接続: 1秒ごとにステータスだけ更新
+				statusCount++
+				if statusCount%7 == 0 {
+					wifiConnected = checkWiFi()
+					dataMu.Lock()
+					latestData = RealtimeData{
+						Alerts:        maintMgr.GetAlerts(),
+						Notification:  getNotification(),
+						OBDConnected:  false,
+						WiFiConnected: wifiConnected,
+						PendingCount:  client.QueueSize(),
+					}
+					dataMu.Unlock()
+				}
+				continue
+			}
+
 			sampleCount++
 			isFull := sampleCount%fullEveryN == 0
 
@@ -262,18 +296,10 @@ func main() {
 			if err != nil {
 				errCount++
 				if errCount >= maxConsecutiveErrors {
-					log.Printf("連続 %d 回エラー、再接続を試みます...", errCount)
-					if reconnErr := reconnect(elm, reader); reconnErr != nil {
-						backoff := time.Duration(errCount/maxConsecutiveErrors) * time.Second
-						if backoff > 30*time.Second {
-							backoff = 30 * time.Second
-						}
-						log.Printf("再接続失敗: %v（%v後にリトライ）", reconnErr, backoff)
-						time.Sleep(backoff)
-					} else {
-						log.Println("✓ 再接続成功")
-						errCount = 0
-					}
+					log.Printf("⚠ OBD接続ロスト（連続%dエラー）→ リトライ待ち", errCount)
+					obdConnected = false
+					elm.Close()
+					errCount = 0
 				}
 				continue
 			}
@@ -306,7 +332,7 @@ func main() {
 				HasOutsideTemp: hasOutsideTemp,
 				Alerts:         maintMgr.GetAlerts(),
 				Notification:   getNotification(),
-				OBDConnected:   errCount == 0,
+				OBDConnected:   true,
 				WiFiConnected:  wifiConnected,
 				PendingCount:   client.QueueSize(),
 			}
@@ -317,6 +343,16 @@ func main() {
 					data.SpeedKmh, data.RPM)
 			}
 
+		case <-obdRetryTicker.C:
+			if !obdConnected {
+				obdConnected = tryConnectOBD()
+				if obdConnected {
+					checkRefueling(reader, tracker, client, cfg)
+					sampleCount = 0
+					errCount = 0
+				}
+			}
+
 		case <-retryTicker.C:
 			client.RetryPending()
 
@@ -325,6 +361,9 @@ func main() {
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
+			if obdConnected {
+				elm.Close()
+			}
 			return
 		}
 	}
@@ -445,14 +484,6 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager)
 		"sent_at":  time.Now(),
 	})
 	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
-}
-
-// reconnect はELM327に再接続してReaderを再初期化する
-func reconnect(elm *obd.ELM327, reader *obd.Reader) error {
-	if err := elm.Reconnect(); err != nil {
-		return err
-	}
-	return reader.DetectCapabilities()
 }
 
 // corsMiddleware はCORSヘッダーを付与する

@@ -37,12 +37,10 @@ func DefaultConfig() BrightnessConfig {
 
 // BrightnessController は液晶の輝度を時刻ベースで自動制御する
 type BrightnessController struct {
-	mu       sync.RWMutex
-	config   BrightnessConfig
-	current  float64  // 現在の輝度（0.0〜1.0）
-	manual   *float64 // 手動オーバーライド（nilなら自動）
-	manualAt time.Time
-	stopCh   chan struct{}
+	mu      sync.RWMutex
+	config  BrightnessConfig
+	current float64 // 現在の輝度（0.0〜1.0）
+	stopCh  chan struct{}
 }
 
 // NewBrightnessController は新しい輝度コントローラーを作成する
@@ -94,19 +92,6 @@ func (bc *BrightnessController) applyScheduled(now time.Time) {
 	bc.mu.Lock()
 	defer bc.mu.Unlock()
 
-	// 手動オーバーライド中なら、次の時間帯境界まで維持
-	if bc.manual != nil {
-		scheduled := bc.brightnessForTime(now)
-		prev := bc.brightnessForTime(bc.manualAt)
-		// 時間帯が変わったら手動オーバーライドを解除
-		if scheduled != prev {
-			log.Printf("🔆 時間帯変更を検知、手動オーバーライド解除 → 自動 %.0f%%", scheduled*100)
-			bc.manual = nil
-		} else {
-			return // まだ同じ時間帯、手動を維持
-		}
-	}
-
 	target := bc.brightnessForTime(now)
 	if target != bc.current {
 		bc.setBrightness(target)
@@ -146,35 +131,6 @@ func (bc *BrightnessController) labelForTime(t time.Time) string {
 	return result
 }
 
-// SetManual は手動で輝度を設定する（次の時間帯切替まで有効）
-func (bc *BrightnessController) SetManual(brightness float64) {
-	if brightness < 0.05 {
-		brightness = 0.05 // 完全に真っ暗にはしない
-	}
-	if brightness > 1.0 {
-		brightness = 1.0
-	}
-
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-
-	bc.manual = &brightness
-	bc.manualAt = time.Now()
-	bc.setBrightness(brightness)
-	log.Printf("🔆 手動輝度設定: %.0f%% (次の時間帯切替で自動に復帰)", brightness*100)
-}
-
-// ClearManual は手動オーバーライドを解除して自動に戻す
-func (bc *BrightnessController) ClearManual() {
-	bc.mu.Lock()
-	defer bc.mu.Unlock()
-
-	bc.manual = nil
-	target := bc.brightnessForTime(time.Now())
-	bc.setBrightness(target)
-	log.Printf("🔆 自動輝度に復帰: %.0f%%", target*100)
-}
-
 // setBrightness は実際にxrandrを呼んで輝度を変更する（ロック保持下で呼ぶ）
 func (bc *BrightnessController) setBrightness(value float64) {
 	bc.current = value
@@ -189,27 +145,3 @@ func (bc *BrightnessController) setBrightness(value float64) {
 	}
 }
 
-// Status は現在の輝度状態を返す
-type BrightnessStatus struct {
-	Current   float64              `json:"current"`    // 現在の輝度 0.0〜1.0
-	Percent   int                  `json:"percent"`    // 現在の輝度 %
-	IsManual  bool                 `json:"is_manual"`  // 手動オーバーライド中か
-	Scheduled float64              `json:"scheduled"`  // スケジュール上の輝度
-	TimeLabel string               `json:"time_label"` // 現在の時間帯ラベル
-	Schedule  []BrightnessSchedule `json:"schedule"`   // 全スケジュール
-}
-
-func (bc *BrightnessController) Status() BrightnessStatus {
-	bc.mu.RLock()
-	defer bc.mu.RUnlock()
-
-	now := time.Now()
-	return BrightnessStatus{
-		Current:   bc.current,
-		Percent:   int(bc.current * 100),
-		IsManual:  bc.manual != nil,
-		Scheduled: bc.brightnessForTime(now),
-		TimeLabel: bc.labelForTime(now),
-		Schedule:  bc.config.Schedule,
-	}
-}
