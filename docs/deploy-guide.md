@@ -225,8 +225,8 @@ sleep 30
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
-  "fuel_tank_capacity_l": 44,
-  "redline_rpm": 6500
+  "engine_displacement_l": 1.3,
+  "max_speed_kmh": 180
 }
 ```
 

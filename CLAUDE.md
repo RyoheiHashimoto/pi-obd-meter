@@ -140,7 +140,6 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 - requestAnimationFrame で60fps補間（ease-out cubic, 300ms）
 - OBDデータ更新は~3.5-4Hz、アニメーションで滑らかに見せる
 - 時刻ベースで自動輝度調整（xrandr --brightness）
-- レッドゾーン描画は `redline_rpm` configから取得
 
 ### ディスプレイ設定 (config.txt)
 ELECROW 5インチ IPS (800×480) 用。`/boot/firmware/config.txt` に追記:
@@ -172,9 +171,7 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `serial_port`: ELM327のシリアルポート (例: /dev/rfcomm0)
 - `webhook_url`: GAS WebアプリのURL
 - `engine_displacement_l`: エンジン排気量 (例: ZJ-VE=1.3) — 燃費推定に使用
-- `redline_rpm`: レッドゾーン開始回転数 (例: ZJ-VE=6500)
 - `max_speed_kmh`: 速度メーター最大値 (例: 180)
-- `max_rpm`: RPMメーター最大値 (例: 8000)
 - `initial_odometer_km`: 初期ODO値 (km)
 - `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, タイプ, 間隔, 警告閾値）
 

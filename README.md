@@ -133,9 +133,7 @@ hdmi_cvt 800 480 60 6 0 0 0
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
   "engine_displacement_l": 1.3,
-  "redline_rpm": 6500,
   "max_speed_kmh": 180,
-  "max_rpm": 8000,
   "initial_odometer_km": 98500,
   "maintenance_reminders": [
     { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8 }
@@ -148,9 +146,7 @@ hdmi_cvt 800 480 60 6 0 0 0
 | `serial_port` | ELM327のシリアルポート |
 | `webhook_url` | GAS WebアプリのURL |
 | `engine_displacement_l` | エンジン排気量 (L) — 燃費推定に使用 |
-| `redline_rpm` | レッドゾーン開始回転数 |
 | `max_speed_kmh` | 速度メーター最大値 |
-| `max_rpm` | RPMメーター最大値 |
 | `initial_odometer_km` | 初期ODO値 (km) |
 | `maintenance_reminders` | メンテナンスリマインダー項目 |
 

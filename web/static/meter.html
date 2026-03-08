@@ -190,18 +190,12 @@ function ensureFilter(svg) {
 let thrArc, thrLabel;
 function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
-  const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz, rzStart } = cfg;
+  const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
 
   ensureFilter(svg);
 
   // Track (thick bezel)
   el(svg, 'path', { d: arcPath(cx, cy, r, SA, EA), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
-
-  // Red zone
-  if (rzStart != null) {
-    const rzA = SA + ((rzStart - min) / (max - min)) * SW;
-    el(svg, 'path', { d: arcPath(cx, cy, r, rzA, EA), fill: 'none', stroke: '#f44336', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: '0.15' });
-  }
 
   // Ticks (bold)
   const total = mj * mn;
@@ -416,7 +410,7 @@ function showToast(msg) {
 // ============================================================
 // Config & Gauge Layout Constants
 // ============================================================
-const DEFAULTS = { redline_rpm: 6500, max_speed_kmh: 180, max_rpm: 8000 };
+const DEFAULTS = { max_speed_kmh: 180 };
 const GCX = 280, GCY = 260, GR = 220; // ゲージ中心座標・半径
 
 let gs;

@@ -31,9 +31,7 @@ type Config struct {
 	LocalAPIPort         int                      `json:"local_api_port"`
 	MaintenancePath      string                   `json:"maintenance_path"`
 	WebStaticDir         string                   `json:"web_static_dir"`
-	RedlineRPM           int                      `json:"redline_rpm"`
 	MaxSpeedKmh          int                      `json:"max_speed_kmh"`
-	MaxRPM               int                      `json:"max_rpm"`
 	OBDProtocol          string                   `json:"obd_protocol"`
 	EngineDisplacementL  float64                  `json:"engine_displacement_l"`
 	InitialOdometerKm    float64                  `json:"initial_odometer_km"`
@@ -148,9 +146,7 @@ func loadConfig(path string) Config {
 		LocalAPIPort:        9090,
 		MaintenancePath:     "/var/lib/pi-obd-meter/maintenance.json",
 		WebStaticDir:        "/opt/pi-obd-meter/web/static",
-		RedlineRPM:          6500,
 		MaxSpeedKmh:         180,
-		MaxRPM:              8000,
 		OBDProtocol:         "6",
 		EngineDisplacementL: 1.3,
 		Brightness:          display.DefaultConfig(),
@@ -495,13 +491,11 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	// --- Web UI配信 ---
 	mux.Handle("GET /", http.FileServer(http.Dir(cfg.WebStaticDir)))
 
-	// --- 設定API（meter.htmlがredline_rpm等を取得する） ---
+	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"redline_rpm":   cfg.RedlineRPM,
 			"max_speed_kmh": cfg.MaxSpeedKmh,
-			"max_rpm":       cfg.MaxRPM,
 		})
 	})
 
