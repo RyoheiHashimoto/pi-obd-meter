@@ -1,3 +1,6 @@
+// Package maintenance は走行距離/日付ベースのメンテナンスリマインダーを管理する。
+// 状態はJSONファイルに永続化し、累計走行距離とリマインダーごとのリセット履歴を保持する。
+// GASダッシュボードからリモートリセットが可能。
 package maintenance
 
 import (
@@ -147,6 +150,7 @@ func (m *Manager) GetAlerts() []Status {
 	return alerts
 }
 
+// checkOne は1件のリマインダーの進捗・アラート状態を計算する
 func (m *Manager) checkOne(r *Reminder) Status {
 	s := Status{Reminder: *r}
 
@@ -219,7 +223,7 @@ func (m *Manager) ResetReminder(id string) bool {
 	return true
 }
 
-// --- 永続化 ---
+// --- 永続化（maintenance.json） ---
 
 // persistState はファイルに保存する状態（reminders + totalKm）
 type persistState struct {
@@ -227,6 +231,7 @@ type persistState struct {
 	Reminders map[string]*Reminder `json:"reminders"`
 }
 
+// save はリマインダー状態をJSONファイルに書き出す
 func (m *Manager) save() {
 	state := persistState{
 		TotalKm:   m.totalKm,
@@ -245,6 +250,7 @@ func (m *Manager) save() {
 	}
 }
 
+// load はJSONファイルからリマインダー状態を復元する（新旧フォーマット対応）
 func (m *Manager) load() {
 	data, err := os.ReadFile(m.filePath)
 	if err != nil {

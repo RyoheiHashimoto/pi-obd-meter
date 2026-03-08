@@ -1,3 +1,6 @@
+// pi-obd-meter はOBD-2対応車向けの車載メーターアプリケーション。
+// ELM327経由で ECU からリアルタイムデータを取得し、5インチLCDに表示する。
+// 走行距離・メンテナンス状態は Google Sheets (GAS Webhook) に自動送信する。
 package main
 
 import (
@@ -131,6 +134,7 @@ func getNotification() string {
 	return notification
 }
 
+// checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
 func checkWiFi() bool {
 	iface, err := net.InterfaceByName("wlan0")
 	if err != nil {
@@ -143,6 +147,7 @@ func checkWiFi() bool {
 	return len(addrs) > 0
 }
 
+// loadConfig はJSONファイルから設定を読み込む。ファイルがなければデフォルト値を返す。
 func loadConfig(path string) Config {
 	cfg := Config{
 		SerialPort:           "/dev/rfcomm0",
@@ -255,19 +260,21 @@ func main() {
 	}
 
 	// --- メインループ ---
+	// 2層ポーリング: 高速(150ms)で RPM/速度/負荷/スロットル を取得し、
+	// その5回に1回(750ms)で水温・MAF等の全PIDを取得する。
 	const fastIntervalMs = 150
 	const fullEveryN = 5
 
 	ticker := time.NewTicker(fastIntervalMs * time.Millisecond)
 	defer ticker.Stop()
 
-	retryTicker := time.NewTicker(5 * time.Minute)
+	retryTicker := time.NewTicker(5 * time.Minute)   // 送信失敗キューのリトライ間隔
 	defer retryTicker.Stop()
 
-	maintTicker := time.NewTicker(5 * time.Minute)
+	maintTicker := time.NewTicker(5 * time.Minute)   // GASへのメンテナンス状態送信間隔
 	defer maintTicker.Stop()
 
-	obdRetryTicker := time.NewTicker(10 * time.Second)
+	obdRetryTicker := time.NewTicker(10 * time.Second) // OBD未接続時の再接続間隔
 	defer obdRetryTicker.Stop()
 
 	sigCh := make(chan os.Signal, 1)
@@ -327,6 +334,7 @@ func main() {
 			}
 			errCount = 0
 
+			// 累計走行距離の積算（トリップとは別にメンテナンス用に独立管理）
 			dtSec := float64(fastIntervalMs) / 1000.0
 
 			if isFull {
@@ -474,7 +482,7 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager,
 	}
 }
 
-// corsMiddleware はCORSヘッダーを付与する
+// corsMiddleware はCORSヘッダーを付与する（meter.htmlからのfetchリクエスト許可用）
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -487,6 +495,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// startLocalAPI はローカルHTTPサーバーを起動する。
+// meter.html の配信と、リアルタイムデータ・設定・メンテナンスのJSON APIを提供する。
 func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	mux := http.NewServeMux()
 

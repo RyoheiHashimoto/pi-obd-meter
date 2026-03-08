@@ -1,3 +1,6 @@
+// Package sender はGoogle Apps Script Webhookへのデータ送信を提供する。
+// 送信失敗時はメモリ内リトライキュー（最大100件）に保持し、定期的に再送する。
+// overlayFS環境を考慮し、ディスクへの永続化は行わない。
 package sender
 
 import (
@@ -130,6 +133,7 @@ func (c *Client) IsSending() bool {
 	return c.sending
 }
 
+// enqueue は送信失敗したペイロードをリトライキューに追加する（上限100件）
 func (c *Client) enqueue(payload GASPayload) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

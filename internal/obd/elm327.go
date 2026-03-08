@@ -1,3 +1,5 @@
+// Package obd はELM327アダプタを介したOBD-2通信を提供する。
+// シリアルポート経由でATコマンド・PIDクエリを実行し、車両のリアルタイムデータを取得する。
 package obd
 
 import (
@@ -245,12 +247,10 @@ func pidDataLength(pid byte) int {
 		return 2
 	case 0x10: // MAF — 2バイト
 		return 2
-	case 0x1F: // Run time — 2バイト
-		return 2
-	case 0x04, 0x05, 0x0B, 0x0D, 0x0F, 0x2F: // 1バイト系
+	case 0x04, 0x05, 0x0B, 0x0D, 0x0F, 0x11: // 1バイト系
 		return 1
 	default:
-		return 2 // デフォルト2バイト
+		return 2 // OBD-2標準は多くが2バイト
 	}
 }
 

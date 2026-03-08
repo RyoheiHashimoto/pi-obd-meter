@@ -1,3 +1,5 @@
+// Package display はHDMIディスプレイの輝度を時刻ベースで自動制御する。
+// xrandr コマンドを使用してソフトウェア輝度を変更する。
 package display
 
 import (

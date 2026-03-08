@@ -1,3 +1,6 @@
+// Package trip はトリップ（走行区間）の距離・時間・速度を追跡する。
+// 車速を積分して走行距離を算出し、電源断に備えて状態をJSONファイルに永続化する。
+// GASダッシュボードから給油記録時にトリップリセットが通知される。
 package trip
 
 import (
@@ -151,13 +154,15 @@ func (t *Tracker) DistanceKm() float64 {
 	return t.current.DistanceKm
 }
 
-// --- 永続化 ---
+// --- 永続化（電源断からの復帰用） ---
 
+// persistedState はJSONファイルに保存するトリップ状態
 type persistedState struct {
 	Current      TripData `json:"current"`
 	LastTimestamp int64    `json:"last_timestamp"`
 }
 
+// saveState は現在のトリップ状態をJSONファイルに書き出す（overlayFS環境では失敗する）
 func (t *Tracker) saveState() {
 	state := persistedState{
 		Current:      t.current,
@@ -176,6 +181,7 @@ func (t *Tracker) saveState() {
 	}
 }
 
+// loadState は前回保存したトリップ状態をJSONファイルから復元する
 func (t *Tracker) loadState() {
 	data, err := os.ReadFile(t.statePath)
 	if err != nil {

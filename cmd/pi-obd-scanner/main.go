@@ -1,3 +1,5 @@
+// pi-obd-scanner は車両の対応PIDスキャン・リアルタイムデータ確認・DTC読み取りを行う診断ツール。
+// メインアプリ (pi-obd-meter) の導入前に、車両との通信互換性を確認するために使用する。
 package main
 
 import (
