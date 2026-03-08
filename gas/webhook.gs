@@ -173,21 +173,7 @@ function updateOdometer(km) {
   var val = parseFloat(km);
   if (!val || val <= 0) throw new Error('有効なODO値を入力してください');
 
-  var sheet = getOrCreateSheet('設定', ['キー', '値', '更新日時']);
-
-  // 既存のodometer_correction行を探す
-  if (sheet.getLastRow() > 1) {
-    var keys = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    for (var i = 0; i < keys.length; i++) {
-      if (keys[i][0] === 'odometer_correction') {
-        sheet.getRange(i + 2, 2).setValue(val);
-        sheet.getRange(i + 2, 3).setValue(new Date());
-        return { status: 'ok', odometer: val };
-      }
-    }
-  }
-
-  sheet.appendRow(['odometer_correction', val, new Date()]);
+  upsertSetting('odometer_correction', val);
   return { status: 'ok', odometer: val };
 }
 
@@ -321,48 +307,8 @@ function buildDashboardHtml() {
   html += '<meta name="apple-mobile-web-app-capable" content="yes">';
   html += '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
   html += '<title>DYデミオ</title>';
-  html += '<style>';
-  html += '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}';
-  html += 'body{margin:0;padding:0;width:100%;min-height:100vh;background:#0a0a10;color:#ddd;font-family:-apple-system,sans-serif;font-size:32px;-webkit-text-size-adjust:100%}';
-  html += '.wrap{width:100%;padding:28px}';
-  html += 'h1{font-size:40px;color:#fff;margin:0 0 8px}';
-  html += '.sub{font-size:22px;color:#666;margin-bottom:28px}';
-  html += '.card{background:#12121a;border-radius:18px;padding:24px;margin-bottom:24px}';
-  html += '.card h2{font-size:28px;color:#888;margin:0 0 18px;letter-spacing:1px}';
-  html += '.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}';
-  html += 'table{width:100%;border-collapse:collapse;font-size:28px}';
-  html += 'th{text-align:left;color:#666;padding:14px 16px;border-bottom:1px solid #1a1a24}';
-  html += 'td{padding:14px 16px;border-bottom:1px solid #0f0f18}';
-  html += '.bar-bg{height:16px;background:#1a1a24;border-radius:8px;overflow:hidden;margin-top:14px}';
-  html += '.bar-fg{height:100%;border-radius:8px}';
-  html += '.ok{background:#4caf50} .warn{background:#ff9800} .danger{background:#f44336}';
-  html += '.maint-item{padding:18px 0;border-bottom:1px solid #1a1a24}';
-  html += '.maint-item:last-child{border:none}';
-  html += '.maint-name{font-weight:600;color:#ddd;font-size:28px}';
-  html += '.maint-detail{font-size:24px;color:#888;margin-top:6px}';
-  html += '.maint-row{display:flex;justify-content:space-between;align-items:center;gap:16px}';
-  html += '.done-btn{background:#2a2a35;color:#aaa;border:1px solid #3a3a45;border-radius:12px;padding:18px 32px;font-size:24px;cursor:pointer;white-space:nowrap}';
-  html += '.done-btn:active{background:#3a3a45}';
-  html += '.toggle-btn{background:none;border:none;color:#666;cursor:pointer;padding:18px 0;font-size:24px;width:100%;text-align:center}';
-  html += '.completed-date{font-size:22px;color:#4caf50}';
-  // フォーム用CSS
-  html += '.form-group{margin-bottom:18px}';
-  html += '.form-group label{display:block;color:#888;font-size:22px;margin-bottom:6px}';
-  html += '.form-input{width:100%;background:#1a1a24;border:1px solid #3a3a45;border-radius:10px;color:#fff;font-size:28px;padding:16px;outline:none}';
-  html += '.form-input:focus{border-color:#2196f3}';
-  html += '.form-row{display:flex;gap:14px}';
-  html += '.form-row .form-group{flex:1}';
-  html += '.form-check{display:flex;align-items:center;gap:12px;padding:12px 0}';
-  html += '.form-check input[type=checkbox]{width:28px;height:28px;accent-color:#2196f3}';
-  html += '.form-check label{color:#ddd;font-size:26px;margin:0}';
-  html += '.form-submit{width:100%;background:#2196f3;color:#fff;border:none;border-radius:12px;padding:18px;font-size:28px;font-weight:600;cursor:pointer;margin-top:8px}';
-  html += '.form-submit:active{background:#1976d2}';
-  html += '.form-submit:disabled{background:#333;color:#666;cursor:not-allowed}';
-  html += '.form-result{margin-top:14px;padding:14px;border-radius:10px;font-size:24px;display:none}';
-  html += '.form-result.success{display:block;background:#1b3a1b;color:#69f0ae}';
-  html += '.form-result.error{display:block;background:#3a1b1b;color:#f44336}';
-  html += '.form-hint{font-size:20px;color:#555;margin-top:6px}';
-  html += '</style></head><body>';
+  html += '<style>' + getDashboardCSS() + '</style>';
+  html += '</head><body>';
 
   // ヘッダー
   html += '<div class="wrap">';
@@ -449,64 +395,103 @@ function buildDashboardHtml() {
   html += '</div>';
 
   // JavaScript
-  html += '<script>';
-  html += 'function toggleSection(id){';
-  html += 'var el=document.getElementById(id);var btn=document.getElementById(id+"-btn");';
-  html += 'if(el.style.display==="none"){el.style.display="block";btn.textContent="閉じる ▲";}';
-  html += 'else{el.style.display="none";btn.textContent="もっと見る ▼";}';
-  html += '}';
-  html += 'function markDone(id,name){';
-  html += 'if(!confirm(name+" を完了にしますか？"))return;';
-  html += 'google.script.run.withSuccessHandler(function(){location.reload();})';
-  html += '.withFailureHandler(function(e){alert("エラー: "+e.message);})';
-  html += '.markMaintenanceDone(id,name);';
-  html += '}';
-  // 給油記録送信
-  html += 'function submitRefuel(){';
-  html += 'var amount=document.getElementById("rf-amount").value;';
-  html += 'if(!amount){alert("給油量を入力してください");return;}';
-  html += 'if(!confirm(amount+" L を記録しますか？"))return;';
-  html += 'var btn=document.getElementById("rf-btn");btn.disabled=true;btn.textContent="送信中...";';
-  html += 'var res=document.getElementById("rf-result");res.className="form-result";';
-  html += 'google.script.run';
-  html += '.withSuccessHandler(function(r){';
-  html += 'res.className="form-result success";';
-  html += 'var msg="記録しました";';
-  html += 'if(r.fuel_economy>0)msg+="　燃費: "+r.fuel_economy+" km/L（"+r.distance+" km走行）";';
-  html += 'res.textContent=msg;';
-  html += 'btn.disabled=false;btn.textContent="給油を記録";';
-  html += 'document.getElementById("rf-amount").value="";';
-  html += '})';
-  html += '.withFailureHandler(function(e){';
-  html += 'res.className="form-result error";res.textContent="エラー: "+e.message;';
-  html += 'btn.disabled=false;btn.textContent="給油を記録";';
-  html += '})';
-  html += '.recordManualRefuel({amount:amount});';
-  html += '}';
-  // ODO補正送信
-  html += 'function submitOdo(){';
-  html += 'var km=document.getElementById("odo-val").value;';
-  html += 'if(!km){alert("ODO値を入力してください");return;}';
-  html += 'if(!confirm("ODOを "+km+" km に補正しますか？"))return;';
-  html += 'var btn=document.getElementById("odo-btn");btn.disabled=true;btn.textContent="送信中...";';
-  html += 'var res=document.getElementById("odo-result");res.className="form-result";';
-  html += 'google.script.run';
-  html += '.withSuccessHandler(function(r){';
-  html += 'res.className="form-result success";res.textContent="ODOを "+r.odometer+" km に設定しました";';
-  html += 'btn.disabled=false;btn.textContent="ODOを補正";';
-  html += 'document.getElementById("odo-val").value="";';
-  html += '})';
-  html += '.withFailureHandler(function(e){';
-  html += 'res.className="form-result error";res.textContent="エラー: "+e.message;';
-  html += 'btn.disabled=false;btn.textContent="ODOを補正";';
-  html += '})';
-  html += '.updateOdometer(km);';
-  html += '}';
-  html += '</script>';
+  html += '<script>' + getDashboardJS() + '</script>';
 
   html += '</div>';
   html += '</body></html>';
   return html;
+}
+
+// === ダッシュボード CSS ===
+function getDashboardCSS() {
+  return '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}'
+    + 'body{margin:0;padding:0;width:100%;min-height:100vh;background:#0a0a10;color:#ddd;font-family:-apple-system,sans-serif;font-size:32px;-webkit-text-size-adjust:100%}'
+    + '.wrap{width:100%;padding:28px}'
+    + 'h1{font-size:40px;color:#fff;margin:0 0 8px}'
+    + '.sub{font-size:22px;color:#666;margin-bottom:28px}'
+    + '.card{background:#12121a;border-radius:18px;padding:24px;margin-bottom:24px}'
+    + '.card h2{font-size:28px;color:#888;margin:0 0 18px;letter-spacing:1px}'
+    + '.tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}'
+    + 'table{width:100%;border-collapse:collapse;font-size:28px}'
+    + 'th{text-align:left;color:#666;padding:14px 16px;border-bottom:1px solid #1a1a24}'
+    + 'td{padding:14px 16px;border-bottom:1px solid #0f0f18}'
+    + '.bar-bg{height:16px;background:#1a1a24;border-radius:8px;overflow:hidden;margin-top:14px}'
+    + '.bar-fg{height:100%;border-radius:8px}'
+    + '.ok{background:#4caf50} .warn{background:#ff9800} .danger{background:#f44336}'
+    + '.maint-item{padding:18px 0;border-bottom:1px solid #1a1a24}'
+    + '.maint-item:last-child{border:none}'
+    + '.maint-name{font-weight:600;color:#ddd;font-size:28px}'
+    + '.maint-detail{font-size:24px;color:#888;margin-top:6px}'
+    + '.maint-row{display:flex;justify-content:space-between;align-items:center;gap:16px}'
+    + '.done-btn{background:#2a2a35;color:#aaa;border:1px solid #3a3a45;border-radius:12px;padding:18px 32px;font-size:24px;cursor:pointer;white-space:nowrap}'
+    + '.done-btn:active{background:#3a3a45}'
+    + '.toggle-btn{background:none;border:none;color:#666;cursor:pointer;padding:18px 0;font-size:24px;width:100%;text-align:center}'
+    + '.completed-date{font-size:22px;color:#4caf50}'
+    + '.form-group{margin-bottom:18px}'
+    + '.form-group label{display:block;color:#888;font-size:22px;margin-bottom:6px}'
+    + '.form-input{width:100%;background:#1a1a24;border:1px solid #3a3a45;border-radius:10px;color:#fff;font-size:28px;padding:16px;outline:none}'
+    + '.form-input:focus{border-color:#2196f3}'
+    + '.form-row{display:flex;gap:14px}'
+    + '.form-row .form-group{flex:1}'
+    + '.form-check{display:flex;align-items:center;gap:12px;padding:12px 0}'
+    + '.form-check input[type=checkbox]{width:28px;height:28px;accent-color:#2196f3}'
+    + '.form-check label{color:#ddd;font-size:26px;margin:0}'
+    + '.form-submit{width:100%;background:#2196f3;color:#fff;border:none;border-radius:12px;padding:18px;font-size:28px;font-weight:600;cursor:pointer;margin-top:8px}'
+    + '.form-submit:active{background:#1976d2}'
+    + '.form-submit:disabled{background:#333;color:#666;cursor:not-allowed}'
+    + '.form-result{margin-top:14px;padding:14px;border-radius:10px;font-size:24px;display:none}'
+    + '.form-result.success{display:block;background:#1b3a1b;color:#69f0ae}'
+    + '.form-result.error{display:block;background:#3a1b1b;color:#f44336}'
+    + '.form-hint{font-size:20px;color:#555;margin-top:6px}';
+}
+
+// === ダッシュボード JavaScript ===
+function getDashboardJS() {
+  return 'function toggleSection(id){'
+    + 'var el=document.getElementById(id);var btn=document.getElementById(id+"-btn");'
+    + 'if(el.style.display==="none"){el.style.display="block";btn.textContent="閉じる ▲";}'
+    + 'else{el.style.display="none";btn.textContent="もっと見る ▼";}}'
+    // メンテナンス完了
+    + 'function markDone(id,name){'
+    + 'if(!confirm(name+" を完了にしますか？"))return;'
+    + 'google.script.run.withSuccessHandler(function(){location.reload();})'
+    + '.withFailureHandler(function(e){alert("エラー: "+e.message);})'
+    + '.markMaintenanceDone(id,name);}'
+    // 給油記録送信
+    + 'function submitRefuel(){'
+    + 'var amount=document.getElementById("rf-amount").value;'
+    + 'if(!amount){alert("給油量を入力してください");return;}'
+    + 'if(!confirm(amount+" L を記録しますか？"))return;'
+    + 'var btn=document.getElementById("rf-btn");btn.disabled=true;btn.textContent="送信中...";'
+    + 'var res=document.getElementById("rf-result");res.className="form-result";'
+    + 'google.script.run'
+    + '.withSuccessHandler(function(r){'
+    + 'res.className="form-result success";'
+    + 'var msg="記録しました";'
+    + 'if(r.fuel_economy>0)msg+="　燃費: "+r.fuel_economy+" km/L（"+r.distance+" km走行）";'
+    + 'res.textContent=msg;'
+    + 'btn.disabled=false;btn.textContent="給油を記録";'
+    + 'document.getElementById("rf-amount").value="";})'
+    + '.withFailureHandler(function(e){'
+    + 'res.className="form-result error";res.textContent="エラー: "+e.message;'
+    + 'btn.disabled=false;btn.textContent="給油を記録";})'
+    + '.recordManualRefuel({amount:amount});}'
+    // ODO補正送信
+    + 'function submitOdo(){'
+    + 'var km=document.getElementById("odo-val").value;'
+    + 'if(!km){alert("ODO値を入力してください");return;}'
+    + 'if(!confirm("ODOを "+km+" km に補正しますか？"))return;'
+    + 'var btn=document.getElementById("odo-btn");btn.disabled=true;btn.textContent="送信中...";'
+    + 'var res=document.getElementById("odo-result");res.className="form-result";'
+    + 'google.script.run'
+    + '.withSuccessHandler(function(r){'
+    + 'res.className="form-result success";res.textContent="ODOを "+r.odometer+" km に設定しました";'
+    + 'btn.disabled=false;btn.textContent="ODOを補正";'
+    + 'document.getElementById("odo-val").value="";})'
+    + '.withFailureHandler(function(e){'
+    + 'res.className="form-result error";res.textContent="エラー: "+e.message;'
+    + 'btn.disabled=false;btn.textContent="ODOを補正";})'
+    + '.updateOdometer(km);}';
 }
 
 // === Render helper: 給油行 ===
