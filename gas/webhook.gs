@@ -1,8 +1,18 @@
 /**
- * DYデミオ 燃費メーター — Google Apps Script
+ * DYデミオ 車載メーター — Google Apps Script
+ *
+ * 役割:
+ * - doPost: Pi からのデータ受信 (メンテナンス状態)
+ * - doGet: スマホ向けダッシュボード (給油記録・ODO補正・メンテ管理)
+ *
+ * シート構成:
+ * - 給油記録: 手動入力した給油データ + 燃費自動算出
+ * - メンテ状態: Pi から受信した最新のメンテナンス進捗
+ * - メンテ完了: ダッシュボードから「完了」を押した項目 (Pi がリセット後に自動削除)
+ * - 設定: Pi との通信用 KVS (odometer_correction, trip_reset, total_km 等)
  *
  * セットアップ手順:
- * 1. Google Sheetsで新しいスプレッドシートを作成
+ * 1. Google Sheets で新しいスプレッドシートを作成
  * 2. 拡張機能 → Apps Script を開く
  * 3. このコードを貼り付け
  * 4. setup() を実行（シート初期化）
@@ -12,7 +22,9 @@
  * 6. 表示されたURLをラズパイの config.json の webhook_url に設定
  */
 
-// === Webhook エンドポイント ===
+// === Webhook エンドポイント (Pi → GAS) ===
+// Pi から type: "maintenance" のペイロードを受信し、メンテ状態シートを更新する。
+// レスポンスで pending_resets, odometer_correction, trip_reset を Pi に返す。
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
@@ -30,14 +42,15 @@ function doPost(e) {
   }
 }
 
-// === Webダッシュボード ===
+// === Webダッシュボード (スマホ → GAS) ===
+// スマホブラウザからアクセスすると、給油記録・メンテ管理・ODO補正の画面を返す。
 function doGet(e) {
   return HtmlService.createHtmlOutput(buildDashboardHtml())
     .setTitle('DYデミオ ダッシュボード')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-// === 給油データ処理 ===
+// === 給油データ処理 (旧: Pi自動検出 → 現在は未使用、互換性のため残す) ===
 function handleRefuel(data) {
   const sheet = getOrCreateSheet('給油記録', [
     '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
@@ -62,7 +75,9 @@ function handleRefuel(data) {
   return jsonResponse({ status: 'ok', type: 'refuel' });
 }
 
-// === メンテナンス状態処理 ===
+// === メンテナンス状態処理 (Pi → GAS、5分間隔) ===
+// Pi からメンテナンス進捗を受信し、シートを最新状態で上書きする。
+// レスポンスで Pi 向けの指示（メンテリセット・ODO補正・トリップリセット）を返す。
 function handleMaintenance(data) {
   const sheet = getOrCreateSheet('メンテ状態', [
     '項目ID', '項目名', 'タイプ', '進捗(%)', '残り', '要アラート', '超過', '更新日時'
@@ -136,7 +151,9 @@ function handleMaintenance(data) {
   });
 }
 
-// === 手動給油記録（ダッシュボードから呼ばれる） ===
+// === 手動給油記録 (ダッシュボードから呼ばれる) ===
+// 給油量を記録し、前回給油時からの走行距離から燃費を算出する。
+// 記録後、Pi にトリップリセットを依頼する（設定シート経由）。
 function recordManualRefuel(data) {
   var sheet = getOrCreateSheet('給油記録', [
     '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
@@ -176,7 +193,9 @@ function recordManualRefuel(data) {
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1) };
 }
 
-// === ODO補正（ダッシュボードから呼ばれる） ===
+// === ODO補正 (ダッシュボードから呼ばれる) ===
+// 設定シートに odometer_correction を書き込む。
+// Pi が次回メンテナンス送信時にこの値を読み取り、累計走行距離を補正する。
 function updateOdometer(km) {
   var val = parseFloat(km);
   if (!val || val <= 0) throw new Error('有効なODO値を入力してください');
@@ -199,7 +218,7 @@ function updateOdometer(km) {
   return { status: 'ok', odometer: val };
 }
 
-// === 設定値取得 ===
+// === 設定値取得 (設定シートからキーで検索) ===
 function getSettingValue(key) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('設定');
@@ -212,7 +231,7 @@ function getSettingValue(key) {
   return null;
 }
 
-// === 設定値書き込み（upsert） ===
+// === 設定値書き込み (upsert: 既存なら更新、なければ追加) ===
 function upsertSetting(key, value) {
   var sheet = getOrCreateSheet('設定', ['キー', '値', '更新日時']);
   if (sheet.getLastRow() > 1) {
@@ -228,7 +247,7 @@ function upsertSetting(key, value) {
   sheet.appendRow([key, value, new Date()]);
 }
 
-// === 設定値削除 ===
+// === 設定値削除 (設定シートから行ごと削除) ===
 function clearSetting(key) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('設定');
@@ -243,7 +262,9 @@ function clearSetting(key) {
   }
 }
 
-// === メンテナンス完了マーク（ダッシュボードから呼ばれる） ===
+// === メンテナンス完了マーク (ダッシュボードから呼ばれる) ===
+// 「メンテ完了」シートに記録 → Pi が次回送信時に pending_resets としてリセット指示を受け取る。
+// Pi がリセット完了（progress < 10%）したら自動的にこのシートから削除される。
 function markMaintenanceDone(itemId, itemName) {
   var sheet = getOrCreateSheet('メンテ完了', ['項目ID', '項目名', '完了日時']);
 
@@ -262,7 +283,7 @@ function markMaintenanceDone(itemId, itemName) {
   return { status: 'ok' };
 }
 
-// === 完了済みIDマップ取得 ===
+// === 完了済みIDマップ取得 (メンテ完了シートから {id: {name, date}} を返す) ===
 function getCompletedIds() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('メンテ完了');
@@ -276,7 +297,7 @@ function getCompletedIds() {
   return result;
 }
 
-// === 完了済みアイテム削除 ===
+// === 完了済みアイテム削除 (Pi がリセット済みの項目をメンテ完了シートから除去) ===
 function removeCompleted(itemId) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('メンテ完了');
@@ -292,6 +313,8 @@ function removeCompleted(itemId) {
 }
 
 // === Webダッシュボード HTML ===
+// ダークテーマのモバイル対応HTML を生成する。
+// セクション: 給油記録フォーム → 給油履歴 → メンテナンス必要 → メンテ済 → ODO補正
 function buildDashboardHtml() {
   // データ取得
   var fuelData = getSheetData('給油記録');
@@ -566,7 +589,7 @@ function renderCompletedItem(entry) {
   return html;
 }
 
-// === シートデータ取得（ヘッダー行を除く） ===
+// === ユーティリティ: シートデータ取得（ヘッダー行を除く全行を返す） ===
 function getSheetData(sheetName) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(sheetName);
@@ -574,7 +597,7 @@ function getSheetData(sheetName) {
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
 }
 
-// === 初期セットアップ（1回だけ実行） ===
+// === 初期セットアップ (Apps Script エディタから1回だけ手動実行) ===
 function setup() {
   getOrCreateSheet('給油記録', [
     '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
@@ -593,8 +616,9 @@ function setup() {
   Logger.log('セットアップ完了: 給油記録 / メンテ状態 / メンテ完了 / 設定 シートを作成しました');
 }
 
-// === ユーティリティ ===
+// === ユーティリティ: シート操作 ===
 
+// getOrCreateSheet はシートを取得し、存在しなければヘッダー付きで作成する
 function getOrCreateSheet(name, headers) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(name);
@@ -613,11 +637,13 @@ function getOrCreateSheet(name, headers) {
   return sheet;
 }
 
+// round は指定桁数で四捨五入する
 function round(val, decimals) {
   var factor = Math.pow(10, decimals);
   return Math.round(val * factor) / factor;
 }
 
+// jsonResponse は JSON 形式の ContentService レスポンスを返す
 function jsonResponse(data, statusCode) {
   return ContentService
     .createTextOutput(JSON.stringify(data))

@@ -197,4 +197,3 @@ func (r *Reader) readAllSingle() (*OBDData, error) {
 
 	return data, nil
 }
-

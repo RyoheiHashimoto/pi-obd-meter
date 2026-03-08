@@ -146,4 +146,3 @@ func (bc *BrightnessController) setBrightness(value float64) {
 		log.Printf("⚠ xrandr輝度変更失敗: %v (DISPLAY未設定またはHDMI未接続の可能性)", err)
 	}
 }
-

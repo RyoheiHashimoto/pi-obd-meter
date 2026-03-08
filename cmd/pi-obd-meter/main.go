@@ -43,19 +43,19 @@ type Config struct {
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh       float64              `json:"speed_kmh"`
-	RPM            float64              `json:"rpm"`
-	EngineLoad     float64              `json:"engine_load"`
-	ThrottlePos    float64              `json:"throttle_pos"`
-	FuelEconomy    float64              `json:"fuel_economy"`
-	TripKm         float64              `json:"trip_km"`
-	CoolantTemp    float64              `json:"coolant_temp"`
-	Alerts         []maintenance.Status `json:"alerts"`
-	Notification   string               `json:"notification,omitempty"`
-	OBDConnected   bool                 `json:"obd_connected"`
-	WiFiConnected  bool                 `json:"wifi_connected"`
-	PendingCount   int                  `json:"pending_count"`
-	SendSending    bool                 `json:"send_sending"`
+	SpeedKmh      float64              `json:"speed_kmh"`
+	RPM           float64              `json:"rpm"`
+	EngineLoad    float64              `json:"engine_load"`
+	ThrottlePos   float64              `json:"throttle_pos"`
+	FuelEconomy   float64              `json:"fuel_economy"`
+	TripKm        float64              `json:"trip_km"`
+	CoolantTemp   float64              `json:"coolant_temp"`
+	Alerts        []maintenance.Status `json:"alerts"`
+	Notification  string               `json:"notification,omitempty"`
+	OBDConnected  bool                 `json:"obd_connected"`
+	WiFiConnected bool                 `json:"wifi_connected"`
+	PendingCount  int                  `json:"pending_count"`
+	SendSending   bool                 `json:"send_sending"`
 }
 
 var version = "dev"
@@ -65,12 +65,12 @@ var version = "dev"
 // MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
 // 燃費計算用の物理定数
 const (
-	stoichiometricAFR = 14.7   // ガソリンの理論空燃比 (空気kg / 燃料kg)
-	gasolineDensityGL = 750.0  // ガソリン密度 (g/L)
-	airDensityGL      = 1.225  // 標準大気密度 (g/L = kg/m³)
-	idleFuelRateLH    = 0.8    // アイドリング時の最低燃料消費量 (L/h)
-	maxDisplayKmL     = 99.9   // 燃費表示の上限値 (km/L)
-	minDisplaySpeedKm = 10.0   // 燃費表示の最低速度 (km/h)
+	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
+	gasolineDensityGL = 750.0 // ガソリン密度 (g/L)
+	airDensityGL      = 1.225 // 標準大気密度 (g/L = kg/m³)
+	idleFuelRateLH    = 0.8   // アイドリング時の最低燃料消費量 (L/h)
+	maxDisplayKmL     = 99.9  // 燃費表示の上限値 (km/L)
+	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 )
 
 func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) float64 {
@@ -90,7 +90,7 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 			fuelRateLH = idleFuelRateLH
 		} else {
 			airFlowEstimate := (rpm / 2.0) * (load / 100.0) * displacementL / 60.0 // L/s of air
-			airMassGS := airFlowEstimate * airDensityGL                              // g/s
+			airMassGS := airFlowEstimate * airDensityGL                            // g/s
 			fuelRateLH = airMassGS * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
 		}
 	}
@@ -115,14 +115,6 @@ var (
 	notificationMu  sync.RWMutex
 	notificationExp time.Time
 )
-
-// setNotification はメーター画面に表示する一時通知をセットする
-func setNotification(msg string, duration time.Duration) {
-	notificationMu.Lock()
-	defer notificationMu.Unlock()
-	notification = msg
-	notificationExp = time.Now().Add(duration)
-}
 
 // getNotification は有効期限内の通知を返す（期限切れなら空文字列）
 func getNotification() string {
@@ -150,18 +142,18 @@ func checkWiFi() bool {
 // loadConfig はJSONファイルから設定を読み込む。ファイルがなければデフォルト値を返す。
 func loadConfig(path string) Config {
 	cfg := Config{
-		SerialPort:           "/dev/rfcomm0",
-		WebhookURL:           "",
-		PollIntervalMs:       500,
-		LocalAPIPort:         9090,
-		MaintenancePath:      "/var/lib/pi-obd-meter/maintenance.json",
-		WebStaticDir:         "/opt/pi-obd-meter/web/static",
-		RedlineRPM:           6500,
-		MaxSpeedKmh:          180,
-		MaxRPM:               8000,
-		OBDProtocol:          "6",
-		EngineDisplacementL:  1.3,
-		Brightness:           display.DefaultConfig(),
+		SerialPort:          "/dev/rfcomm0",
+		WebhookURL:          "",
+		PollIntervalMs:      500,
+		LocalAPIPort:        9090,
+		MaintenancePath:     "/var/lib/pi-obd-meter/maintenance.json",
+		WebStaticDir:        "/opt/pi-obd-meter/web/static",
+		RedlineRPM:          6500,
+		MaxSpeedKmh:         180,
+		MaxRPM:              8000,
+		OBDProtocol:         "6",
+		EngineDisplacementL: 1.3,
+		Brightness:          display.DefaultConfig(),
 	}
 
 	data, err := os.ReadFile(path)
@@ -268,10 +260,10 @@ func main() {
 	ticker := time.NewTicker(fastIntervalMs * time.Millisecond)
 	defer ticker.Stop()
 
-	retryTicker := time.NewTicker(5 * time.Minute)   // 送信失敗キューのリトライ間隔
+	retryTicker := time.NewTicker(5 * time.Minute) // 送信失敗キューのリトライ間隔
 	defer retryTicker.Stop()
 
-	maintTicker := time.NewTicker(5 * time.Minute)   // GASへのメンテナンス状態送信間隔
+	maintTicker := time.NewTicker(5 * time.Minute) // GASへのメンテナンス状態送信間隔
 	defer maintTicker.Stop()
 
 	obdRetryTicker := time.NewTicker(10 * time.Second) // OBD未接続時の再接続間隔
@@ -305,7 +297,7 @@ func main() {
 						OBDConnected:  false,
 						WiFiConnected: wifiConnected,
 						PendingCount:  client.QueueSize(),
-				SendSending:   client.IsSending(),
+						SendSending:   client.IsSending(),
 					}
 					dataMu.Unlock()
 				}
@@ -349,18 +341,18 @@ func main() {
 
 			dataMu.Lock()
 			latestData = RealtimeData{
-				SpeedKmh:       data.SpeedKmh,
-				RPM:            data.RPM,
-				EngineLoad:     data.EngineLoad,
-				ThrottlePos:    data.ThrottlePos,
-				FuelEconomy:    lastFuelEconomy,
-				TripKm:         tracker.DistanceKm(),
-				CoolantTemp:    lastCoolantTemp,
-				Alerts:         maintMgr.GetAlerts(),
-				Notification:   getNotification(),
-				OBDConnected:   true,
-				WiFiConnected:  wifiConnected,
-				PendingCount:   client.QueueSize(),
+				SpeedKmh:      data.SpeedKmh,
+				RPM:           data.RPM,
+				EngineLoad:    data.EngineLoad,
+				ThrottlePos:   data.ThrottlePos,
+				FuelEconomy:   lastFuelEconomy,
+				TripKm:        tracker.DistanceKm(),
+				CoolantTemp:   lastCoolantTemp,
+				Alerts:        maintMgr.GetAlerts(),
+				Notification:  getNotification(),
+				OBDConnected:  true,
+				WiFiConnected: wifiConnected,
+				PendingCount:  client.QueueSize(),
 			}
 			dataMu.Unlock()
 

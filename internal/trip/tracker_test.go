@@ -164,4 +164,3 @@ func TestTrackerPersistence(t *testing.T) {
 		t.Errorf("restored distance too different: original=%.6f, restored=%.6f", cur1.DistanceKm, cur2.DistanceKm)
 	}
 }
-

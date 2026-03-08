@@ -158,14 +158,14 @@ func (t *Tracker) DistanceKm() float64 {
 
 // persistedState はJSONファイルに保存するトリップ状態
 type persistedState struct {
-	Current      TripData `json:"current"`
+	Current       TripData `json:"current"`
 	LastTimestamp int64    `json:"last_timestamp"`
 }
 
 // saveState は現在のトリップ状態をJSONファイルに書き出す（overlayFS環境では失敗する）
 func (t *Tracker) saveState() {
 	state := persistedState{
-		Current:      t.current,
+		Current:       t.current,
 		LastTimestamp: t.lastTimestamp.Unix(),
 	}
 
