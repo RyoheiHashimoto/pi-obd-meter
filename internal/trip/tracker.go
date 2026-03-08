@@ -154,6 +154,13 @@ func (t *Tracker) DistanceKm() float64 {
 	return t.current.DistanceKm
 }
 
+// SaveState は現在のトリップ状態を強制保存する（シャットダウン時に呼ぶ）
+func (t *Tracker) SaveState() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.saveState()
+}
+
 // --- 永続化（電源断からの復帰用） ---
 
 // persistedState はJSONファイルに保存するトリップ状態

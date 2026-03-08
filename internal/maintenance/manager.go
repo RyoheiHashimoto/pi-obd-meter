@@ -223,6 +223,13 @@ func (m *Manager) ResetReminder(id string) bool {
 	return true
 }
 
+// SaveState はメンテナンス状態を強制保存する（シャットダウン時に呼ぶ）
+func (m *Manager) SaveState() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.save()
+}
+
 // --- 永続化（maintenance.json） ---
 
 // persistState はファイルに保存する状態（reminders + totalKm）

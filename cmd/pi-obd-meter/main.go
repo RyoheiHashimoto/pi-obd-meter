@@ -112,6 +112,7 @@ var (
 	notification    string
 	notificationMu  sync.RWMutex
 	notificationExp time.Time
+	startedAt       = time.Now()
 )
 
 // getNotification は有効期限内の通知を返す（期限切れなら空文字列）
@@ -382,6 +383,9 @@ func main() {
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
+			tracker.SaveState()
+			maintMgr.SaveState()
+			slog.Info("状態保存完了")
 			if obdConnected {
 				elm.Close()
 			}
@@ -514,6 +518,22 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 		defer dataMu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(latestData)
+	})
+
+	// --- ヘルスチェックAPI ---
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		dataMu.RLock()
+		d := latestData
+		dataMu.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":         "ok",
+			"version":        version,
+			"uptime_sec":     int(time.Since(startedAt).Seconds()),
+			"obd_connected":  d.OBDConnected,
+			"wifi_connected": d.WiFiConnected,
+			"pending_count":  d.PendingCount,
+		})
 	})
 
 	// --- メンテナンスAPI（メーター画面のアラートバー用） ---

@@ -5,7 +5,10 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
@@ -132,7 +135,7 @@ func TestSendMaintenanceStatus_Basic(t *testing.T) {
 	var receivedPayload map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p sender.GASPayload
-		json.NewDecoder(r.Body).Decode(&p)
+		_ = json.NewDecoder(r.Body).Decode(&p)
 		receivedPayload = p.Data.(map[string]interface{})
 		w.WriteHeader(200)
 		w.Write([]byte(`{"status":"ok"}`))
@@ -335,4 +338,146 @@ func TestRestoreState_InvalidJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on invalid JSON")
 	}
+}
+
+// --- loadConfig テスト ---
+
+func TestLoadConfig_FileNotFound(t *testing.T) {
+	cfg := loadConfig("/nonexistent/path/config.json")
+	// デフォルト値が返る
+	if cfg.SerialPort != "/dev/rfcomm0" {
+		t.Errorf("SerialPort: got %q, want /dev/rfcomm0", cfg.SerialPort)
+	}
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh: got %d, want 180", cfg.MaxSpeedKmh)
+	}
+	if cfg.LocalAPIPort != 9090 {
+		t.Errorf("LocalAPIPort: got %d, want 9090", cfg.LocalAPIPort)
+	}
+	if cfg.EngineDisplacementL != 1.3 {
+		t.Errorf("EngineDisplacementL: got %.1f, want 1.3", cfg.EngineDisplacementL)
+	}
+}
+
+func TestLoadConfig_ValidJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"serial_port": "/dev/ttyUSB0",
+		"max_speed_kmh": 200,
+		"local_api_port": 8080,
+		"engine_displacement_l": 2.0,
+		"webhook_url": "https://example.com/webhook"
+	}`
+	os.WriteFile(cfgPath, []byte(content), 0644)
+
+	cfg := loadConfig(cfgPath)
+	if cfg.SerialPort != "/dev/ttyUSB0" {
+		t.Errorf("SerialPort: got %q, want /dev/ttyUSB0", cfg.SerialPort)
+	}
+	if cfg.MaxSpeedKmh != 200 {
+		t.Errorf("MaxSpeedKmh: got %d, want 200", cfg.MaxSpeedKmh)
+	}
+	if cfg.LocalAPIPort != 8080 {
+		t.Errorf("LocalAPIPort: got %d, want 8080", cfg.LocalAPIPort)
+	}
+	if cfg.EngineDisplacementL != 2.0 {
+		t.Errorf("EngineDisplacementL: got %.1f, want 2.0", cfg.EngineDisplacementL)
+	}
+	if cfg.WebhookURL != "https://example.com/webhook" {
+		t.Errorf("WebhookURL: got %q", cfg.WebhookURL)
+	}
+}
+
+func TestLoadConfig_PartialJSON(t *testing.T) {
+	// 一部のフィールドのみ → 残りはデフォルト
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	os.WriteFile(cfgPath, []byte(`{"max_speed_kmh": 260}`), 0644)
+
+	cfg := loadConfig(cfgPath)
+	if cfg.MaxSpeedKmh != 260 {
+		t.Errorf("MaxSpeedKmh: got %d, want 260", cfg.MaxSpeedKmh)
+	}
+	// デフォルトが維持される
+	if cfg.SerialPort != "/dev/rfcomm0" {
+		t.Errorf("SerialPort should keep default, got %q", cfg.SerialPort)
+	}
+}
+
+func TestLoadConfig_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	os.WriteFile(cfgPath, []byte(`{invalid json}`), 0644)
+
+	cfg := loadConfig(cfgPath)
+	// パース失敗 → デフォルト値
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh: got %d, want 180 (default)", cfg.MaxSpeedKmh)
+	}
+}
+
+func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	content := `{
+		"maintenance_reminders": [
+			{"id": "custom_oil", "name": "Custom Oil", "type": "distance", "interval_km": 5000, "warning_pct": 0.9}
+		]
+	}`
+	os.WriteFile(cfgPath, []byte(content), 0644)
+
+	cfg := loadConfig(cfgPath)
+	if len(cfg.MaintenanceReminders) != 1 {
+		t.Fatalf("MaintenanceReminders: got %d, want 1", len(cfg.MaintenanceReminders))
+	}
+	if cfg.MaintenanceReminders[0].ID != "custom_oil" {
+		t.Errorf("reminder ID: got %q, want custom_oil", cfg.MaintenanceReminders[0].ID)
+	}
+}
+
+// --- getNotification テスト ---
+
+func TestGetNotification_Empty(t *testing.T) {
+	// 初期状態 → 空文字列
+	got := getNotification()
+	if got != "" {
+		t.Errorf("initial notification: got %q, want empty", got)
+	}
+}
+
+func TestGetNotification_Active(t *testing.T) {
+	notificationMu.Lock()
+	notification = "テスト通知"
+	notificationExp = time.Now().Add(10 * time.Second)
+	notificationMu.Unlock()
+
+	got := getNotification()
+	if got != "テスト通知" {
+		t.Errorf("active notification: got %q, want テスト通知", got)
+	}
+
+	// クリーンアップ
+	notificationMu.Lock()
+	notification = ""
+	notificationExp = time.Time{}
+	notificationMu.Unlock()
+}
+
+func TestGetNotification_Expired(t *testing.T) {
+	notificationMu.Lock()
+	notification = "期限切れ"
+	notificationExp = time.Now().Add(-1 * time.Second) // 既に過去
+	notificationMu.Unlock()
+
+	got := getNotification()
+	if got != "" {
+		t.Errorf("expired notification: got %q, want empty", got)
+	}
+
+	// クリーンアップ
+	notificationMu.Lock()
+	notification = ""
+	notificationExp = time.Time{}
+	notificationMu.Unlock()
 }

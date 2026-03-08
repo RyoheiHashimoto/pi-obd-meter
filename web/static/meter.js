@@ -415,6 +415,10 @@ async function initApp() {
     if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
   } catch { /* file:// mode */ }
 
+  if (conf.version) {
+    document.getElementById('version').textContent = conf.version;
+  }
+
   gs = buildSpeedGauge('gs', {
     cx: GAUGE_CX, cy: GAUGE_CY, r: GAUGE_R,
     min: 0, max: conf.max_speed_kmh, color: '#78909c',

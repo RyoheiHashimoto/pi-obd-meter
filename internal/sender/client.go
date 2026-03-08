@@ -16,13 +16,13 @@ import (
 
 // Client はGoogle Apps Script Webhookへデータを送信するクライアント
 type Client struct {
-	webhookURL     string
-	httpClient     *http.Client
-	retryQueue     []GASPayload // メモリ上のリトライキュー（overlayFSのためファイル保存しない）
-	mu             sync.Mutex
-	sending        bool // 送信中フラグ
-	consecutiveFails int  // 連続失敗回数（指数バックオフ用）
-	lastRetryAt    time.Time // 最後にリトライした時刻
+	webhookURL       string
+	httpClient       *http.Client
+	retryQueue       []GASPayload // メモリ上のリトライキュー（overlayFSのためファイル保存しない）
+	mu               sync.Mutex
+	sending          bool      // 送信中フラグ
+	consecutiveFails int       // 連続失敗回数（指数バックオフ用）
+	lastRetryAt      time.Time // 最後にリトライした時刻
 }
 
 // NewClient は新しいクライアントを作成する
@@ -179,8 +179,8 @@ func (c *Client) IsSending() bool {
 
 // RestoreResponse はGASから返される状態復元レスポンス
 type RestoreResponse struct {
-	Status      string  `json:"status"`
-	TotalKm     float64 `json:"total_km"`
+	Status       string  `json:"status"`
+	TotalKm      float64 `json:"total_km"`
 	LastRefuelKm float64 `json:"last_refuel_km"`
 }
 

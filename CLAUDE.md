@@ -56,7 +56,7 @@ internal/
   trip/
     tracker.go              トリップ追跡。車速積分で走行距離を積算、電源断復帰のための状態永続化
   sender/
-    client.go               GAS Webhook送信。Send/SendWithResponse + メモリ内リトライキュー（最大100件）
+    client.go               GAS Webhook送信。Send/SendWithResponse + メモリ内リトライキュー（最大100件、指数バックオフ）
   display/
     brightness.go           xrandr経由の輝度制御。時刻ベース自動調整
   maintenance/
@@ -125,9 +125,10 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 - 詳細は `docs/deploy-guide.md` セクション5
 
 ### SD書き込みゼロ設計
-- トリップデータ: GAS Webhookで即送信。送信失敗時はメモリ内キュー（最大100件）
+- トリップデータ: GAS Webhookで即送信。送信失敗時はメモリ内キュー（最大100件、指数バックオフ 5m→30m）
 - ログ: journald（RAM上）
 - 設定ファイル: overlayFS有効時はRAM上のコピーを読む
+- 起動時にGASからODO復元（`type: "restore"`）。overlayFSでリセットされた場合のフォールバック
 
 ### ELM327通信
 - Bluetooth 2.0 Classic (SPP)。BLEはGATT複雑で不採用
@@ -163,9 +164,20 @@ hdmi_cvt 800 480 60 6 0 0 0
 ### データ送信の責任分離
 - **トリップ完了**: Pi → GAS Webhook (type: "trip") → Google Sheets
 - **メンテナンス状態**: Pi → GAS Webhook (type: "maintenance") → Google Sheets（始動時 + 5分間隔）
+- **状態復元**: Pi起動時 → GAS Webhook (type: "restore") → ODO/最終給油距離を取得
 - **リアルタイム表示**: Pi → meter.html（車載LCD、ローカルHTTP API経由）
 - **給油記録**: スマホ → GAS doGet/doPost → Google Sheets（手動入力、燃費自動算出）
 - **ODO補正・メンテリセット**: スマホ → GAS → Pi（次回メンテ送信レスポンスで反映）
+
+### ローカルAPI
+- `GET /api/config` — max_speed_kmh, version
+- `GET /api/realtime` — 速度・RPM・負荷・スロットル・燃費・トリップ・接続状態
+- `GET /api/maintenance` — メンテナンス全項目の進捗
+- `GET /api/health` — OBD/WiFi接続・キューサイズ・uptime・バージョン
+
+### Graceful Shutdown
+- SIGINT/SIGTERM受信時にトリップ状態とメンテナンス状態を保存してから終了
+- バージョン: `-ldflags "-X main.version=vX.Y.Z"` でビルド時に埋め込み
 
 ## 車両固有の設定（config.json）
 
