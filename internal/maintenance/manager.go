@@ -5,7 +5,7 @@ package maintenance
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -239,12 +239,12 @@ func (m *Manager) save() {
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		log.Printf("maintenance state marshal error: %v", err)
+		slog.Error("メンテ状態シリアライズ失敗", "error", err)
 		return
 	}
 	if err := os.WriteFile(m.filePath, data, 0644); err != nil {
 		if !m.saveErrLogged {
-			log.Printf("maintenance state save failed (overlayFS?): %v", err)
+			slog.Warn("メンテ状態保存失敗", "path", m.filePath, "error", err)
 			m.saveErrLogged = true
 		}
 	}
@@ -268,7 +268,7 @@ func (m *Manager) load() {
 	// 旧フォーマット（map[string]*Reminder のみ）からのマイグレーション
 	var old map[string]*Reminder
 	if err := json.Unmarshal(data, &old); err != nil {
-		log.Printf("maintenance state parse error, using defaults: %v", err)
+		slog.Warn("メンテ状態パース失敗、デフォルト使用", "error", err)
 		return
 	}
 	m.reminders = old

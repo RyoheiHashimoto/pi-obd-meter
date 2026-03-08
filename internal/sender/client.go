@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -56,7 +56,7 @@ func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte,
 		c.enqueue(payload)
 		return nil, err
 	}
-	log.Printf("✓ %s データ送信完了", payloadType)
+	slog.Info("データ送信完了", "type", payloadType)
 	return respBody, nil
 }
 
@@ -88,7 +88,7 @@ func (c *Client) doPost(payload GASPayload) ([]byte, error) {
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("レスポンス読み取りエラー [%s]: %v", payload.Type, err)
+		slog.Warn("レスポンス読み取りエラー", "type", payload.Type, "error", err)
 		return nil, nil // 送信自体は成功
 	}
 
@@ -108,13 +108,13 @@ func (c *Client) RetryPending() {
 	c.retryQueue = nil
 	c.mu.Unlock()
 
-	log.Printf("未送信データ %d 件をリトライ中...", len(queue))
+	slog.Info("未送信データリトライ開始", "count", len(queue))
 
 	for _, payload := range queue {
 		if _, err := c.doPost(payload); err != nil {
 			c.enqueue(payload)
 		} else {
-			log.Printf("✓ リトライ送信完了 [%s]", payload.Type)
+			slog.Info("リトライ送信完了", "type", payload.Type)
 		}
 	}
 }

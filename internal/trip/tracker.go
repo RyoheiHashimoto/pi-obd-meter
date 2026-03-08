@@ -6,7 +6,7 @@ package trip
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -175,7 +175,7 @@ func (t *Tracker) saveState() {
 	}
 	if err := os.WriteFile(t.statePath, data, 0644); err != nil {
 		if !t.saveErrLogged {
-			log.Printf("trip state save failed (overlayFS?): %v", err)
+			slog.Warn("トリップ状態保存失敗", "path", t.statePath, "error", err)
 			t.saveErrLogged = true
 		}
 	}

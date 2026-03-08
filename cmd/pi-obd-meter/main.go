@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -154,11 +154,11 @@ func loadConfig(path string) Config {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("設定ファイルが見つかりません、デフォルト設定を使用: %v", err)
+		slog.Warn("設定ファイルが見つかりません、デフォルト使用", "path", path, "error", err)
 		return cfg
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		log.Printf("設定ファイルのJSON解析に失敗、デフォルト設定を使用: %v", err)
+		slog.Warn("設定ファイルのJSON解析失敗、デフォルト使用", "path", path, "error", err)
 	}
 	return cfg
 }
@@ -216,7 +216,7 @@ func main() {
 			}
 			time.Sleep(2 * time.Second)
 		}
-		log.Printf("⚠ WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
+		slog.Warn("WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
 	}()
 
 	// --- ELM327接続（失敗してもクラッシュしない） ---
@@ -227,12 +227,12 @@ func main() {
 
 	tryConnectOBD := func() bool {
 		if err := elm.Connect(); err != nil {
-			log.Printf("⚠ ELM327接続失敗: %v", err)
+			slog.Warn("ELM327接続失敗", "error", err)
 			return false
 		}
 		r := obd.NewReader(elm)
 		if err := r.DetectCapabilities(); err != nil {
-			log.Printf("⚠ OBDケイパビリティ検出失敗: %v", err)
+			slog.Warn("OBDケイパビリティ検出失敗", "error", err)
 			elm.Close()
 			return false
 		}
@@ -313,7 +313,7 @@ func main() {
 			if err != nil {
 				errCount++
 				if errCount >= maxConsecutiveErrors {
-					log.Printf("⚠ OBD接続ロスト（連続%dエラー）→ リトライ待ち", errCount)
+					slog.Warn("OBD接続ロスト、リトライ待ち", "consecutive_errors", errCount)
 					obdConnected = false
 					elm.Close()
 					errCount = 0
@@ -438,7 +438,7 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager,
 			// pending_resets処理
 			for _, id := range gasResp.PendingResets {
 				if maintMgr.ResetReminder(id) {
-					log.Printf("✓ メンテナンスリセット: %s", id)
+					slog.Info("メンテナンスリセット", "id", id)
 				}
 			}
 
@@ -449,7 +449,7 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager,
 					*totalKm = newOdo
 				}
 				maintMgr.UpdateTotalKm(newOdo)
-				log.Printf("✓ ODO補正適用: %.0f km", newOdo)
+				slog.Info("ODO補正適用", "odometer_km", newOdo)
 				if odoApplied != nil {
 					*odoApplied = true
 				}
@@ -464,7 +464,7 @@ func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager,
 			// トリップリセット処理
 			if gasResp.TripReset && tracker != nil {
 				tracker.ManualReset()
-				log.Printf("✓ トリップリセット（給油記録による）")
+				slog.Info("トリップリセット", "reason", "給油記録")
 			}
 		}
 	}
@@ -514,6 +514,6 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	})
 
 	addr := fmt.Sprintf(":%d", cfg.LocalAPIPort)
-	log.Printf("ローカルAPI起動: %s", addr)
+	slog.Info("ローカルAPI起動", "addr", addr)
 	http.ListenAndServe(addr, corsMiddleware(mux))
 }

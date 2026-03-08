@@ -4,7 +4,7 @@ package display
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os/exec"
 	"sync"
 	"time"
@@ -81,7 +81,7 @@ func (bc *BrightnessController) Start() {
 			}
 		}
 	}()
-	log.Println("✓ 輝度自動制御 開始（1分間隔）")
+	slog.Info("輝度自動制御開始", "interval", "1m")
 }
 
 // Stop は自動輝度制御を停止する
@@ -97,8 +97,7 @@ func (bc *BrightnessController) applyScheduled(now time.Time) {
 	target := bc.brightnessForTime(now)
 	if target != bc.current {
 		bc.setBrightness(target)
-		log.Printf("🔆 時刻 %s → 輝度 %.0f%% (%s)",
-			now.Format("15:04"), target*100, bc.labelForTime(now))
+		slog.Info("輝度変更", "time", now.Format("15:04"), "brightness", fmt.Sprintf("%.0f%%", target*100), "label", bc.labelForTime(now))
 	}
 }
 
@@ -143,6 +142,6 @@ func (bc *BrightnessController) setBrightness(value float64) {
 		"--brightness", fmt.Sprintf("%.2f", value),
 	)
 	if err := cmd.Run(); err != nil {
-		log.Printf("⚠ xrandr輝度変更失敗: %v (DISPLAY未設定またはHDMI未接続の可能性)", err)
+		slog.Warn("xrandr輝度変更失敗", "error", err)
 	}
 }
