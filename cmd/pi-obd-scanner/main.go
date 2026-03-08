@@ -99,7 +99,6 @@ func main() {
 	fmt.Printf("  負荷:   %.1f %%\n", data.EngineLoad)
 	fmt.Printf("  冷却水: %.0f ℃\n", data.CoolantTemp)
 	fmt.Printf("  スロットル: %.1f %%\n", data.ThrottlePos)
-	fmt.Printf("  タンク: %.0f %%\n", data.FuelTankLevel)
 
 	// === 故障コード（DTC）読み取り ===
 	fmt.Println("\n" + strings.Repeat("=", 50))

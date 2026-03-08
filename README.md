@@ -1,10 +1,9 @@
 # pi-obd-meter
 
-**OBD-2 車載メーター + 自動燃費記録**
+**OBD-2 車載メーター + 走行記録 + スマホダッシュボード**
 
-Raspberry Pi + ELM327 で速度・RPM・負荷・スロットルを5インチLCDにリアルタイム表示。
-給油時の燃費はタンク残量の変化から自動算出し、Google Sheetsに記録する。
-スマホからはGAS Webアプリで燃費履歴・メンテナンス状態を確認できる。
+Raspberry Pi + ELM327 で速度・RPM・負荷・スロットル・瞬間燃費を5インチLCDにリアルタイム表示。
+走行距離・メンテナンス状態を Google Sheets に自動記録し、スマホから給油記録・ODO補正・メンテナンス管理ができる。
 
 ## 対応車種
 
@@ -14,11 +13,10 @@ Raspberry Pi + ELM327 で速度・RPM・負荷・スロットルを5インチLCD
 
 | PID | 用途 | 必須 |
 |-----|------|------|
-| 0x0C | RPM | メーター表示 |
+| 0x0C | RPM | メーター表示 + 燃費推定 |
 | 0x0D | 車速 | メーター表示 + 距離積算 |
-| 0x04 | エンジン負荷 | メーター表示 |
+| 0x04 | エンジン負荷 | メーター表示 + 燃費推定 |
 | 0x11 | スロットル開度 | メーター表示 |
-| 0x2F | 燃料タンクレベル | 給油検出 + 燃費算出 |
 
 `pi-obd-scanner` で事前に対応PIDを確認できる:
 
@@ -30,7 +28,6 @@ Raspberry Pi + ELM327 で速度・RPM・負荷・スロットルを5インチLCD
 
 - EV / HV の電動走行モード（エンジン回転なし）
 - 1996年以前の旧車（OBD-2未搭載）
-- 燃料タンクレベル PID (0x2F) が返せない車（給油検出が動かない）
 
 ### 動作確認済み車種
 
@@ -38,22 +35,34 @@ Raspberry Pi + ELM327 で速度・RPM・負荷・スロットルを5インチLCD
 |------|------|----------|---------------|-----------|
 | マツダ DYデミオ | DBA-DY3W | ZJ-VE 1.3L | CAN 11bit 500kbaud (ATSP6) | 28 |
 
+## 機能
+
+### 車載メーター (5インチ LCD)
+- 速度 + RPM の270° SVGアークゲージ
+- スロットル・エンジン負荷の縦バー（ラギング指数で緑/橙/赤に色分け）
+- 瞬間燃費インジケーター（ECO/NORMAL/POWER）
+- 水温・トリップ距離表示
+- 60fps補間アニメーション、時刻ベース自動輝度調整
+
+### 自動記録 (Google Sheets)
+- **トリップ記録**: 走行距離・最高速度・平均速度・走行時間・アイドル時間
+- **メンテナンス状態**: 走行距離/日付ベースのリマインダー（エンジン始動ごとに送信）
+- **瞬間燃費推定**: エンジン負荷 × RPM × 排気量から燃料消費量を推算
+
+### スマホダッシュボード (GAS Webアプリ)
+- 給油記録（日付・距離・給油量 → 燃費自動算出）
+- ODO補正（メーター実値との差分を補正）
+- メンテナンス進捗確認・リセット
+- ダークテーマ、ホーム画面追加対応
+
 ## データフロー
 
 ```
-ECU → ELM327 (BT) → Raspberry Pi → meter.html (車載LCD: 速度/RPM/負荷/スロットル)
-                                   → GAS Webhook → Google Sheets (トリップ/給油/メンテ記録)
-                                                 → doGet Webアプリ (スマホ: 燃費履歴/メンテ状態)
+ECU → ELM327 (BT) → Raspberry Pi → meter.html (車載LCD: 速度/RPM/負荷/スロットル/燃費)
+                                   → GAS Webhook → Google Sheets (トリップ/メンテ記録)
+                                                 ↕
+                               スマホブラウザ → GAS doGet (給油記録/ODO補正/メンテ管理)
 ```
-
-## 給油自動検出
-
-1. エンジン始動時にタンク残量 (PID 0x2F) を3回読み取り平均
-2. 前回保存値との差分 >= 5% → 給油と判定
-3. `燃費 = 走行距離 / ((開始時タンク% - 直近タンク%) / 100 * タンク容量L)`
-4. Google Sheetsに自動記録
-
-手動計算は不要。給油するだけで燃費が記録される。
 
 ## ハードウェア
 
@@ -123,11 +132,11 @@ hdmi_cvt 800 480 60 6 0 0 0
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
-  "fuel_tank_capacity_l": 44,
+  "engine_displacement_l": 1.3,
   "redline_rpm": 6500,
   "max_speed_kmh": 180,
   "max_rpm": 8000,
-  "refuel_min_increase_pct": 5.0,
+  "initial_odometer_km": 98500,
   "maintenance_reminders": [
     { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8 }
   ]
@@ -136,9 +145,13 @@ hdmi_cvt 800 480 60 6 0 0 0
 
 | パラメータ | 説明 |
 |-----------|------|
-| `fuel_tank_capacity_l` | 燃料タンク容量 (L) |
+| `serial_port` | ELM327のシリアルポート |
+| `webhook_url` | GAS WebアプリのURL |
+| `engine_displacement_l` | エンジン排気量 (L) — 燃費推定に使用 |
 | `redline_rpm` | レッドゾーン開始回転数 |
-| `refuel_min_increase_pct` | 給油判定の最小タンク増加率 (%) |
+| `max_speed_kmh` | 速度メーター最大値 |
+| `max_rpm` | RPMメーター最大値 |
+| `initial_odometer_km` | 初期ODO値 (km) |
 | `maintenance_reminders` | メンテナンスリマインダー項目 |
 
 ## プロジェクト構成
@@ -150,10 +163,10 @@ pi-obd-meter/
 │   └── pi-obd-scanner/      # PIDスキャナー（診断用）
 ├── internal/
 │   ├── obd/               # ELM327通信、PID定義、DTC
-│   ├── trip/              # トリップ追跡 + 燃料状態永続化
-│   ├── sender/            # Google Sheets送信（GAS webhook）
+│   ├── trip/              # トリップ追跡（車速積分で走行距離を積算）
+│   ├── sender/            # Google Sheets送信（GAS webhook + リトライキュー）
 │   ├── display/           # 画面輝度制御
-│   └── maintenance/       # メンテナンスリマインダー
+│   └── maintenance/       # メンテナンスリマインダー（距離/日付ベース）
 ├── web/static/
 │   └── meter.html         # メーター画面（5インチLCD, 60fps）
 ├── gas/
@@ -179,7 +192,7 @@ pi-obd-meter/
 |---------|------|
 | `build` | クロスコンパイル (ARM64) |
 | `deploy` | ビルド + rsync転送 + サービス再起動 |
-| `deploy-web` | Web UIのみ転送 |
+| `deploy-web` | Web UIのみ転送 + キオスク再起動 |
 | `setup` | 初回セットアップ |
 | `ssh` | ラズパイにSSH接続 |
 | `logs` | リアルタイムログ表示 |

@@ -41,14 +41,24 @@ type GASPayload struct {
 
 // Send は汎用データをGASに送信する
 func (c *Client) Send(payloadType string, data interface{}) error {
-	payload := GASPayload{Type: payloadType, Data: data}
-	return c.sendPayload(payload)
+	_, err := c.SendWithResponse(payloadType, data)
+	return err
 }
 
 // SendWithResponse はデータをGASに送信し、レスポンスボディを返す
 func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte, error) {
 	payload := GASPayload{Type: payloadType, Data: data}
+	respBody, err := c.doPost(payload)
+	if err != nil {
+		c.enqueue(payload)
+		return nil, err
+	}
+	log.Printf("✓ %s データ送信完了", payloadType)
+	return respBody, nil
+}
 
+// doPost はHTTP POSTを実行し、レスポンスボディを返す。リトライキューには追加しない。
+func (c *Client) doPost(payload GASPayload) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("JSON変換エラー: %w", err)
@@ -65,14 +75,11 @@ func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte,
 	c.mu.Unlock()
 
 	if err != nil {
-		log.Printf("送信失敗（リトライキューに追加）[%s]: %v", payload.Type, err)
-		c.enqueue(payload)
-		return nil, err
+		return nil, fmt.Errorf("送信失敗 [%s]: %w", payload.Type, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		c.enqueue(payload)
 		return nil, fmt.Errorf("Webhook エラー [%s]: status %d", payload.Type, resp.StatusCode)
 	}
 
@@ -82,41 +89,7 @@ func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte,
 		return nil, nil // 送信自体は成功
 	}
 
-	log.Printf("✓ %s データ送信完了", payload.Type)
 	return respBody, nil
-}
-
-// sendPayload はペイロードを送信する
-func (c *Client) sendPayload(payload GASPayload) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("JSON変換エラー: %w", err)
-	}
-
-	c.mu.Lock()
-	c.sending = true
-	c.mu.Unlock()
-
-	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
-
-	c.mu.Lock()
-	c.sending = false
-	c.mu.Unlock()
-
-	if err != nil {
-		log.Printf("送信失敗（リトライキューに追加）[%s]: %v", payload.Type, err)
-		c.enqueue(payload)
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		c.enqueue(payload)
-		return fmt.Errorf("Webhook エラー [%s]: status %d", payload.Type, resp.StatusCode)
-	}
-
-	log.Printf("✓ %s データ送信完了", payload.Type)
-	return nil
 }
 
 // RetryPending はキューに溜まったデータの再送を試みる
@@ -135,8 +108,10 @@ func (c *Client) RetryPending() {
 	log.Printf("未送信データ %d 件をリトライ中...", len(queue))
 
 	for _, payload := range queue {
-		if err := c.sendDirect(payload); err != nil {
+		if _, err := c.doPost(payload); err != nil {
 			c.enqueue(payload)
+		} else {
+			log.Printf("✓ リトライ送信完了 [%s]", payload.Type)
 		}
 	}
 }
@@ -153,27 +128,6 @@ func (c *Client) IsSending() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.sending
-}
-
-// sendDirect はリトライキューに入れずに直接送信する
-func (c *Client) sendDirect(payload GASPayload) error {
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-
-	log.Printf("✓ リトライ送信完了 [%s]", payload.Type)
-	return nil
 }
 
 func (c *Client) enqueue(payload GASPayload) {

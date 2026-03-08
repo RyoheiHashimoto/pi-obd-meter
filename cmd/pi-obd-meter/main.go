@@ -32,9 +32,7 @@ type Config struct {
 	MaxSpeedKmh          int                      `json:"max_speed_kmh"`
 	MaxRPM               int                      `json:"max_rpm"`
 	OBDProtocol          string                   `json:"obd_protocol"`
-	FuelTankCapacityL    float64                  `json:"fuel_tank_capacity_l"`
 	EngineDisplacementL  float64                  `json:"engine_displacement_l"`
-	RefuelMinIncreasePct float64                  `json:"refuel_min_increase_pct"`
 	InitialOdometerKm    float64                  `json:"initial_odometer_km"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
@@ -62,6 +60,16 @@ var version = "dev"
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
 // MAF対応: 燃料レート = MAF(g/s) × 3600 / (14.7 × 750) L/h
 // MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
+// 燃費計算用の物理定数
+const (
+	stoichiometricAFR = 14.7   // ガソリンの理論空燃比 (空気kg / 燃料kg)
+	gasolineDensityGL = 750.0  // ガソリン密度 (g/L)
+	airDensityGL      = 1.225  // 標準大気密度 (g/L = kg/m³)
+	idleFuelRateLH    = 0.8    // アイドリング時の最低燃料消費量 (L/h)
+	maxDisplayKmL     = 99.9   // 燃費表示の上限値 (km/L)
+	minDisplaySpeedKm = 10.0   // 燃費表示の最低速度 (km/h)
+)
+
 func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) float64 {
 	if speed < 0.5 && rpm < 100 {
 		return 0 // エンジン停止
@@ -70,30 +78,29 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 	var fuelRateLH float64
 	if hasMAF && maf > 0 {
 		// MAFから直接計算: g/s → L/h
-		// AFR(空燃比)=14.7, ガソリン密度=750 g/L
-		fuelRateLH = maf * 3600.0 / (14.7 * 750.0)
+		fuelRateLH = maf * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
 	} else {
 		// 負荷×RPM×排気量から推定
 		// 4ストロークなので吸気は2回転に1回
 		// 体積効率を負荷%で近似
 		if rpm < 100 || load < 0.1 {
-			fuelRateLH = 0.8 // アイドリング最低消費量
+			fuelRateLH = idleFuelRateLH
 		} else {
 			airFlowEstimate := (rpm / 2.0) * (load / 100.0) * displacementL / 60.0 // L/s of air
-			airMassGS := airFlowEstimate * 1.225                                    // g/s (空気密度1.225 kg/m³ = 1.225 g/L)
-			fuelRateLH = airMassGS * 3600.0 / (14.7 * 750.0)
+			airMassGS := airFlowEstimate * airDensityGL                              // g/s
+			fuelRateLH = airMassGS * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
 		}
 	}
 
 	if fuelRateLH < 0.01 {
-		return 99.9 // エンブレ・コースティング
+		return maxDisplayKmL // エンブレ・コースティング
 	}
-	if speed < 10 {
+	if speed < minDisplaySpeedKm {
 		return 0 // 低速域（クリープ等）は燃費表示しない
 	}
 	kmL := speed / fuelRateLH
-	if kmL > 99.9 {
-		kmL = 99.9
+	if kmL > maxDisplayKmL {
+		kmL = maxDisplayKmL
 	}
 	return kmL
 }
@@ -148,9 +155,7 @@ func loadConfig(path string) Config {
 		MaxSpeedKmh:          180,
 		MaxRPM:               8000,
 		OBDProtocol:          "6",
-		FuelTankCapacityL:    44,
 		EngineDisplacementL:  1.3,
-		RefuelMinIncreasePct: 5.0,
 		Brightness:           display.DefaultConfig(),
 	}
 
@@ -245,13 +250,7 @@ func main() {
 	}
 
 	obdConnected = tryConnectOBD()
-	if obdConnected {
-		if reader.HasFuelTank() {
-			checkRefueling(reader, tracker, client, cfg)
-		} else {
-			fmt.Println("✗ 燃料タンクレベルPID非対応 → 給油検出無効")
-		}
-	} else {
+	if !obdConnected {
 		fmt.Println("⚠ OBD未接続 → メーター表示のみで起動、バックグラウンドでリトライ")
 	}
 
@@ -279,7 +278,6 @@ func main() {
 
 	sampleCount := 0
 	statusCount := 0
-	var lastFuelTank float64
 	var lastCoolantTemp float64
 	var lastFuelEconomy float64
 	var errCount int
@@ -332,9 +330,7 @@ func main() {
 			dtSec := float64(fastIntervalMs) / 1000.0
 
 			if isFull {
-				lastFuelTank = data.FuelTankLevel
 				lastCoolantTemp = data.CoolantTemp
-				tracker.UpdateFuelLevel(lastFuelTank)
 				wifiConnected = checkWiFi()
 				lastFuelEconomy = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
@@ -369,9 +365,6 @@ func main() {
 			if !obdConnected {
 				obdConnected = tryConnectOBD()
 				if obdConnected {
-					if reader.HasFuelTank() {
-						checkRefueling(reader, tracker, client, cfg)
-					}
 					sampleCount = 0
 					errCount = 0
 				}
@@ -390,88 +383,6 @@ func main() {
 			}
 			return
 		}
-	}
-}
-
-// checkRefueling はエンジン始動時に給油を検出する
-func checkRefueling(reader *obd.Reader, tracker *trip.Tracker, client *sender.Client, cfg Config) {
-	// タンク残量を複数回読み取り平均（ノイズ低減）
-	var sum float64
-	var count int
-	for i := 0; i < 3; i++ {
-		pct, err := reader.ReadFuelTankLevel()
-		if err != nil {
-			continue
-		}
-		sum += pct
-		count++
-		if i < 2 {
-			time.Sleep(500 * time.Millisecond)
-		}
-	}
-	if count == 0 {
-		fmt.Println("⚠ 燃料タンクレベル取得失敗、給油検出スキップ")
-		return
-	}
-	currentPct := sum / float64(count)
-	fmt.Printf("✓ 燃料タンク: %.1f%%\n", currentPct)
-
-	tripStartPct, lastPct, valid := tracker.GetFuelState()
-	if !valid {
-		// 初回起動: ベースライン設定のみ
-		fmt.Println("  初回起動: 燃料ベースライン設定")
-		tracker.ResetFuelBaseline(currentPct)
-		return
-	}
-
-	delta := currentPct - lastPct
-	minIncrease := cfg.RefuelMinIncreasePct
-	if minIncrease <= 0 {
-		minIncrease = 5.0
-	}
-
-	if delta >= minIncrease {
-		// 給油検出!
-		fuelUsedL := (tripStartPct - lastPct) / 100.0 * cfg.FuelTankCapacityL
-		refuelAmountL := delta / 100.0 * cfg.FuelTankCapacityL
-		completed := tracker.ManualReset()
-
-		fmt.Printf("⛽ 給油検出! タンク %.1f%% → %.1f%% (+%.1fL)\n", lastPct, currentPct, refuelAmountL)
-
-		if completed != nil && completed.DistanceKm >= 1.0 && fuelUsedL > 0 {
-			fuelEcon := completed.DistanceKm / fuelUsedL
-			fmt.Printf("   前回区間: %.1f km / %.1f L = %.1f km/L\n",
-				completed.DistanceKm, fuelUsedL, fuelEcon)
-			setNotification(fmt.Sprintf("⛽ %.1f km/L (%.0fkm)", fuelEcon, completed.DistanceKm), 10*time.Second)
-
-			// GASに給油データを送信
-			client.Send("refuel", map[string]interface{}{
-				"trip_id":          completed.TripID,
-				"start_time":       completed.StartTime,
-				"end_time":         completed.EndTime,
-				"distance_km":      completed.DistanceKm,
-				"fuel_used_l":      fuelUsedL,
-				"fuel_economy":     fuelEcon,
-				"refuel_amount_l":  refuelAmountL,
-				"old_level_pct":    lastPct,
-				"new_level_pct":    currentPct,
-				"max_speed_kmh":    completed.MaxSpeedKmh,
-				"avg_speed_kmh":    completed.AvgSpeedKmh,
-				"driving_time_sec": completed.DrivingTimeSec,
-				"idle_time_sec":    completed.IdleTimeSec,
-			})
-		}
-
-		if getNotification() == "" {
-			// 燃費算出できなかった場合（距離不足等）
-			setNotification(fmt.Sprintf("⛽ 給油 +%.0fL", refuelAmountL), 10*time.Second)
-		}
-		tracker.ResetFuelBaseline(currentPct)
-	} else if delta > 3.0 {
-		fmt.Printf("  タンク微増 +%.1f%% (しきい値%.0f%%未満、給油判定せず)\n", delta, minIncrease)
-		tracker.UpdateFuelLevel(currentPct)
-	} else {
-		tracker.UpdateFuelLevel(currentPct)
 	}
 }
 

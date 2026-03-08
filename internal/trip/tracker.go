@@ -31,11 +31,6 @@ type Tracker struct {
 	lastTimestamp time.Time
 	speedSum      float64
 
-	// 燃料状態（給油検出用）
-	lastFuelPct      float64 // 直近のタンク残量%
-	tripStartFuelPct float64 // 現トリップ開始時のタンク残量%
-	fuelStateValid   bool    // 燃料状態が有効か
-
 	// 永続化パス
 	statePath     string
 	saveErrLogged bool // 書き込みエラーを既にログ出力したか
@@ -142,25 +137,11 @@ func (t *Tracker) finalize() *TripData {
 	return &completed
 }
 
-// --- 燃料状態管理（給油検出用） ---
-
-// UpdateFuelLevel は最新のタンク残量を記録する（フルサイクルごとに呼ぶ）
-func (t *Tracker) UpdateFuelLevel(pct float64) {
+// GetCurrent は現在のトリップデータのコピーを返す
+func (t *Tracker) GetCurrent() TripData {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	t.lastFuelPct = pct
-	if !t.fuelStateValid {
-		t.fuelStateValid = true
-		t.tripStartFuelPct = pct
-	}
-}
-
-// GetFuelState は起動時の給油検出用に燃料状態を返す
-func (t *Tracker) GetFuelState() (tripStartPct, lastPct float64, valid bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.tripStartFuelPct, t.lastFuelPct, t.fuelStateValid
+	return t.current
 }
 
 // DistanceKm は現在のトリップ走行距離を返す
@@ -170,34 +151,17 @@ func (t *Tracker) DistanceKm() float64 {
 	return t.current.DistanceKm
 }
 
-// ResetFuelBaseline は給油後にトリップ開始時の燃料レベルをリセットする
-func (t *Tracker) ResetFuelBaseline(pct float64) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.tripStartFuelPct = pct
-	t.lastFuelPct = pct
-	t.fuelStateValid = true
-	t.saveState()
-}
-
 // --- 永続化 ---
 
 type persistedState struct {
-	Current          TripData `json:"current"`
-	LastTimestamp    int64    `json:"last_timestamp"`
-	LastFuelPct      float64  `json:"last_fuel_pct"`
-	TripStartFuelPct float64  `json:"trip_start_fuel_pct"`
-	FuelStateValid   bool     `json:"fuel_state_valid"`
+	Current      TripData `json:"current"`
+	LastTimestamp int64    `json:"last_timestamp"`
 }
 
 func (t *Tracker) saveState() {
 	state := persistedState{
-		Current:          t.current,
-		LastTimestamp:    t.lastTimestamp.Unix(),
-		LastFuelPct:      t.lastFuelPct,
-		TripStartFuelPct: t.tripStartFuelPct,
-		FuelStateValid:   t.fuelStateValid,
+		Current:      t.current,
+		LastTimestamp: t.lastTimestamp.Unix(),
 	}
 
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -227,9 +191,6 @@ func (t *Tracker) loadState() {
 	if state.LastTimestamp > 0 {
 		t.lastTimestamp = time.Unix(state.LastTimestamp, 0)
 	}
-	t.lastFuelPct = state.LastFuelPct
-	t.tripStartFuelPct = state.TripStartFuelPct
-	t.fuelStateValid = state.FuelStateValid
 
 	if t.current.DistanceKm > 0 {
 		fmt.Printf("前回のトリップ状態を復元: %.1f km\n", t.current.DistanceKm)

@@ -2,7 +2,6 @@ package trip
 
 import (
 	"path/filepath"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -138,26 +137,6 @@ func TestTrackerManualReset_AvgSpeed(t *testing.T) {
 	}
 }
 
-// --- Callback ---
-
-func TestTrackerOnTripComplete(t *testing.T) {
-	var called int32
-	tr := newTestTracker(t, func(cfg *TrackerConfig) {
-		cfg.OnTripComplete = func(data TripData) {
-			atomic.StoreInt32(&called, 1)
-		}
-	})
-
-	feed(tr, 60, 5)
-	tr.ManualReset()
-
-	// コールバックは goroutine で呼ばれるので少し待つ
-	time.Sleep(50 * time.Millisecond)
-	if atomic.LoadInt32(&called) != 1 {
-		t.Error("OnTripComplete callback was not called")
-	}
-}
-
 // --- Persistence ---
 
 func TestTrackerPersistence(t *testing.T) {
@@ -186,41 +165,3 @@ func TestTrackerPersistence(t *testing.T) {
 	}
 }
 
-// --- FuelLevel ---
-
-func TestTrackerFuelState(t *testing.T) {
-	tr := newTestTracker(t)
-
-	// 初期状態: 無効
-	_, _, valid := tr.GetFuelState()
-	if valid {
-		t.Error("expected fuel state invalid initially")
-	}
-
-	// 燃料レベル更新
-	tr.UpdateFuelLevel(75.0)
-	startPct, lastPct, valid := tr.GetFuelState()
-	if !valid {
-		t.Error("expected fuel state valid after update")
-	}
-	if startPct != 75.0 || lastPct != 75.0 {
-		t.Errorf("expected 75.0/75.0, got %.1f/%.1f", startPct, lastPct)
-	}
-
-	// 継続的な更新（消費シミュレート）
-	tr.UpdateFuelLevel(70.0)
-	startPct, lastPct, _ = tr.GetFuelState()
-	if startPct != 75.0 {
-		t.Errorf("trip start should stay 75.0, got %.1f", startPct)
-	}
-	if lastPct != 70.0 {
-		t.Errorf("last pct should be 70.0, got %.1f", lastPct)
-	}
-
-	// ベースラインリセット（給油後）
-	tr.ResetFuelBaseline(95.0)
-	startPct, lastPct, _ = tr.GetFuelState()
-	if startPct != 95.0 || lastPct != 95.0 {
-		t.Errorf("after reset baseline, expected 95.0/95.0, got %.1f/%.1f", startPct, lastPct)
-	}
-}

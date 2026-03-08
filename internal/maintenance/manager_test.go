@@ -98,13 +98,11 @@ func TestDistanceOverdue(t *testing.T) {
 }
 
 func TestDateProgress(t *testing.T) {
-	m := tempManager(t)
-
-	// 手動で日付リマインダーを追加（LastResetAtを100日前に設定）
 	past := time.Now().Add(-100 * 24 * time.Hour)
-	m.AddReminder(&Reminder{
-		ID: "shaken", Name: "車検", Type: TypeDate,
-		IntervalDays: 730, WarningPct: 0.9, LastResetAt: past,
+	m := tempManager(t)
+	m.InitDefaults([]Reminder{
+		{ID: "shaken", Name: "車検", Type: TypeDate,
+			IntervalDays: 730, WarningPct: 0.9, LastResetAt: past},
 	})
 
 	s := m.CheckAll()[0]
@@ -126,8 +124,8 @@ func TestResetReminder(t *testing.T) {
 	})
 
 	m.UpdateTotalKm(2500)
-	if err := m.ResetReminder("oil"); err != nil {
-		t.Fatal(err)
+	if !m.ResetReminder("oil") {
+		t.Fatal("ResetReminder returned false")
 	}
 
 	// リセット後は0kmから
@@ -144,8 +142,8 @@ func TestResetNonexistent(t *testing.T) {
 	m := tempManager(t)
 	m.InitDefaults(nil)
 
-	if err := m.ResetReminder("nonexistent"); err == nil {
-		t.Error("expected error for nonexistent reminder")
+	if m.ResetReminder("nonexistent") {
+		t.Error("expected false for nonexistent reminder")
 	}
 }
 
@@ -177,8 +175,8 @@ func TestPersistence(t *testing.T) {
 		{ID: "oil", Name: "オイル", Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8},
 	})
 	m1.UpdateTotalKm(1000)
-	if err := m1.ResetReminder("oil"); err != nil {
-		t.Fatal(err)
+	if !m1.ResetReminder("oil") {
+		t.Fatal("ResetReminder returned false")
 	}
 
 	// 新しいManagerで読み込み
@@ -202,41 +200,6 @@ func TestPersistenceFileNotFound(t *testing.T) {
 	}
 }
 
-func TestRemoveReminder(t *testing.T) {
-	m := tempManager(t)
-	m.InitDefaults([]Reminder{
-		{ID: "oil", Name: "オイル", Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8},
-		{ID: "atf", Name: "ATF", Type: TypeDistance, IntervalKm: 40000, WarningPct: 0.9},
-	})
-
-	if err := m.RemoveReminder("oil"); err != nil {
-		t.Fatal(err)
-	}
-	if len(m.GetAll()) != 1 {
-		t.Error("expected 1 reminder after removal")
-	}
-}
-
-func TestMarkNotifiedSuppressesAlert(t *testing.T) {
-	m := tempManager(t)
-	m.InitDefaults([]Reminder{
-		{ID: "oil", Name: "オイル", Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8},
-	})
-
-	m.UpdateTotalKm(2500) // 警告域
-
-	// 通知前はアラートあり
-	if len(m.GetAlerts()) != 1 {
-		t.Fatal("expected alert before marking")
-	}
-
-	// 通知済みにする → 同日はアラート抑制
-	m.MarkNotified("oil")
-	if len(m.GetAlerts()) != 0 {
-		t.Error("expected no alerts after marking notified today")
-	}
-}
-
 func TestInitDefaultsPreservesExisting(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "maintenance.json")
@@ -247,7 +210,7 @@ func TestInitDefaultsPreservesExisting(t *testing.T) {
 		{ID: "oil", Name: "オイル", Type: TypeDistance, IntervalKm: 3000, WarningPct: 0.8},
 	})
 	m1.UpdateTotalKm(1000)
-	_ = m1.ResetReminder("oil") // LastResetKm = 1000
+	m1.ResetReminder("oil") // LastResetKm = 1000
 
 	// 再読み込みしてInitDefaults → 既存のoilは上書きされない
 	m2 := NewManager(path)

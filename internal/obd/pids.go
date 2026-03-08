@@ -4,39 +4,31 @@ import "fmt"
 
 // PID定義
 const (
-	PIDEngineRPM         byte = 0x0C // エンジン回転数
-	PIDVehicleSpeed      byte = 0x0D // 車速 (km/h)
-	PIDEngineLoad        byte = 0x04 // エンジン負荷 (%)
-	PIDCoolantTemp       byte = 0x05 // 冷却水温度
-	PIDMAFAirFlow        byte = 0x10 // MAFエアフローレート (g/s)
-	PIDThrottlePosition  byte = 0x11 // スロットル開度 (%)
-	PIDFuelTankLevel     byte = 0x2F // 燃料タンクレベル (%)
-	PIDRunTimeSinceStart byte = 0x1F // エンジン始動後の経過時間
-	PIDOutsideTemp       byte = 0x46 // 外気温 (℃)
+	PIDEngineRPM        byte = 0x0C // エンジン回転数
+	PIDVehicleSpeed     byte = 0x0D // 車速 (km/h)
+	PIDEngineLoad       byte = 0x04 // エンジン負荷 (%)
+	PIDCoolantTemp      byte = 0x05 // 冷却水温度
+	PIDMAFAirFlow       byte = 0x10 // MAFエアフローレート (g/s)
+	PIDThrottlePosition byte = 0x11 // スロットル開度 (%)
 )
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
-	RPM           float64 // rpm
-	SpeedKmh      float64 // km/h
-	EngineLoad    float64 // 0-100%
-	CoolantTemp   float64 // ℃
-	MAFAirFlow    float64 // g/s (0=非対応)
-	ThrottlePos   float64 // 0-100%
-	FuelTankLevel float64 // 0-100%
-	OutsideTemp   float64 // ℃
-	HasMAF        bool    // MAFセンサー対応か
-	HasOutsideTemp bool   // 外気温PID対応か
+	RPM         float64 // rpm
+	SpeedKmh    float64 // km/h
+	EngineLoad  float64 // 0-100%
+	CoolantTemp float64 // ℃
+	MAFAirFlow  float64 // g/s (0=非対応)
+	ThrottlePos float64 // 0-100%
+	HasMAF      bool    // MAFセンサー対応か
 }
 
 // Reader はOBD-2データを読み取る
 type Reader struct {
 	elm           *ELM327
-	supportsMulti  bool // マルチPIDリクエスト対応フラグ
-	multiTested    bool // マルチPID対応テスト済みフラグ
-	hasMAF         bool // MAF (PID 0x10) 対応
-	hasFuelTank    bool // 燃料タンクレベル (PID 0x2F) 対応
-	hasOutsideTemp bool // 外気温 (PID 0x46) 対応
+	supportsMulti bool // マルチPIDリクエスト対応フラグ
+	multiTested   bool // マルチPID対応テスト済みフラグ
+	hasMAF        bool // MAF (PID 0x10) 対応
 }
 
 // NewReader は新しいReaderを作成する
@@ -58,20 +50,10 @@ func (r *Reader) DetectCapabilities() error {
 		pidSet[p] = true
 	}
 	r.hasMAF = pidSet[PIDMAFAirFlow]
-	r.hasFuelTank = pidSet[PIDFuelTankLevel]
-	r.hasOutsideTemp = pidSet[PIDOutsideTemp]
 	if r.hasMAF {
 		fmt.Println("✓ MAFエアフロー対応 → 燃費計算に使用")
 	} else {
 		fmt.Println("✗ MAF非対応 → 負荷×RPMで燃費推定")
-	}
-	if r.hasFuelTank {
-		fmt.Println("✓ 燃料タンクレベルPID対応")
-	} else {
-		fmt.Println("✗ 燃料タンクレベルPID非対応")
-	}
-	if r.hasOutsideTemp {
-		fmt.Println("✓ 外気温PID対応")
 	}
 
 	r.testMultiPID()
@@ -80,12 +62,6 @@ func (r *Reader) DetectCapabilities() error {
 
 // HasMAF はMAFセンサー対応かどうかを返す
 func (r *Reader) HasMAF() bool { return r.hasMAF }
-
-// HasFuelTank は燃料タンクレベルPID対応かどうかを返す
-func (r *Reader) HasFuelTank() bool { return r.hasFuelTank }
-
-// HasOutsideTemp は外気温PID対応かどうかを返す
-func (r *Reader) HasOutsideTemp() bool { return r.hasOutsideTemp }
 
 // testMultiPID はマルチPIDリクエストの対応をテストする
 func (r *Reader) testMultiPID() {
@@ -162,15 +138,6 @@ func parsePID(data *OBDData, pid byte, raw []byte) {
 			data.MAFAirFlow = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
 			data.HasMAF = true
 		}
-	case PIDOutsideTemp:
-		if len(raw) >= 1 {
-			data.OutsideTemp = float64(raw[0]) - 40.0
-			data.HasOutsideTemp = true
-		}
-	case PIDFuelTankLevel:
-		if len(raw) >= 1 {
-			data.FuelTankLevel = float64(raw[0]) * 100.0 / 255.0
-		}
 	}
 }
 
@@ -204,24 +171,10 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, PIDCoolantTemp, raw)
 	}
 
-	// 燃料タンク（個別クエリ、給油検出用）
-	if r.hasFuelTank {
-		if raw, err := r.elm.QueryPID(PIDFuelTankLevel); err == nil {
-			parsePID(data, PIDFuelTankLevel, raw)
-		}
-	}
-
 	// MAFエアフロー（燃費計算用）
 	if r.hasMAF {
 		if raw, err := r.elm.QueryPID(PIDMAFAirFlow); err == nil {
 			parsePID(data, PIDMAFAirFlow, raw)
-		}
-	}
-
-	// 外気温
-	if r.hasOutsideTemp {
-		if raw, err := r.elm.QueryPID(PIDOutsideTemp); err == nil {
-			parsePID(data, PIDOutsideTemp, raw)
 		}
 	}
 
@@ -232,14 +185,8 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 func (r *Reader) readAllSingle() (*OBDData, error) {
 	data := &OBDData{}
 	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDCoolantTemp}
-	if r.hasFuelTank {
-		pids = append(pids, PIDFuelTankLevel)
-	}
 	if r.hasMAF {
 		pids = append(pids, PIDMAFAirFlow)
-	}
-	if r.hasOutsideTemp {
-		pids = append(pids, PIDOutsideTemp)
 	}
 
 	for _, pid := range pids {
@@ -251,14 +198,3 @@ func (r *Reader) readAllSingle() (*OBDData, error) {
 	return data, nil
 }
 
-// ReadFuelTankLevel は燃料タンクレベルのみを取得する（給油検出用）
-func (r *Reader) ReadFuelTankLevel() (float64, error) {
-	raw, err := r.elm.QueryPID(PIDFuelTankLevel)
-	if err != nil {
-		return 0, err
-	}
-	if len(raw) < 1 {
-		return 0, fmt.Errorf("fuel tank PID: empty response")
-	}
-	return float64(raw[0]) * 100.0 / 255.0, nil
-}

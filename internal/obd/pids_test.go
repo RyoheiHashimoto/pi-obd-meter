@@ -48,15 +48,6 @@ func TestParsePID_Coolant(t *testing.T) {
 	}
 }
 
-func TestParsePID_FuelTank(t *testing.T) {
-	data := &OBDData{}
-	parsePID(data, PIDFuelTankLevel, []byte{128}) // 128/255*100 ≈ 50.2%
-	want := float64(128) * 100.0 / 255.0
-	if math.Abs(data.FuelTankLevel-want) > 0.1 {
-		t.Errorf("FuelTank: got %.1f, want %.1f", data.FuelTankLevel, want)
-	}
-}
-
 func TestParsePID_ShortData(t *testing.T) {
 	// データが空でもパニックしない
 	data := &OBDData{}
