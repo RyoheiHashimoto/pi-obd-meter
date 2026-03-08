@@ -25,6 +25,7 @@
 // === doPost ハンドラーマップ ===
 const POST_HANDLERS = {
   maintenance: handleMaintenance,
+  restore: handleRestore,
 };
 
 // === Webhook エンドポイント (Pi → GAS) ===
@@ -116,6 +117,21 @@ function handleMaintenance(data) {
     pending_resets: pendingIds,
     odometer_correction: odoCorrection ? parseFloat(odoCorrection) : null,
     trip_reset: !!tripReset
+  });
+}
+
+// === 状態復元 (Pi起動時 → GAS) ===
+// 設定シートから total_km と last_refuel_km を返す。
+// overlayFS環境でリブート後に累計走行距離を復元するために使用。
+function handleRestore() {
+  const totalKm = parseFloat(getSettingValue('total_km')) || 0;
+  const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
+
+  return jsonResponse({
+    status: 'ok',
+    type: 'restore',
+    total_km: totalKm,
+    last_refuel_km: lastRefuelKm,
   });
 }
 

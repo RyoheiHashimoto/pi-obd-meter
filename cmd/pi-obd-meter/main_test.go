@@ -1,8 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
+	"github.com/hashimoto/pi-obd-meter/internal/sender"
+	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
 func TestCalcFuelEconomy_EngineStopped(t *testing.T) {
@@ -116,5 +123,216 @@ func TestCalcFuelEconomy_LargerDisplacement(t *testing.T) {
 	large := calcFuelEconomy(60, 2000, 30, 0, false, 2.0)
 	if large >= small {
 		t.Errorf("larger displacement should use more fuel: 1.3L=%.1f, 2.0L=%.1f", small, large)
+	}
+}
+
+// --- sendMaintenanceStatus テスト ---
+
+func TestSendMaintenanceStatus_Basic(t *testing.T) {
+	var receivedPayload map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var p sender.GASPayload
+		json.NewDecoder(r.Body).Decode(&p)
+		receivedPayload = p.Data.(map[string]interface{})
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	maintMgr.InitDefaults(nil)
+	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
+
+	totalKm := 100.0
+	odoApplied := false
+	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, tracker)
+
+	if receivedPayload == nil {
+		t.Fatal("expected payload to be sent")
+	}
+	statuses, ok := receivedPayload["statuses"].([]interface{})
+	if !ok || len(statuses) == 0 {
+		t.Error("expected non-empty statuses array")
+	}
+}
+
+func TestSendMaintenanceStatus_PendingResets(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"pending_resets":["oil_change"]}`))
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	maintMgr.InitDefaults(nil)
+
+	totalKm := 5000.0
+	odoApplied := false
+	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+
+	// oil_changeがリセットされたことを確認
+	for _, s := range maintMgr.CheckAll() {
+		if s.Reminder.ID == "oil_change" && s.CurrentKm > 100 {
+			t.Errorf("oil_change should have been reset, current_km=%.1f", s.CurrentKm)
+		}
+	}
+}
+
+func TestSendMaintenanceStatus_OdometerCorrection(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(200)
+		if callCount == 1 {
+			w.Write([]byte(`{"odometer_correction":50000}`))
+		} else {
+			w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	maintMgr.InitDefaults(nil)
+
+	totalKm := 100.0
+	odoApplied := false
+	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+
+	if totalKm != 50000 {
+		t.Errorf("totalKm should be corrected to 50000, got %.1f", totalKm)
+	}
+	// 2回呼ばれる（補正後の再送信）。2回目でGASが補正をクリア済みなのでodoApplied=false
+	if callCount != 2 {
+		t.Errorf("expected 2 calls (initial + re-send after correction), got %d", callCount)
+	}
+	if odoApplied {
+		t.Error("odoApplied should be false after re-send (GAS cleared correction)")
+	}
+}
+
+func TestSendMaintenanceStatus_TripReset(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"trip_reset":true}`))
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	maintMgr.InitDefaults(nil)
+
+	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
+	tracker.Update(60) // トリップに走行データを追加
+
+	totalKm := 100.0
+	odoApplied := false
+	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, tracker)
+
+	// トリップがリセットされている
+	if tracker.DistanceKm() > 0.001 {
+		t.Errorf("trip should be reset, got %.4f km", tracker.DistanceKm())
+	}
+}
+
+func TestSendMaintenanceStatus_Empty(t *testing.T) {
+	// リマインダー0件 → 送信しない
+	client := sender.NewClient("http://127.0.0.1:1")
+	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	// InitDefaultsを呼ばない = リマインダー0件
+
+	totalKm := 0.0
+	odoApplied := false
+	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+	// パニックしなければOK
+}
+
+// --- corsMiddleware テスト ---
+
+func TestCorsMiddleware_GETRequest(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	})
+	handler := corsMiddleware(inner)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Error("missing CORS origin header")
+	}
+	if rec.Code != 200 {
+		t.Errorf("status: got %d, want 200", rec.Code)
+	}
+}
+
+func TestCorsMiddleware_OPTIONSRequest(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("inner handler should not be called for OPTIONS")
+	})
+	handler := corsMiddleware(inner)
+
+	req := httptest.NewRequest("OPTIONS", "/test", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status: got %d, want 204", rec.Code)
+	}
+	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, OPTIONS" {
+		t.Error("missing CORS methods header")
+	}
+}
+
+// --- RestoreState テスト ---
+
+func TestRestoreState_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok","total_km":12345.6,"last_refuel_km":12000}`))
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	resp, err := client.RestoreState()
+	if err != nil {
+		t.Fatalf("RestoreState failed: %v", err)
+	}
+	if resp.TotalKm != 12345.6 {
+		t.Errorf("total_km: got %.1f, want 12345.6", resp.TotalKm)
+	}
+	if resp.LastRefuelKm != 12000 {
+		t.Errorf("last_refuel_km: got %.1f, want 12000", resp.LastRefuelKm)
+	}
+}
+
+func TestRestoreState_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	_, err := client.RestoreState()
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+}
+
+func TestRestoreState_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	client := sender.NewClient(srv.URL)
+	_, err := client.RestoreState()
+	if err == nil {
+		t.Fatal("expected error on invalid JSON")
 	}
 }

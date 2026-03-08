@@ -207,10 +207,18 @@ func main() {
 	go startLocalAPI(cfg, maintMgr)
 	fmt.Printf("✓ LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 
-	// --- メンテナンス状態をGASに送信（WiFi接続後） ---
+	// --- WiFi接続後: GASから状態復元 + メンテナンス初回送信 ---
 	go func() {
 		for i := 0; i < 30; i++ {
 			if checkWiFi() {
+				// GASから累計走行距離を復元（overlayFSリブート対策）
+				if restored, err := client.RestoreState(); err == nil && restored.TotalKm > 0 {
+					if totalKmAccum < restored.TotalKm {
+						totalKmAccum = restored.TotalKm
+						maintMgr.UpdateTotalKm(totalKmAccum)
+						slog.Info("GASからODO復元", "total_km", restored.TotalKm)
+					}
+				}
 				sendMaintenanceStatus(client, maintMgr, &totalKmAccum, &odoApplied, tracker)
 				return
 			}
@@ -496,6 +504,7 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"max_speed_kmh": cfg.MaxSpeedKmh,
+			"version":       version,
 		})
 	})
 

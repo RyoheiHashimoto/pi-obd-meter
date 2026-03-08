@@ -150,6 +150,59 @@ func TestSendWithResponseError(t *testing.T) {
 	}
 }
 
+func TestRetryBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500) // 常に失敗
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.enqueue(GASPayload{Type: "test"})
+
+	// 初回リトライ: バックオフなしで実行される（lastRetryAtゼロ）
+	c.RetryPending()
+	if c.consecutiveFails != 1 {
+		t.Errorf("consecutiveFails: got %d, want 1", c.consecutiveFails)
+	}
+	if c.QueueSize() != 1 {
+		t.Error("failed item should be re-enqueued")
+	}
+
+	// 2回目: lastRetryAtが直前なのでバックオフでスキップされる
+	c.RetryPending()
+	if c.consecutiveFails != 1 {
+		t.Errorf("consecutiveFails should stay 1 (skipped), got %d", c.consecutiveFails)
+	}
+}
+
+func TestRetrySkipsRemainingOnFailure(t *testing.T) {
+	var callCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := callCount.Add(1)
+		if n == 1 {
+			w.WriteHeader(200) // 1件目成功
+		} else {
+			w.WriteHeader(500) // 2件目以降失敗
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	c.enqueue(GASPayload{Type: "a"})
+	c.enqueue(GASPayload{Type: "b"})
+	c.enqueue(GASPayload{Type: "c"})
+
+	c.RetryPending()
+
+	// 1件成功、2件目失敗で残り2件がキューに戻る
+	if c.QueueSize() != 2 {
+		t.Errorf("queue size: got %d, want 2", c.QueueSize())
+	}
+	if callCount.Load() != 2 {
+		t.Errorf("call count: got %d, want 2 (3rd should be skipped)", callCount.Load())
+	}
+}
+
 func TestIsSending(t *testing.T) {
 	c := NewClient("http://example.com")
 	if c.IsSending() {
