@@ -78,3 +78,52 @@ func TestParsePID_RPMMax(t *testing.T) {
 		t.Errorf("RPM: got %.2f, want %.2f", data.RPM, want)
 	}
 }
+
+func TestParsePID_MAF(t *testing.T) {
+	data := &OBDData{}
+	parsePID(data, PIDMAFAirFlow, []byte{0x01, 0xF4}) // 500/100 = 5.0 g/s
+	want := 5.0
+	if data.MAFAirFlow != want {
+		t.Errorf("MAF: got %.2f, want %.2f", data.MAFAirFlow, want)
+	}
+	if !data.HasMAF {
+		t.Error("HasMAF should be true")
+	}
+}
+
+func TestParsePID_MAFShortData(t *testing.T) {
+	data := &OBDData{}
+	parsePID(data, PIDMAFAirFlow, []byte{0x01}) // 1バイトしかない
+	if data.MAFAirFlow != 0 {
+		t.Errorf("MAF should be 0 with short data, got %.2f", data.MAFAirFlow)
+	}
+	if data.HasMAF {
+		t.Error("HasMAF should be false with short data")
+	}
+}
+
+func TestParsePID_CoolantZero(t *testing.T) {
+	data := &OBDData{}
+	parsePID(data, PIDCoolantTemp, []byte{40}) // 40-40 = 0℃
+	if data.CoolantTemp != 0 {
+		t.Errorf("Coolant: got %.0f, want 0", data.CoolantTemp)
+	}
+}
+
+func TestParsePID_SpeedMax(t *testing.T) {
+	data := &OBDData{}
+	parsePID(data, PIDVehicleSpeed, []byte{255}) // 255 km/h
+	if data.SpeedKmh != 255 {
+		t.Errorf("Speed: got %.0f, want 255", data.SpeedKmh)
+	}
+}
+
+func TestParsePID_UnknownPID(t *testing.T) {
+	data := &OBDData{}
+	// 未知のPIDでパニックしない
+	parsePID(data, 0xFF, []byte{0x01, 0x02})
+	// フィールドが変更されないこと
+	if data.RPM != 0 || data.SpeedKmh != 0 {
+		t.Error("unknown PID should not modify data")
+	}
+}

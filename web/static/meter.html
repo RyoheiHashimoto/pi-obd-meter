@@ -142,14 +142,20 @@
 <div id="toast" class="toast"></div>
 
 <script>
-const D = Math.PI / 180;
-const SA = -135, EA = 135, SW = 270;
+// ============================================================
+// SVG Geometry Helpers
+// 270° arc gauge: 12時を0°として左右±135°の範囲で描画する
+// ============================================================
+const D = Math.PI / 180;          // deg→rad 変換定数
+const SA = -135, EA = 135, SW = 270; // 開始角, 終了角, 全角度幅
 
+// 極座標→直交座標（12時=0°、時計回り正）
 function p2xy(cx, cy, r, deg) {
   const rad = deg * D;
   return [cx + r * Math.sin(rad), cy - r * Math.cos(rad)];
 }
 
+// SVGアークパス文字列を生成（角度 s→e）
 function arcPath(cx, cy, r, s, e) {
   if (Math.abs(e - s) < 0.3) return '';
   const [x1, y1] = p2xy(cx, cy, r, s);
@@ -158,6 +164,7 @@ function arcPath(cx, cy, r, s, e) {
   return `M${x1.toFixed(1)},${y1.toFixed(1)}A${r},${r},0,${lg},1,${x2.toFixed(1)},${y2.toFixed(1)}`;
 }
 
+// SVG要素を生成して親に追加
 function el(svg, tag, attrs) {
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
@@ -165,6 +172,7 @@ function el(svg, tag, attrs) {
   return e;
 }
 
+// グロー効果用SVGフィルター（1回だけ生成）
 let filterCreated = false;
 function ensureFilter(svg) {
   if (filterCreated) return;
@@ -173,7 +181,12 @@ function ensureFilter(svg) {
   defs.innerHTML = '<filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
 }
 
-// --- Build speed gauge with inner THR arc ---
+// ============================================================
+// Speed Gauge Builder
+// 外周: 速度アークゲージ（針 + 値アーク + 目盛り + レッドゾーン）
+// 内周: スロットル開度アーク（HSLグラデーション）
+// requestAnimationFrame で 60fps 補間（ease-out, ~300ms）
+// ============================================================
 let thrArc, thrLabel;
 function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
@@ -262,8 +275,12 @@ function buildSpeedGauge(svgId, cfg) {
   };
 }
 
-// --- THR update (blue→green→yellow→red smooth gradient, lerp) ---
-const THR_IDLE = 11.5; // アイドル時のベースライン(%)を差し引く
+// ============================================================
+// Throttle Arc — 内側アークの更新
+// 色相: 210(青)→0(赤) をスロットル開度に応じてスムーズ遷移
+// アイドル時ベースライン (~11.5%) を差し引いて 0% 基準にする
+// ============================================================
+const THR_IDLE = 11.5;
 let thrCur = 0, thrTgt = 0, thrRafId = 0;
 function thrLerp() {
   const d = thrTgt - thrCur;
@@ -272,18 +289,18 @@ function thrLerp() {
   const thrR = GR - 80;
   const a = SA + (pct / 100) * SW;
   thrArc.setAttribute('d', pct > 0.5 ? arcPath(GCX, GCY, thrR, SA, a) : '');
-  const hue = 210 - (pct / 100) * 210;
+  const hue = 210 - (pct / 100) * 210; // blue(210)→red(0)
   const col = pct > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#333';
   thrArc.setAttribute('stroke', col);
   thrLabel.setAttribute('fill', col);
   if (Math.abs(thrCur - thrTgt) > 0.01) { thrRafId = requestAnimationFrame(thrLerp); } else { thrRafId = 0; }
 }
-function updateThrottle(cx, cy, r, pct) {
+function updateThrottle(pct) {
   thrTgt = Math.max(0, pct - THR_IDLE);
   if (!thrRafId) thrRafId = requestAnimationFrame(thrLerp);
 }
 
-// --- Speed color ---
+// 速度→ゲージ色（寒色→暖色）
 function spdCol(v) {
   if (v >= 120) return '#f44336';
   if (v >= 100) return '#ff9800';
@@ -293,7 +310,9 @@ function spdCol(v) {
   return '#78909c';
 }
 
-// --- Indicator elements ---
+// ============================================================
+// Right Panel Indicators (ECO, TRIP, TEMP, MAINT, SEND, WiFi, OBD)
+// ============================================================
 const indEco = document.getElementById('ind-eco');
 const ecoVal = document.getElementById('eco-val');
 const indSend = document.getElementById('ind-send');
@@ -379,7 +398,9 @@ function updateIndicators(d) {
   }
 }
 
-// --- Toast ---
+// ============================================================
+// Toast Notification — メンテナンス警告等を画面中央に一時表示
+// ============================================================
 const toastEl = document.getElementById('toast');
 let lastNotification = '';
 let toastTimer = null;
@@ -392,13 +413,18 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { toastEl.classList.remove('show'); }, 5000);
 }
 
-// --- Config defaults ---
+// ============================================================
+// Config & Gauge Layout Constants
+// ============================================================
 const DEFAULTS = { redline_rpm: 6500, max_speed_kmh: 180, max_rpm: 8000 };
-const GCX = 280, GCY = 260, GR = 220;
+const GCX = 280, GCY = 260, GR = 220; // ゲージ中心座標・半径
 
 let gs;
 
-// --- Realtime API ---
+// ============================================================
+// Realtime API Polling — /api/realtime を 200ms 間隔でポーリング
+// 接続失敗時はシミュレーションモードにフォールバック
+// ============================================================
 let connected = false;
 let prevAlertCount = 0;
 let alertQueue = [];
@@ -416,7 +442,7 @@ function applyData(d) {
   const throttle = d.throttle_pos || 0;
 
   gs.update(spd, spdCol(spd));
-  updateThrottle(GCX, GCY, GR, throttle);
+  updateThrottle(throttle);
   updateIndicators(d);
 
   // Maintenance toast（全件を順番に表示）
@@ -454,7 +480,11 @@ async function fetchRealtime() {
   }
 }
 
-// --- Simulation fallback ---
+// ============================================================
+// Simulation Fallback — API接続不可時のデモ表示
+// 16秒周期で 5フェーズの走行パターンをループ再生:
+//   0-3s: 発進加速  3-7s: 巡航  7-10s: 登坂  10-13s: 再加速  13-16s: 減速
+// ============================================================
 let simMode = false;
 let simT = 0;
 
@@ -468,30 +498,30 @@ function simTick() {
   const phase = simT % 16;
   let speed, throttle, fuelEco;
 
-  if (phase < 3) {
+  if (phase < 3) {        // 発進加速 (0→60km/h)
     const p = phase / 3;
     speed = p * p * 60; throttle = 20 + p * 50;
     fuelEco = 3 + p * 12;
-  } else if (phase < 7) {
+  } else if (phase < 7) { // 巡航 (~60km/h)
     speed = 60 + Math.sin(simT * 3) * 3;
     throttle = 18 + Math.sin(simT * 2) * 4;
     fuelEco = 18 + Math.sin(simT * 2) * 3;
-  } else if (phase < 10) {
+  } else if (phase < 10) { // 登坂 (~45km/h, 高スロットル)
     speed = 45 + Math.sin(simT * 2) * 3;
     throttle = 55 + Math.sin(simT * 1.5) * 10;
     fuelEco = 10 + Math.sin(simT * 1.5) * 2;
-  } else if (phase < 13) {
+  } else if (phase < 13) { // 再加速 (45→85km/h)
     const p = (phase - 10) / 3;
     speed = 45 + p * 40; throttle = 40 + p * 40;
     fuelEco = 6 + (1 - p) * 5;
-  } else {
+  } else {                 // 減速 (85→0km/h, エンブレ)
     const p = (phase - 13) / 3;
     speed = 85 * (1 - p * p); throttle = 3 + (1 - p) * 5;
     fuelEco = 25 + p * 20;
   }
 
   gs.update(Math.max(0, speed), spdCol(speed));
-  updateThrottle(GCX, GCY, GR, throttle);
+  updateThrottle(throttle);
 
   // Simulate indicators
   indObd.className = 'ind-dot on-green'; obdVal.textContent = 'OK';
@@ -507,7 +537,9 @@ function simTick() {
   ecoVal.textContent = fuelEco.toFixed(1);
 }
 
-// --- Start ---
+// ============================================================
+// Initialization — /api/config でゲージ設定を取得し、ポーリング開始
+// ============================================================
 async function initApp() {
   let conf = DEFAULTS;
   try {

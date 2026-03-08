@@ -30,8 +30,6 @@ function doPost(e) {
     const payload = JSON.parse(e.postData.contents);
 
     switch (payload.type) {
-      case 'refuel':
-        return handleRefuel(payload.data);
       case 'maintenance':
         return handleMaintenance(payload.data);
       default:
@@ -48,31 +46,6 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(buildDashboardHtml())
     .setTitle('DYデミオ ダッシュボード')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-// === 給油データ処理 (旧: Pi自動検出 → 現在は未使用、互換性のため残す) ===
-function handleRefuel(data) {
-  const sheet = getOrCreateSheet('給油記録', [
-    '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
-    'タンク%(前)', 'タンク%(後)', '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)'
-  ]);
-
-  const drivingMin = Math.round((data.driving_time_sec || 0) / 60);
-
-  sheet.appendRow([
-    new Date(data.start_time || Date.now()),
-    round(data.distance_km || 0, 1),
-    round(data.fuel_used_l || 0, 2),
-    round(data.fuel_economy || 0, 1),
-    round(data.refuel_amount_l || 0, 1),
-    round(data.old_level_pct || 0, 1),
-    round(data.new_level_pct || 0, 1),
-    round(data.max_speed_kmh || 0, 0),
-    round(data.avg_speed_kmh || 0, 0),
-    drivingMin
-  ]);
-
-  return jsonResponse({ status: 'ok', type: 'refuel' });
 }
 
 // === メンテナンス状態処理 (Pi → GAS、5分間隔) ===

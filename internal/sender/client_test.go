@@ -106,6 +106,57 @@ func TestRetryPendingEmpty(t *testing.T) {
 	}
 }
 
+func TestSendWithResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"status":"ok","pending_resets":["oil_change"]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	body, err := c.SendWithResponse("maintenance", map[string]string{"id": "test"})
+	if err != nil {
+		t.Fatalf("SendWithResponse failed: %v", err)
+	}
+	if body == nil {
+		t.Fatal("expected non-nil response body")
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Errorf("status: got %v, want ok", resp["status"])
+	}
+}
+
+func TestSendWithResponseError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	body, err := c.SendWithResponse("trip", map[string]string{"id": "abc"})
+	if err == nil {
+		t.Fatal("expected error on 500 response")
+	}
+	if body != nil {
+		t.Error("expected nil body on error")
+	}
+	if c.QueueSize() != 1 {
+		t.Errorf("queue size: got %d, want 1", c.QueueSize())
+	}
+}
+
+func TestIsSending(t *testing.T) {
+	c := NewClient("http://example.com")
+	if c.IsSending() {
+		t.Error("should not be sending initially")
+	}
+}
+
 func TestPayloadJSON(t *testing.T) {
 	p := GASPayload{Type: "refuel", Data: map[string]float64{"fuel_economy": 12.5}}
 	b, err := json.Marshal(p)
