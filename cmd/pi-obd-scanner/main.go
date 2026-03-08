@@ -67,7 +67,6 @@ func main() {
 		0x0D: true, // 車速
 		0x04: true, // エンジン負荷
 		0x11: true, // スロットル
-		0x2F: true, // 燃料レベル
 		0x05: true, // 冷却水温度
 	}
 
