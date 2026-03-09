@@ -1,7 +1,6 @@
 # pi-obd-meter Makefile
-# ローカル開発用。Pi デプロイは ./scripts/deploy.sh を使用
 
-.PHONY: test test-cover lint build build-arm64 clean check deploy deploy-web logs
+.PHONY: test test-cover lint build build-arm64 clean check deploy logs ssh status restart release
 
 # --- 開発 ---
 
@@ -39,8 +38,27 @@ clean:
 deploy:
 	./scripts/deploy.sh deploy
 
-deploy-web:
-	./scripts/deploy.sh deploy-web
-
 logs:
 	./scripts/deploy.sh logs
+
+ssh:
+	./scripts/deploy.sh ssh
+
+status:
+	./scripts/deploy.sh status
+
+restart:
+	./scripts/deploy.sh restart
+
+# --- リリース ---
+# make release        → パッチ番号を自動インクリメント (v0.3.0 → v0.3.1)
+# make release V=v1.0.0 → バージョンを明示指定
+
+V ?= $(shell git describe --tags --abbrev=0 2>/dev/null | awk -F. '{print $$1"."$$2"."$$3+1}')
+
+release:
+	@if [ -z "$(V)" ]; then echo "Error: タグが見つかりません。V=v0.1.0 で指定してください"; exit 1; fi
+	@echo "Releasing $(V)..."
+	git tag $(V)
+	git push origin $(V)
+	@echo "✓ $(V) — GitHub Actions がリリースを作成します"

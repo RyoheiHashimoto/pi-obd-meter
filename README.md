@@ -182,22 +182,35 @@ pi-obd-meter/
 └── go.mod
 ```
 
-## deploy.sh コマンド一覧
+## Make ターゲット
 
 ```bash
-./scripts/deploy.sh <command>
+# 開発
+make deploy          # ビルド + rsync転送 + サービス再起動
+make logs            # リアルタイムログ表示
+make ssh             # ラズパイにSSH接続
+make status          # サービス状態確認
+make restart         # サービス再起動（転送なし）
+
+# リリース
+make release         # パッチ自動インクリメント (v0.3.0 → v0.3.1)
+make release V=v1.0.0  # バージョン明示指定
+
+# ビルド・テスト
+make build           # ローカルビルド
+make build-arm64     # ARM64 クロスコンパイル
+make test            # テスト実行
+make lint            # golangci-lint
+make check           # lint + test
 ```
 
-| コマンド | 用途 |
-|---------|------|
-| `build` | クロスコンパイル (ARM64) |
-| `deploy` | ビルド + rsync転送 + サービス再起動 |
-| `setup` | 初回セットアップ（swap無効化含む） |
-| `ssh` | ラズパイにSSH接続 |
-| `logs` | リアルタイムログ表示 |
-| `status` | サービス状態確認 |
-| `restart` | サービス再起動 |
-| `release-install [version]` | GitHub Releasesからインストール |
+その他の操作（初回セットアップ、シャットダウン等）は `./scripts/deploy.sh` を直接使用:
+
+```bash
+./scripts/deploy.sh setup            # 初回セットアップ（swap無効化含む）
+./scripts/deploy.sh shutdown         # ラズパイをシャットダウン
+./scripts/deploy.sh release-install  # GitHub Releasesから手動インストール（Pi上で実行）
+```
 
 ## CI/CD
 
@@ -214,14 +227,8 @@ GitHub Actions で PR / main push 時に自動実行:
 Pi は次回起動時（エンジンON）に GitHub Releases を自動チェックし、新バージョンがあればバイナリをアトミックに差し替えて再起動する（go-selfupdate）。
 
 ```bash
-# タグを打つだけで Pi に自動配信される
-git tag v0.4.0 && git push --tags
+make release         # パッチ自動インクリメント → タグ push → Pi に自動配信
+make release V=v1.0.0  # メジャー/マイナー変更時
 ```
 
 Web UI はバイナリに埋め込み済み（`go:embed`）のため、バイナリ1つで完結する。
-
-手動インストールも可能:
-```bash
-# Pi 上で実行
-./scripts/deploy.sh release-install v0.4.0
-```
