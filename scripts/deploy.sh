@@ -35,7 +35,10 @@ cmd_deploy() {
 cmd_setup() {
   echo "Setting up Raspberry Pi..."
   local REMOTE_USER="${PI%%@*}"
-  ssh "$PI" "sudo mkdir -p ${DEST}/web/static ${DEST}/configs /var/lib/pi-obd-meter && sudo chown -R ${REMOTE_USER}:${REMOTE_USER} ${DEST} /var/lib/pi-obd-meter"
+  ssh "$PI" "sudo mkdir -p ${DEST}/configs /var/lib/pi-obd-meter && sudo chown -R ${REMOTE_USER}:${REMOTE_USER} ${DEST} /var/lib/pi-obd-meter"
+  # swap無効化（SD書き込み削減）
+  echo "Disabling swap..."
+  ssh "$PI" "sudo dphys-swapfile swapoff 2>/dev/null; sudo systemctl disable dphys-swapfile 2>/dev/null || true"
   # systemd登録を先に行う（deploy 内の restart が成功するように）
   rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
   ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
@@ -55,18 +58,6 @@ cmd_kiosk_logs()    { ssh "$PI" "journalctl -u kiosk -f"; }
 cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart kiosk"; }
 cmd_shutdown()      { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
 cmd_reboot()        { ssh "$PI" "sudo reboot"; echo "✓ 再起動中...30秒ほどお待ちください"; }
-
-cmd_overlay_on() {
-  ssh "$PI" "sudo raspi-config nonint do_overlayfs 0"
-  echo "⚠️  overlayFS有効化予約済み。再起動で有効になる"
-  echo "    ssh ${PI} 'sudo reboot'"
-}
-
-cmd_overlay_off() {
-  ssh "$PI" "sudo raspi-config nonint do_overlayfs 1"
-  echo "⚠️  overlayFS無効化予約済み。再起動で無効になる"
-  echo "    ssh ${PI} 'sudo reboot'"
-}
 
 cmd_release_install() {
   local VERSION="${1:-}"
@@ -128,10 +119,6 @@ Usage: ./scripts/deploy.sh <command> [args]
   shutdown         ラズパイを安全にシャットダウン
   reboot           ラズパイを再起動
 
-overlayFS:
-  overlay-on       overlayFS有効化 (再起動後有効)
-  overlay-off      overlayFS無効化 (再起動後無効)
-
 リリース (ラズパイ上で実行):
   release-install [version]  GitHub Releasesからインストール
 
@@ -155,8 +142,6 @@ case "${1:-help}" in
   kiosk-restart)   cmd_kiosk_restart ;;
   shutdown)        cmd_shutdown ;;
   reboot)          cmd_reboot ;;
-  overlay-on)      cmd_overlay_on ;;
-  overlay-off)     cmd_overlay_off ;;
   release-install) shift; cmd_release_install "$@" ;;
   help|--help|-h)  cmd_help ;;
   *)

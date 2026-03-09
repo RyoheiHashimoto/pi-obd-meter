@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -571,10 +570,6 @@ func tryAutoUpdate() {
 	if version == "dev" {
 		return
 	}
-	if isOverlayFS() {
-		slog.Info("自動更新: overlayFS有効のためスキップ")
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -611,22 +606,6 @@ func tryAutoUpdate() {
 	}
 	slog.Info("自動更新: 更新完了、再起動します", "version", latest.Version())
 	os.Exit(0) // systemd Restart=always で新バイナリが起動
-}
-
-// isOverlayFS はルートファイルシステムがoverlayFSかどうかを返す。
-// overlayFS有効時は書き込んでも再起動で消えるため自動更新をスキップする。
-func isOverlayFS() bool {
-	data, err := os.ReadFile("/proc/mounts")
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 && fields[1] == "/" && fields[2] == "overlay" {
-			return true
-		}
-	}
-	return false
 }
 
 // waitForInternet はインターネット接続が利用可能になるまで待つ。

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -238,7 +239,8 @@ type persistState struct {
 	Reminders map[string]*Reminder `json:"reminders"`
 }
 
-// save はリマインダー状態をJSONファイルに書き出す
+// save はリマインダー状態をJSONファイルにアトミックに書き出す。
+// 一時ファイルに書き込んでからrenameすることで、電源断時にファイルが壊れるのを防ぐ。
 func (m *Manager) save() {
 	state := persistState{
 		TotalKm:   m.totalKm,
@@ -249,11 +251,25 @@ func (m *Manager) save() {
 		slog.Error("メンテ状態シリアライズ失敗", "error", err)
 		return
 	}
-	if err := os.WriteFile(m.filePath, data, 0644); err != nil {
+	tmp := m.filePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
 		if !m.saveErrLogged {
-			slog.Warn("メンテ状態保存失敗", "path", m.filePath, "error", err)
+			slog.Warn("メンテ状態保存失敗", "path", tmp, "error", err)
 			m.saveErrLogged = true
 		}
+		return
+	}
+	if err := os.Rename(tmp, m.filePath); err != nil {
+		if !m.saveErrLogged {
+			slog.Warn("メンテ状態保存失敗（rename）", "path", m.filePath, "error", err)
+			m.saveErrLogged = true
+		}
+		return
+	}
+	// fsync ディレクトリ: rename のメタデータをディスクに反映
+	if dir, err := os.Open(filepath.Dir(m.filePath)); err == nil {
+		dir.Sync()
+		dir.Close()
 	}
 }
 

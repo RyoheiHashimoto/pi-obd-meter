@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -169,7 +170,8 @@ type persistedState struct {
 	LastTimestamp int64    `json:"last_timestamp"`
 }
 
-// saveState は現在のトリップ状態をJSONファイルに書き出す（overlayFS環境では失敗する）
+// saveState は現在のトリップ状態をJSONファイルにアトミックに書き出す。
+// 一時ファイルに書き込んでからrenameすることで、電源断時にファイルが壊れるのを防ぐ。
 func (t *Tracker) saveState() {
 	state := persistedState{
 		Current:       t.current,
@@ -180,11 +182,24 @@ func (t *Tracker) saveState() {
 	if err != nil {
 		return
 	}
-	if err := os.WriteFile(t.statePath, data, 0644); err != nil {
+	tmp := t.statePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
 		if !t.saveErrLogged {
-			slog.Warn("トリップ状態保存失敗", "path", t.statePath, "error", err)
+			slog.Warn("トリップ状態保存失敗", "path", tmp, "error", err)
 			t.saveErrLogged = true
 		}
+		return
+	}
+	if err := os.Rename(tmp, t.statePath); err != nil {
+		if !t.saveErrLogged {
+			slog.Warn("トリップ状態保存失敗（rename）", "path", t.statePath, "error", err)
+			t.saveErrLogged = true
+		}
+		return
+	}
+	if dir, err := os.Open(filepath.Dir(t.statePath)); err == nil {
+		dir.Sync()
+		dir.Close()
 	}
 }
 
