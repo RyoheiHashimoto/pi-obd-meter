@@ -25,5 +25,9 @@ coverage.out
 # clasp (OAuth認証情報)
 .clasprc.json
 
+# Node.js (ESLint)
+node_modules/
+package-lock.json
+
 # Secrets (実際のURLが入ったconfig)
 configs/config.local.json

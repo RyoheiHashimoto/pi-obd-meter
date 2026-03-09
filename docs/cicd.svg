@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 520" font-family="'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#78909c"/>
+    </marker>
+    <marker id="arr-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#66bb6a"/>
+    </marker>
+    <marker id="arr-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#fbbf24"/>
+    </marker>
+    <marker id="arr-cyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#26c6da"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#ab47bc"/>
+    </marker>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#111827"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="880" height="520" rx="12" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="440" y="36" text-anchor="middle" fill="#e2e8f0" font-size="18" font-weight="bold">CI/CD パイプライン</text>
+
+  <!-- =============== Developer =============== -->
+  <rect x="30" y="60" width="160" height="120" rx="8" fill="#1e293b" stroke="#42a5f5" stroke-width="1.5"/>
+  <text x="110" y="88" text-anchor="middle" fill="#42a5f5" font-size="13" font-weight="bold">Developer</text>
+  <text x="110" y="110" text-anchor="middle" fill="#94a3b8" font-size="10">git push main</text>
+  <text x="110" y="128" text-anchor="middle" fill="#94a3b8" font-size="10">make release</text>
+  <text x="110" y="146" text-anchor="middle" fill="#64748b" font-size="9">make deploy-gas (手動)</text>
+  <text x="110" y="162" text-anchor="middle" fill="#64748b" font-size="9">make deploy (Pi直接)</text>
+
+  <!-- =============== GitHub Actions =============== -->
+  <rect x="240" y="55" width="400" height="130" rx="8" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="260" y="75" fill="#94a3b8" font-size="12" font-weight="bold">GitHub Actions</text>
+
+  <!-- CI -->
+  <rect x="260" y="85" width="170" height="44" rx="6" fill="#1e293b" stroke="#66bb6a" stroke-width="1"/>
+  <text x="345" y="105" text-anchor="middle" fill="#66bb6a" font-size="12" font-weight="bold">CI (ci.yml)</text>
+  <text x="345" y="120" text-anchor="middle" fill="#64748b" font-size="9">lint + test + build (ARM64)</text>
+
+  <!-- Deploy GAS -->
+  <rect x="450" y="85" width="170" height="44" rx="6" fill="#1e293b" stroke="#ab47bc" stroke-width="1"/>
+  <text x="535" y="105" text-anchor="middle" fill="#ab47bc" font-size="12" font-weight="bold">Deploy GAS</text>
+  <text x="535" y="120" text-anchor="middle" fill="#64748b" font-size="9">ESLint + clasp push + deploy</text>
+
+  <!-- Trigger labels -->
+  <text x="345" y="155" text-anchor="middle" fill="#475569" font-size="9">push main / PR</text>
+  <text x="535" y="155" text-anchor="middle" fill="#475569" font-size="9">push main (gas/ 変更時)</text>
+
+  <!-- Release -->
+  <rect x="260" y="190" width="170" height="44" rx="6" fill="#1e293b" stroke="#fbbf24" stroke-width="1"/>
+  <text x="345" y="210" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="bold">Release (release.yml)</text>
+  <text x="345" y="225" text-anchor="middle" fill="#64748b" font-size="9">build + smoke test + tar.gz</text>
+
+  <text x="345" y="252" text-anchor="middle" fill="#475569" font-size="9">v* タグ push</text>
+
+  <!-- Developer → CI -->
+  <line x1="190" y1="100" x2="255" y2="100" stroke="#66bb6a" stroke-width="1.5" marker-end="url(#arr-green)"/>
+
+  <!-- Developer → Deploy GAS -->
+  <line x1="190" y1="120" x2="255" y2="120" stroke="#78909c" stroke-width="1"/>
+  <line x1="430" y1="107" x2="445" y2="107" stroke="#ab47bc" stroke-width="1.5" marker-end="url(#arr-purple)"/>
+
+  <!-- Developer → Release -->
+  <line x1="190" y1="140" x2="220" y2="140" stroke="#78909c" stroke-width="1"/>
+  <line x1="220" y1="140" x2="220" y2="212" stroke="#78909c" stroke-width="1"/>
+  <line x1="220" y1="212" x2="255" y2="212" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arr-amber)"/>
+
+  <!-- =============== Targets =============== -->
+
+  <!-- GAS (Google Apps Script) -->
+  <rect x="560" y="280" width="280" height="90" rx="8" fill="#1e293b" stroke="#ab47bc" stroke-width="1.5"/>
+  <text x="700" y="308" text-anchor="middle" fill="#ab47bc" font-size="14" font-weight="bold">Google Apps Script</text>
+  <text x="700" y="328" text-anchor="middle" fill="#94a3b8" font-size="10">webhook.gs (本番デプロイメント)</text>
+  <text x="700" y="345" text-anchor="middle" fill="#64748b" font-size="9">doPost: Pi → メンテ/トリップ受信</text>
+  <text x="700" y="358" text-anchor="middle" fill="#64748b" font-size="9">doGet: スマホ → ダッシュボード</text>
+
+  <!-- GitHub Releases -->
+  <rect x="560" y="190" width="280" height="50" rx="8" fill="#1e293b" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="700" y="213" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="bold">GitHub Releases</text>
+  <text x="700" y="230" text-anchor="middle" fill="#94a3b8" font-size="10">pi-obd-meter_linux_arm64.tar.gz</text>
+
+  <!-- Raspberry Pi -->
+  <rect x="560" y="410" width="280" height="80" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
+  <text x="700" y="438" text-anchor="middle" fill="#66bb6a" font-size="14" font-weight="bold">Raspberry Pi</text>
+  <text x="700" y="458" text-anchor="middle" fill="#94a3b8" font-size="10">go-selfupdate (起動時に自動チェック)</text>
+  <text x="700" y="473" text-anchor="middle" fill="#64748b" font-size="9">新バージョン → アトミック差し替え → 再起動</text>
+
+  <!-- Release → GitHub Releases -->
+  <line x1="430" y1="212" x2="555" y2="212" stroke="#fbbf24" stroke-width="2" marker-end="url(#arr-amber)"/>
+
+  <!-- Deploy GAS → GAS -->
+  <path d="M535,129 L535,160 Q535,170 545,170 L700,170 Q710,170 710,180 L710,276" fill="none" stroke="#ab47bc" stroke-width="2" marker-end="url(#arr-purple)"/>
+  <text x="620" y="166" fill="#ab47bc" font-size="9">clasp deploy</text>
+
+  <!-- GitHub Releases → Pi -->
+  <line x1="700" y1="240" x2="700" y2="406" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arr-amber)"/>
+  <text x="714" y="393" fill="#fbbf24" font-size="9">selfupdate</text>
+
+  <!-- =============== ESLint detail =============== -->
+  <rect x="30" y="280" width="280" height="120" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="170" y="305" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">Deploy GAS パイプライン詳細</text>
+  <rect x="50" y="318" width="80" height="24" rx="4" fill="#0f172a" stroke="#ab47bc" stroke-width="0.8"/>
+  <text x="90" y="334" text-anchor="middle" fill="#ab47bc" font-size="10">ESLint</text>
+  <line x1="130" y1="330" x2="150" y2="330" stroke="#78909c" stroke-width="1" marker-end="url(#arr)"/>
+  <rect x="150" y="318" width="80" height="24" rx="4" fill="#0f172a" stroke="#ab47bc" stroke-width="0.8"/>
+  <text x="190" y="334" text-anchor="middle" fill="#ab47bc" font-size="10">clasp push</text>
+  <line x1="230" y1="330" x2="250" y2="330" stroke="#78909c" stroke-width="1" marker-end="url(#arr)"/>
+  <rect x="50" y="354" width="80" height="24" rx="4" fill="#0f172a" stroke="#ab47bc" stroke-width="0.8"/>
+  <text x="90" y="370" text-anchor="middle" fill="#ab47bc" font-size="10">clasp deploy</text>
+  <line x1="250" y1="330" x2="260" y2="330" stroke="#78909c" stroke-width="1"/>
+  <line x1="260" y1="330" x2="260" y2="366" stroke="#78909c" stroke-width="1"/>
+  <line x1="260" y1="366" x2="130" y2="366" stroke="#78909c" stroke-width="1" marker-end="url(#arr)"/>
+  <text x="170" y="392" text-anchor="middle" fill="#ef4444" font-size="9">ESLint エラー → デプロイ中止</text>
+
+  <!-- =============== Legend =============== -->
+  <rect x="30" y="430" width="480" height="60" rx="6" fill="#0c1222" stroke="#1e293b" stroke-width="0.5"/>
+  <line x1="50" y1="455" x2="85" y2="455" stroke="#66bb6a" stroke-width="2"/>
+  <text x="95" y="459" fill="#94a3b8" font-size="10">Go: CI (lint+test+build)</text>
+  <line x1="260" y1="455" x2="295" y2="455" stroke="#fbbf24" stroke-width="2"/>
+  <text x="305" y="459" fill="#94a3b8" font-size="10">Go: Release (tag → Pi)</text>
+  <line x1="50" y1="475" x2="85" y2="475" stroke="#ab47bc" stroke-width="2"/>
+  <text x="95" y="479" fill="#94a3b8" font-size="10">GAS: ESLint + clasp deploy</text>
+  <line x1="260" y1="475" x2="295" y2="475" stroke="#fbbf24" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="305" y="479" fill="#94a3b8" font-size="10">自動更新 (go-selfupdate)</text>
+</svg>
