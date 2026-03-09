@@ -15,15 +15,16 @@ import (
 
 // TripData は1トリップ分の集計データ
 type TripData struct {
-	TripID         string    `json:"trip_id"`
-	StartTime      time.Time `json:"start_time"`
-	EndTime        time.Time `json:"end_time"`
-	DistanceKm     float64   `json:"distance_km"`
-	MaxSpeedKmh    float64   `json:"max_speed_kmh"`
-	AvgSpeedKmh    float64   `json:"avg_speed_kmh"`
-	DrivingTimeSec float64   `json:"driving_time_sec"`
-	IdleTimeSec    float64   `json:"idle_time_sec"`
-	Samples        int       `json:"samples"`
+	TripID           string    `json:"trip_id"`
+	StartTime        time.Time `json:"start_time"`
+	EndTime          time.Time `json:"end_time"`
+	DistanceKm       float64   `json:"distance_km"`
+	FuelConsumptionL float64   `json:"fuel_consumption_l"` // 給油間の燃料消費量 (L)
+	MaxSpeedKmh      float64   `json:"max_speed_kmh"`
+	AvgSpeedKmh      float64   `json:"avg_speed_kmh"`
+	DrivingTimeSec   float64   `json:"driving_time_sec"`
+	IdleTimeSec      float64   `json:"idle_time_sec"`
+	Samples          int       `json:"samples"`
 }
 
 // Tracker はトリップの走行距離を追跡する
@@ -62,7 +63,8 @@ func NewTracker(cfg TrackerConfig) *Tracker {
 }
 
 // Update はOBDデータからトリップを更新する
-func (t *Tracker) Update(speedKmh float64) {
+// fuelRateLH は燃料消費レート (L/h)。0以下の場合は積算しない。
+func (t *Tracker) Update(speedKmh, fuelRateLH float64) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -85,6 +87,11 @@ func (t *Tracker) Update(speedKmh float64) {
 	// 走行距離を積分 (km)
 	distanceDelta := (speedKmh / 3600.0) * dt
 	t.current.DistanceKm += distanceDelta
+
+	// 燃料消費量を積算 (L)
+	if fuelRateLH > 0 {
+		t.current.FuelConsumptionL += (fuelRateLH / 3600.0) * dt
+	}
 
 	// 統計
 	t.current.Samples++
@@ -153,6 +160,17 @@ func (t *Tracker) DistanceKm() float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.current.DistanceKm
+}
+
+// AvgFuelEconomy は給油間の平均燃費 (km/L) を返す。
+// データ不足の場合は 0 を返す。
+func (t *Tracker) AvgFuelEconomy() float64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.current.FuelConsumptionL < 0.01 {
+		return 0
+	}
+	return t.current.DistanceKm / t.current.FuelConsumptionL
 }
 
 // SaveState は現在のトリップ状態を強制保存する（シャットダウン時に呼ぶ）

@@ -252,17 +252,31 @@ function updateIndicators(d) {
   setDot(dom.maint, hasOverdue ? 'red' : alerts.length > 0 ? 'orange' : 'green');
   dom.maint.val.textContent = String(alerts.length);
 
-  // ECO — エンブレ(-1)=緑+「--」、低速域はL/h判定、通常域はkm/L判定
+  // ECO — エンブレ/停車/クリープ時は平均燃費(▸付き)、走行中は瞬間燃費
   const eco = d.fuel_economy || 0;
+  const avgEco = d.avg_fuel_economy || 0;
   const fuelRate = d.fuel_rate_lh || 0;
   const speed = d.speed_kmh || 0;
   if (eco < 0) {
-    // エンブレ・燃料カット: 最もエコな状態
-    setDot(dom.eco, 'green');
-    dom.eco.val.textContent = '--';
+    // エンブレ・燃料カット: 平均燃費を表示
+    if (avgEco > 0.1) {
+      setDot(dom.eco, 'green');
+      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
+    } else {
+      setDot(dom.eco, 'green');
+      dom.eco.val.textContent = '--';
+    }
   } else if (eco < 0.1) {
-    setDot(dom.eco, null);
-    dom.eco.val.textContent = '0';
+    // 停車・クリープ: 平均燃費を表示
+    if (avgEco > 0.1) {
+      if (avgEco >= 15)      setDot(dom.eco, 'green');
+      else if (avgEco >= 10) setDot(dom.eco, 'orange');
+      else                   setDot(dom.eco, 'red');
+      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
+    } else {
+      setDot(dom.eco, null);
+      dom.eco.val.textContent = '0';
+    }
   } else if (speed < ECO_LOW_SPEED_THRESHOLD && fuelRate > 0) {
     if (fuelRate < conf.eco_lh_green)      setDot(dom.eco, 'green');
     else if (fuelRate < conf.eco_lh_red)   setDot(dom.eco, 'orange');

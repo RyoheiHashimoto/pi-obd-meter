@@ -272,7 +272,7 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	maintMgr.InitDefaults(nil)
 
 	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
-	tracker.Update(60) // トリップに走行データを追加
+	tracker.Update(60, 0) // トリップに走行データを追加
 
 	totalKm := 100.0
 	odoApplied := false

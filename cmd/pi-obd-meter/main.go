@@ -51,8 +51,9 @@ type RealtimeData struct {
 	EngineLoad    float64              `json:"engine_load"`
 	ThrottlePos   float64              `json:"throttle_pos"`
 	FuelEconomy   float64              `json:"fuel_economy"`
-	FuelRateLH    float64              `json:"fuel_rate_lh"`
-	TripKm        float64              `json:"trip_km"`
+	FuelRateLH     float64              `json:"fuel_rate_lh"`
+	AvgFuelEconomy float64              `json:"avg_fuel_economy"`
+	TripKm         float64              `json:"trip_km"`
 	CoolantTemp   float64              `json:"coolant_temp"`
 	Alerts        []maintenance.Status `json:"alerts"`
 	Notification  string               `json:"notification,omitempty"`
@@ -350,19 +351,20 @@ func main() {
 				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
-			tracker.Update(data.SpeedKmh)
+			tracker.Update(data.SpeedKmh, lastFuelRateLH)
 			totalKmAccum += (data.SpeedKmh / 3600.0) * dtSec
 			maintMgr.UpdateTotalKm(totalKmAccum)
 
 			dataMu.Lock()
 			latestData = RealtimeData{
-				SpeedKmh:      data.SpeedKmh,
-				RPM:           data.RPM,
-				EngineLoad:    data.EngineLoad,
-				ThrottlePos:   data.ThrottlePos,
-				FuelEconomy:   lastFuelEconomy,
-				FuelRateLH:    lastFuelRateLH,
-				TripKm:        tracker.DistanceKm(),
+				SpeedKmh:       data.SpeedKmh,
+				RPM:            data.RPM,
+				EngineLoad:     data.EngineLoad,
+				ThrottlePos:    data.ThrottlePos,
+				FuelEconomy:    lastFuelEconomy,
+				FuelRateLH:     lastFuelRateLH,
+				AvgFuelEconomy: tracker.AvgFuelEconomy(),
+				TripKm:         tracker.DistanceKm(),
 				CoolantTemp:   lastCoolantTemp,
 				Alerts:        maintMgr.GetAlerts(),
 				Notification:  getNotification(),
