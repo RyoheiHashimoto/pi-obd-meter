@@ -90,7 +90,6 @@ cmd_release_install() {
   cp "${TMPDIR}/pi-obd-meter/pi-obd-scanner" "${DEST}/pi-obd-scanner" 2>/dev/null || true
   chmod +x "${DEST}/pi-obd-meter"
   chmod +x "${DEST}/pi-obd-scanner" 2>/dev/null || true
-  cp -r "${TMPDIR}/pi-obd-meter/web/" "${DEST}/web/"
   cp -r "${TMPDIR}/pi-obd-meter/configs/" "${DEST}/configs/" 2>/dev/null || true
 
   rm -rf "${TMPDIR}"

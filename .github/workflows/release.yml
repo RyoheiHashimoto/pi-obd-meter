@@ -14,6 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate semver tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          if ! echo "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::tag '$TAG' is not valid semver (expected vX.Y.Z)"
+            exit 1
+          fi
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -32,6 +40,23 @@ jobs:
             -o pi-obd-scanner-arm64 \
             ./cmd/pi-obd-scanner
 
+      - name: Smoke test (host build)
+        run: |
+          go build -ldflags "-X main.version=${{ github.ref_name }}" \
+            -o pi-obd-meter-host ./cmd/pi-obd-meter
+          # バージョン文字列がバイナリに埋め込まれているか確認
+          if ! strings pi-obd-meter-host | grep -q "${{ github.ref_name }}"; then
+            echo "::error::Version ${{ github.ref_name }} not found in binary"
+            exit 1
+          fi
+          # go:embed の静的ファイルが埋め込まれているか確認
+          if ! strings pi-obd-meter-host | grep -q "meter.html"; then
+            echo "::error::Embedded web files not found in binary"
+            exit 1
+          fi
+          echo "✓ Smoke test passed: version=${{ github.ref_name }}, embed=ok"
+          rm pi-obd-meter-host
+
       - name: Package release
         run: |
           mkdir -p release/pi-obd-meter
@@ -39,12 +64,17 @@ jobs:
           tar czf release/pi-obd-meter_linux_arm64.tar.gz \
             --transform='s/pi-obd-meter-arm64/pi-obd-meter/' \
             pi-obd-meter-arm64
-          # 手動インストール用: フルパッケージ（従来互換）
+          # 手動インストール用: バイナリ + 設定テンプレート
           cp pi-obd-meter-arm64 release/pi-obd-meter/pi-obd-meter
           cp pi-obd-scanner-arm64 release/pi-obd-meter/pi-obd-scanner
           cp -r configs/ release/pi-obd-meter/configs/ 2>/dev/null || true
-          cp -r gas/ release/pi-obd-meter/gas/ 2>/dev/null || true
           cd release && tar czf pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz pi-obd-meter/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum *.tar.gz > sha256sums.txt
+          cat sha256sums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -52,4 +82,5 @@ jobs:
           files: |
             release/pi-obd-meter_linux_arm64.tar.gz
             release/pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz
+            release/sha256sums.txt
           generate_release_notes: true
