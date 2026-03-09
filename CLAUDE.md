@@ -29,8 +29,9 @@ make restart         # サービス再起動（転送なし）
 make release         # パッチ自動インクリメント (v0.3.0 → v0.3.1)
 make release V=v1.0.0  # バージョン明示指定
 
-# GAS デプロイ (clasp)
-make deploy-gas      # gas/webhook.gs を GAS に push（HEADデプロイメント）
+# GAS デプロイ (clasp — CI/CDでも自動実行)
+make deploy-gas      # gas/webhook.gs を GAS に push（ローカルから手動実行時）
+                     # main push + gas/変更時は CI が ESLint → push → 本番デプロイを自動実行
 
 # ビルド・テスト
 make build           # ローカルビルド
@@ -75,6 +76,8 @@ web/
 
 gas/
   webhook.gs                Google Apps Script。doPost(トリップ/メンテ受信) + doGet(スマホ用ダッシュボード)
+  .clasp.json               clasp プロジェクト設定（スクリプトID）
+  appsscript.json           GAS マニフェスト（タイムゾーン・ランタイム・webapp設定）
 
 configs/
   config.json               アプリ設定（シリアルポート、webhook URL、メンテナンス項目等）
@@ -191,6 +194,13 @@ hdmi_cvt 800 480 60 6 0 0 0
 - 更新後は `os.Exit(0)` → systemd `Restart=always` で新バイナリが起動
 - スキップ条件: 開発ビルド (`version = "dev"`)、インターネット未接続時
 - リリースアセット: `pi-obd-meter_linux_arm64.tar.gz`（goreleaser 互換命名）
+
+### GAS 自動デプロイ（clasp）
+- `gas/` 配下の変更を main に push → GitHub Actions が自動実行
+- ESLint で構文チェック → `clasp push` (HEAD) → `clasp deploy` (本番)
+- ESLint でエラー検出時はデプロイ中止
+- `make deploy-gas` でローカルから手動 push も可能
+- 初回のみ `clasp login` で Google OAuth 認証が必要（`~/.clasprc.json`）
 
 ## 車両固有の設定（config.json）
 
