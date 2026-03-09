@@ -7,7 +7,7 @@ import { createIndicators, updateIndicators, setDot } from './indicators.js';
 import { createSimulation } from './sim.js';
 
 const DEFAULTS = { max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9 };
-const POLL_INTERVAL_MS = 200;
+const POLL_INTERVAL_MS = 150;
 const TOAST_DURATION_MS = 5000;
 const ALERT_INTERVAL_MS = 5500;
 
@@ -106,8 +106,10 @@ async function initApp() {
     fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
   });
 
-  fetchRealtime();
-  setInterval(fetchRealtime, POLL_INTERVAL_MS);
+  // fetch完了後に次を予約（setIntervalだとリクエスト重複の恐れ）
+  (function poll() {
+    fetchRealtime().then(() => setTimeout(poll, POLL_INTERVAL_MS));
+  })();
 }
 
 initApp();
