@@ -16,7 +16,7 @@ jobs:
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
       issues: write
 
@@ -25,10 +25,18 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            Review this PR. Focus on:
-            1. Bugs and logic errors
-            2. Security issues
-            3. Go best practices
-            4. Test coverage for changed code
-            Review in Japanese.
-          claude_args: "--max-turns 5"
+            Review this PR and fix issues you find. Focus on:
+            1. Bugs and logic errors — fix them
+            2. Security issues — fix them
+            3. Go best practices (gofmt, govet, errcheck) — fix violations
+            4. Test coverage for changed code — add tests if missing
+
+            Guidelines:
+            - Follow CLAUDE.md conventions
+            - Commit each fix separately with a clear message in Japanese
+            - If the issue is minor (formatting, lint), fix it silently
+            - If the issue requires a design decision, leave a review comment instead
+            - Run `go build ./...` and `go test ./...` after fixes to verify
+
+            Review comments in Japanese.
+          claude_args: "--max-turns 10"
