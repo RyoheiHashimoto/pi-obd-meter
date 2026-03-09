@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=800, height=480">
 <title>pi-obd-meter</title>
+<link rel="preload" href="fonts/Orbitron-Black.ttf" as="font" type="font/truetype" crossorigin>
+<link rel="preload" href="fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="meter.css">
 </head>
 <body>
@@ -11,46 +13,10 @@
   <div class="gauge-area">
     <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
   </div>
-  <div class="panel">
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-eco"></div>
-      <span class="ind-label">ECO</span>
-      <span class="ind-val" id="eco-val"></span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-trip"></div>
-      <span class="ind-label">TRIP</span>
-      <span class="ind-val" id="trip-val">--</span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-temp"></div>
-      <span class="ind-label">TEMP</span>
-      <span class="ind-val" id="temp-val">--</span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-maint"></div>
-      <span class="ind-label">MAINT</span>
-      <span class="ind-val" id="maint-val"></span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-send"></div>
-      <span class="ind-label">SEND</span>
-      <span class="ind-val" id="send-val"></span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-wifi"></div>
-      <span class="ind-label">WiFi</span>
-      <span class="ind-val" id="wifi-val"></span>
-    </div>
-    <div class="ind-row">
-      <div class="ind-dot" id="ind-obd"></div>
-      <span class="ind-label">OBD</span>
-      <span class="ind-val" id="obd-val"></span>
-    </div>
-  </div>
+  <div class="panel" id="panel"></div>
 </div>
 <div id="version" class="version-label"></div>
 <div id="toast" class="toast"></div>
-<script src="meter.js"></script>
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
