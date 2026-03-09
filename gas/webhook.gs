@@ -22,21 +22,6 @@
  * 6. 表示されたURLをラズパイの config.json の webhook_url に設定
  */
 
-// === API キー認証 ===
-function validateApiKey(e) {
-  const key = (e && e.parameter && e.parameter.key) || '';
-  const expected = PropertiesService.getScriptProperties().getProperty('api_key');
-  if (!expected) return true; // キー未設定時は認証スキップ（初回セットアップ用）
-  return key === expected;
-}
-
-// === API キー初回設定用（GASエディタから1回だけ実行） ===
-function setupApiKey() {
-  const key = 'ここにキーを貼る';
-  PropertiesService.getScriptProperties().setProperty('api_key', key);
-  Logger.log('API キーを設定しました: ' + key.substring(0, 4) + '...');
-}
-
 // === doPost ハンドラーマップ ===
 const POST_HANDLERS = {
   maintenance: handleMaintenance,
@@ -45,9 +30,6 @@ const POST_HANDLERS = {
 
 // === Webhook エンドポイント (Pi → GAS) ===
 function doPost(e) {
-  if (!validateApiKey(e)) {
-    return jsonResponse({ error: '認証エラー' });
-  }
   try {
     const { type, data } = JSON.parse(e.postData.contents);
     const handler = POST_HANDLERS[type];
@@ -61,11 +43,7 @@ function doPost(e) {
 }
 
 // === Webダッシュボード (スマホ → GAS) ===
-function doGet(e) {
-  if (!validateApiKey(e)) {
-    return HtmlService.createHtmlOutput('<h1>アクセスが拒否されました</h1>')
-      .setTitle('アクセス拒否');
-  }
+function doGet() {
   return HtmlService.createHtmlOutput(buildDashboardHtml())
     .setTitle('DYデミオ ダッシュボード')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);

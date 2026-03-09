@@ -21,7 +21,7 @@ func TestSendSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	err := c.Send("trip", map[string]string{"id": "abc"})
 	if err != nil {
 		t.Fatalf("Send failed: %v", err)
@@ -38,7 +38,7 @@ func TestSendServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	err := c.Send("trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on 500 response")
@@ -51,7 +51,7 @@ func TestSendServerError(t *testing.T) {
 }
 
 func TestSendNetworkError(t *testing.T) {
-	c := NewClient("http://127.0.0.1:1", "") // 接続不可
+	c := NewClient("http://127.0.0.1:1") // 接続不可
 	err := c.Send("trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on unreachable server")
@@ -74,7 +74,7 @@ func TestRetryPending(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	_ = c.Send("trip", map[string]string{"id": "abc"}) // 失敗 → キュー
 	if c.QueueSize() != 1 {
 		t.Fatalf("queue should have 1 item, got %d", c.QueueSize())
@@ -87,7 +87,7 @@ func TestRetryPending(t *testing.T) {
 }
 
 func TestQueueMaxSize(t *testing.T) {
-	c := NewClient("http://127.0.0.1:1", "")
+	c := NewClient("http://127.0.0.1:1")
 
 	// 100件まで溜まる
 	for i := 0; i < 110; i++ {
@@ -99,7 +99,7 @@ func TestQueueMaxSize(t *testing.T) {
 }
 
 func TestRetryPendingEmpty(t *testing.T) {
-	c := NewClient("http://example.com", "")
+	c := NewClient("http://example.com")
 	c.RetryPending() // キュー空でもパニックしない
 	if c.QueueSize() != 0 {
 		t.Error("queue should remain empty")
@@ -113,7 +113,7 @@ func TestSendWithResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	body, err := c.SendWithResponse("maintenance", map[string]string{"id": "test"})
 	if err != nil {
 		t.Fatalf("SendWithResponse failed: %v", err)
@@ -137,7 +137,7 @@ func TestSendWithResponseError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	body, err := c.SendWithResponse("trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on 500 response")
@@ -156,7 +156,7 @@ func TestRetryBackoff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	c.enqueue(GASPayload{Type: "test"})
 
 	// 初回リトライ: バックオフなしで実行される（lastRetryAtゼロ）
@@ -187,7 +187,7 @@ func TestRetrySkipsRemainingOnFailure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "")
+	c := NewClient(srv.URL)
 	c.enqueue(GASPayload{Type: "a"})
 	c.enqueue(GASPayload{Type: "b"})
 	c.enqueue(GASPayload{Type: "c"})
@@ -204,27 +204,9 @@ func TestRetrySkipsRemainingOnFailure(t *testing.T) {
 }
 
 func TestIsSending(t *testing.T) {
-	c := NewClient("http://example.com", "")
+	c := NewClient("http://example.com")
 	if c.IsSending() {
 		t.Error("should not be sending initially")
-	}
-}
-
-func TestSendWithAPIKey(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := r.URL.Query().Get("key")
-		if key != "test-secret" {
-			w.WriteHeader(401)
-			return
-		}
-		w.WriteHeader(200)
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "test-secret")
-	err := c.Send("trip", map[string]string{"id": "abc"})
-	if err != nil {
-		t.Fatalf("Send with API key failed: %v", err)
 	}
 }
 

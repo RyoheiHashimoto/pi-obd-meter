@@ -32,7 +32,6 @@ import (
 type Config struct {
 	SerialPort           string                   `json:"serial_port"`
 	WebhookURL           string                   `json:"webhook_url"`
-	WebhookAPIKey        string                   `json:"webhook_api_key"`
 	PollIntervalMs       int                      `json:"poll_interval_ms"`
 	LocalAPIPort         int                      `json:"local_api_port"`
 	MaintenancePath      string                   `json:"maintenance_path"`
@@ -184,7 +183,7 @@ func main() {
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 
 	// --- 送信クライアント（Google Sheets） ---
-	client := sender.NewClient(cfg.WebhookURL, cfg.WebhookAPIKey)
+	client := sender.NewClient(cfg.WebhookURL)
 
 	// --- メンテナンスマネージャー ---
 	maintMgr := maintenance.NewManager(cfg.MaintenancePath)
