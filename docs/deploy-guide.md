@@ -5,18 +5,15 @@
 ```
 Mac (開発) --rsync--> Raspberry Pi (車載) --WiFi--> Google Sheets (記録)
                                                  --> GAS Webアプリ (スマホ閲覧)
+
+git tag → GitHub Actions → Release → Pi 起動時に自動更新（go-selfupdate）
 ```
 
-開発は2つのフェーズに分かれる。
+### デプロイ方法
 
-**フェーズ1: 開発中（overlayFS OFF）**
-- `./scripts/deploy.sh deploy` で自由にコードを転送・再起動できる
-- SDカードに普通に書き込める状態
-
-**フェーズ2: 安定運用（overlayFS ON）**
-- SDカードへの書き込みがゼロになる
-- エンジンOFF = 電源ブチ切りでもSDが壊れない
-- コード更新時だけ一時的にOFFに戻す
+- **開発中**: `./scripts/deploy.sh deploy` でバイナリ + 設定をrsync転送
+- **リリース**: `git tag vX.Y.Z && git push --tags` → Pi が次回起動時に自動更新
+- Web UI はバイナリに埋め込み済み（`go:embed`）のため、バイナリ1つで完結
 
 ---
 
@@ -130,25 +127,30 @@ rfcomm bind 0 XX:XX:XX:XX:XX:XX
 
 これで以下が行われる：
 1. ラズパイ上にディレクトリ作成
-2. クロスコンパイル（arm64向け）
-3. rsyncでバイナリ・Web UI・設定ファイルを転送
-4. systemdサービスの登録＆有効化
+2. swap無効化（SD書き込み削減）
+3. systemdサービスの登録＆有効化
+4. クロスコンパイル（arm64向け）
+5. rsyncでバイナリ・設定ファイルを転送
 
 ---
 
-## 3. 普段のデプロイ（フェーズ1: 開発中）
+## 3. 普段のデプロイ
 
-### コードを変更したら
+### 開発中: コードを変更したら
 
 ```bash
 ./scripts/deploy.sh deploy
 ```
 
-### Web UI（meter.html）だけ変更したら
+### リリース: タグを打つだけ
 
 ```bash
-./scripts/deploy.sh deploy-web
+git tag v0.4.0 && git push --tags
+# → GitHub Actions が ARM64 バイナリをビルド → Release 作成
+# → Pi は次回エンジンON時に自動更新
 ```
+
+Web UI はバイナリに埋め込まれているため、別途転送する必要はない。
 
 ---
 
@@ -165,41 +167,18 @@ rfcomm bind 0 XX:XX:XX:XX:XX:XX
 
 ---
 
-## 5. overlayFS（SD保護）— フェーズ2: 安定運用
+## 5. SD カード保護
 
-### いつ有効にするか
+エンジンOFF = 電源断からSDカードを守るため、以下の対策を行っている。
 
-**全部動作確認が終わって「もう触らない」状態になったら。**
+### 自動（setup 時に適用済み）
+- **swap 無効化**: `dphys-swapfile` を停止・無効化
+- **ログ**: journald（RAM上、SDに書き込まない）
 
-### 判断の目安
-
-- ELM327接続、メーター表示、Google Sheets送信（トリップ/給油/メンテ）すべて正常
-- GAS Webダッシュボードがスマホで正しく表示される
-- 1週間くらい普通に使って問題が出ていない
-
-### コマンド
-
-```bash
-# overlayFSを有効にする（SD保護モード）
-./scripts/deploy.sh overlay-on
-./scripts/deploy.sh reboot
-
-# overlayFSを無効にする（デプロイモード）
-./scripts/deploy.sh overlay-off
-./scripts/deploy.sh reboot
-```
-
-### 安定運用中にコードを更新したくなったら
-
-```bash
-./scripts/deploy.sh overlay-off
-./scripts/deploy.sh reboot
-sleep 30
-./scripts/deploy.sh deploy
-./scripts/deploy.sh logs       # 動作確認
-./scripts/deploy.sh overlay-on
-./scripts/deploy.sh reboot
-```
+### アプリ側の対策
+- **アトミック書き込み**: maintenance.json / trip_state.json は tmp + rename + fsync で保存。電源断でファイルが壊れない
+- **GAS復元**: 起動時に GAS から累計走行距離を取得。万一ローカル状態が失われても復旧可能
+- **メモリ内キュー**: 送信失敗データはメモリ上で保持（指数バックオフで再送）
 
 ---
 
@@ -288,8 +267,12 @@ pi-obd-meter/
 │   ├── sender/                # Google Sheets送信
 │   ├── display/               # 画面輝度制御
 │   └── maintenance/           # メンテナンスリマインダー
-├── web/static/
-│   └── meter.html             # メーター画面（5インチLCD）
+├── web/
+│   ├── embed.go               # go:embed でstatic/をバイナリに埋め込み
+│   └── static/
+│       ├── meter.html         # メーター画面（5インチLCD）
+│       ├── meter.css
+│       └── meter.js
 ├── gas/
 │   └── webhook.gs             # Google Apps Script
 ├── configs/
@@ -300,10 +283,8 @@ pi-obd-meter/
 
 Raspberry Pi (車載)
 /opt/pi-obd-meter/
-├── pi-obd-meter                # バイナリ
+├── pi-obd-meter                # バイナリ（Web UI埋め込み済み）
 ├── pi-obd-scanner              # バイナリ
-├── web/static/
-│   └── meter.html
 └── configs/
     └── config.json
 ```
@@ -328,12 +309,6 @@ bluetoothctl
 ### OBD読み取りエラーが連続する
 連続10回エラーで自動再接続を試みる。ログに「再接続を試みます」と表示される。
 Bluetooth接続が不安定な場合は `rfcomm release 0 && rfcomm bind 0 XX:XX:XX:XX:XX:XX` で再バインド。
-
-### overlayFSの状態確認
-```bash
-./scripts/deploy.sh ssh
-mount | grep overlay
-```
 
 ### サービスが起動しない
 ```bash

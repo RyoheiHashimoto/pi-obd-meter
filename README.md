@@ -163,8 +163,12 @@ pi-obd-meter/
 │   ├── sender/            # Google Sheets送信（GAS webhook + リトライキュー）
 │   ├── display/           # 画面輝度制御
 │   └── maintenance/       # メンテナンスリマインダー（距離/日付ベース）
-├── web/static/
-│   └── meter.html         # メーター画面（5インチLCD, 60fps）
+├── web/
+│   ├── embed.go           # go:embed でstatic/をバイナリに埋め込み
+│   └── static/
+│       ├── meter.html     # メーター画面（5インチLCD, 60fps）
+│       ├── meter.css
+│       └── meter.js
 ├── gas/
 │   └── webhook.gs         # Google Apps Script（記録 + Webダッシュボード）
 ├── configs/
@@ -188,14 +192,11 @@ pi-obd-meter/
 |---------|------|
 | `build` | クロスコンパイル (ARM64) |
 | `deploy` | ビルド + rsync転送 + サービス再起動 |
-| `deploy-web` | Web UIのみ転送 + キオスク再起動 |
-| `setup` | 初回セットアップ |
+| `setup` | 初回セットアップ（swap無効化含む） |
 | `ssh` | ラズパイにSSH接続 |
 | `logs` | リアルタイムログ表示 |
 | `status` | サービス状態確認 |
 | `restart` | サービス再起動 |
-| `overlay-on` | overlayFS有効化（SD保護） |
-| `overlay-off` | overlayFS無効化 |
 | `release-install [version]` | GitHub Releasesからインストール |
 
 ## CI/CD
@@ -207,14 +208,20 @@ GitHub Actions で PR / main push 時に自動実行:
 - `go test -race` + カバレッジ計測
 - ホストビルド + ARM64 クロスコンパイル
 
-### CD（手動）
+### CD（自動更新）
 
-Pi へのデプロイは意図的に手動。車載組み込みシステムのため、壊れたバイナリが自動デプロイされると走行中に復旧できない。
+タグ push → GitHub Actions が ARM64 バイナリをビルド → Release 作成。
+Pi は次回起動時（エンジンON）に GitHub Releases を自動チェックし、新バージョンがあればバイナリをアトミックに差し替えて再起動する（go-selfupdate）。
 
 ```bash
-# タグを打つ → GitHub Actions が ARM64 バイナリを自動ビルド → Release 作成
+# タグを打つだけで Pi に自動配信される
 git tag v0.4.0 && git push --tags
+```
 
-# Pi 側でリリースをインストール
+Web UI はバイナリに埋め込み済み（`go:embed`）のため、バイナリ1つで完結する。
+
+手動インストールも可能:
+```bash
+# Pi 上で実行
 ./scripts/deploy.sh release-install v0.4.0
 ```

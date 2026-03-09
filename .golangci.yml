@@ -18,7 +18,7 @@ linters-settings:
       # HTTP handler helpers (error already sent to client)
       - (net/http.ResponseWriter).Write
       - (*encoding/json.Encoder).Encode
-      # Fire-and-forget persistence (overlayFS may be read-only)
+      # Fire-and-forget persistence (atomic write, error logged internally)
       - os.WriteFile
       # Fire-and-forget sends (retried by queue or non-critical)
       - (*github.com/hashimoto/pi-obd-meter/internal/sender.Client).Send

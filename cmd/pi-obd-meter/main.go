@@ -220,7 +220,7 @@ func main() {
 	go func() {
 		for i := 0; i < 30; i++ {
 			if checkWiFi() {
-				// GASから累計走行距離を復元（overlayFSリブート対策）
+				// GASから累計走行距離を復元（電源断リブート対策）
 				if restored, err := client.RestoreState(); err == nil && restored.TotalKm > 0 {
 					if totalKmAccum < restored.TotalKm {
 						totalKmAccum = restored.TotalKm

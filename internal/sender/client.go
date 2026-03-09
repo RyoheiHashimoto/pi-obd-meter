@@ -1,6 +1,6 @@
 // Package sender はGoogle Apps Script Webhookへのデータ送信を提供する。
 // 送信失敗時はメモリ内リトライキュー（最大100件）に保持し、定期的に再送する。
-// overlayFS環境を考慮し、ディスクへの永続化は行わない。
+// SD書き込み削減のため、ディスクへの永続化は行わない。
 package sender
 
 import (
@@ -18,7 +18,7 @@ import (
 type Client struct {
 	webhookURL       string
 	httpClient       *http.Client
-	retryQueue       []GASPayload // メモリ上のリトライキュー（overlayFSのためファイル保存しない）
+	retryQueue       []GASPayload // メモリ上のリトライキュー（SD書き込み削減のためファイル保存しない）
 	mu               sync.Mutex
 	sending          bool      // 送信中フラグ
 	consecutiveFails int       // 連続失敗回数（指数バックオフ用）
