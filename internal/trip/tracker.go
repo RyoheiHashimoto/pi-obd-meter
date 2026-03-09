@@ -8,9 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/hashimoto/pi-obd-meter/internal/atomicfile"
 )
 
 // TripData は1トリップ分の集計データ
@@ -200,24 +201,11 @@ func (t *Tracker) saveState() {
 	if err != nil {
 		return
 	}
-	tmp := t.statePath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := atomicfile.Write(t.statePath, data, 0644); err != nil {
 		if !t.saveErrLogged {
-			slog.Warn("トリップ状態保存失敗", "path", tmp, "error", err)
+			slog.Warn("トリップ状態保存失敗", "path", t.statePath, "error", err)
 			t.saveErrLogged = true
 		}
-		return
-	}
-	if err := os.Rename(tmp, t.statePath); err != nil {
-		if !t.saveErrLogged {
-			slog.Warn("トリップ状態保存失敗（rename）", "path", t.statePath, "error", err)
-			t.saveErrLogged = true
-		}
-		return
-	}
-	if dir, err := os.Open(filepath.Dir(t.statePath)); err == nil {
-		dir.Sync()
-		dir.Close()
 	}
 }
 

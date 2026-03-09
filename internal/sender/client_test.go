@@ -1,6 +1,7 @@
 package sender
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -22,7 +23,7 @@ func TestSendSuccess(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	err := c.Send("trip", map[string]string{"id": "abc"})
+	err := c.Send(context.Background(), "trip", map[string]string{"id": "abc"})
 	if err != nil {
 		t.Fatalf("Send failed: %v", err)
 	}
@@ -39,7 +40,7 @@ func TestSendServerError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	err := c.Send("trip", map[string]string{"id": "abc"})
+	err := c.Send(context.Background(), "trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on 500 response")
 	}
@@ -52,7 +53,7 @@ func TestSendServerError(t *testing.T) {
 
 func TestSendNetworkError(t *testing.T) {
 	c := NewClient("http://127.0.0.1:1") // 接続不可
-	err := c.Send("trip", map[string]string{"id": "abc"})
+	err := c.Send(context.Background(), "trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on unreachable server")
 	}
@@ -75,12 +76,12 @@ func TestRetryPending(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	_ = c.Send("trip", map[string]string{"id": "abc"}) // 失敗 → キュー
+	_ = c.Send(context.Background(), "trip", map[string]string{"id": "abc"}) // 失敗 → キュー
 	if c.QueueSize() != 1 {
 		t.Fatalf("queue should have 1 item, got %d", c.QueueSize())
 	}
 
-	c.RetryPending() // 成功
+	c.RetryPending(context.Background()) // 成功
 	if c.QueueSize() != 0 {
 		t.Errorf("queue should be empty after retry, got %d", c.QueueSize())
 	}
@@ -100,7 +101,7 @@ func TestQueueMaxSize(t *testing.T) {
 
 func TestRetryPendingEmpty(t *testing.T) {
 	c := NewClient("http://example.com")
-	c.RetryPending() // キュー空でもパニックしない
+	c.RetryPending(context.Background()) // キュー空でもパニックしない
 	if c.QueueSize() != 0 {
 		t.Error("queue should remain empty")
 	}
@@ -114,7 +115,7 @@ func TestSendWithResponse(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	body, err := c.SendWithResponse("maintenance", map[string]string{"id": "test"})
+	body, err := c.SendWithResponse(context.Background(), "maintenance", map[string]string{"id": "test"})
 	if err != nil {
 		t.Fatalf("SendWithResponse failed: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestSendWithResponse(t *testing.T) {
 		t.Fatal("expected non-nil response body")
 	}
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
@@ -138,7 +139,7 @@ func TestSendWithResponseError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	body, err := c.SendWithResponse("trip", map[string]string{"id": "abc"})
+	body, err := c.SendWithResponse(context.Background(), "trip", map[string]string{"id": "abc"})
 	if err == nil {
 		t.Fatal("expected error on 500 response")
 	}
@@ -160,7 +161,7 @@ func TestRetryBackoff(t *testing.T) {
 	c.enqueue(GASPayload{Type: "test"})
 
 	// 初回リトライ: バックオフなしで実行される（lastRetryAtゼロ）
-	c.RetryPending()
+	c.RetryPending(context.Background())
 	if c.consecutiveFails != 1 {
 		t.Errorf("consecutiveFails: got %d, want 1", c.consecutiveFails)
 	}
@@ -169,7 +170,7 @@ func TestRetryBackoff(t *testing.T) {
 	}
 
 	// 2回目: lastRetryAtが直前なのでバックオフでスキップされる
-	c.RetryPending()
+	c.RetryPending(context.Background())
 	if c.consecutiveFails != 1 {
 		t.Errorf("consecutiveFails should stay 1 (skipped), got %d", c.consecutiveFails)
 	}
@@ -192,7 +193,7 @@ func TestRetrySkipsRemainingOnFailure(t *testing.T) {
 	c.enqueue(GASPayload{Type: "b"})
 	c.enqueue(GASPayload{Type: "c"})
 
-	c.RetryPending()
+	c.RetryPending(context.Background())
 
 	// 1件成功、2件目失敗で残り2件がキューに戻る
 	if c.QueueSize() != 2 {
@@ -217,7 +218,7 @@ func TestPayloadJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var decoded map[string]interface{}
+	var decoded map[string]any
 	if err := json.Unmarshal(b, &decoded); err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +226,7 @@ func TestPayloadJSON(t *testing.T) {
 	if decoded["type"] != "refuel" {
 		t.Errorf("type: got %v, want refuel", decoded["type"])
 	}
-	data := decoded["data"].(map[string]interface{})
+	data := decoded["data"].(map[string]any)
 	if data["fuel_economy"] != 12.5 {
 		t.Errorf("fuel_economy: got %v, want 12.5", data["fuel_economy"])
 	}

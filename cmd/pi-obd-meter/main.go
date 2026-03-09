@@ -46,28 +46,268 @@ type Config struct {
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
 type RealtimeData struct {
-	SpeedKmh      float64              `json:"speed_kmh"`
-	RPM           float64              `json:"rpm"`
-	EngineLoad    float64              `json:"engine_load"`
-	ThrottlePos   float64              `json:"throttle_pos"`
-	FuelEconomy   float64              `json:"fuel_economy"`
+	SpeedKmh       float64              `json:"speed_kmh"`
+	RPM            float64              `json:"rpm"`
+	EngineLoad     float64              `json:"engine_load"`
+	ThrottlePos    float64              `json:"throttle_pos"`
+	FuelEconomy    float64              `json:"fuel_economy"`
 	FuelRateLH     float64              `json:"fuel_rate_lh"`
 	AvgFuelEconomy float64              `json:"avg_fuel_economy"`
 	TripKm         float64              `json:"trip_km"`
-	CoolantTemp   float64              `json:"coolant_temp"`
-	Alerts        []maintenance.Status `json:"alerts"`
-	Notification  string               `json:"notification,omitempty"`
-	OBDConnected  bool                 `json:"obd_connected"`
-	WiFiConnected bool                 `json:"wifi_connected"`
-	PendingCount  int                  `json:"pending_count"`
-	SendSending   bool                 `json:"send_sending"`
+	CoolantTemp    float64              `json:"coolant_temp"`
+	Alerts         []maintenance.Status `json:"alerts"`
+	Notification   string               `json:"notification,omitempty"`
+	OBDConnected   bool                 `json:"obd_connected"`
+	WiFiConnected  bool                 `json:"wifi_connected"`
+	PendingCount   int                  `json:"pending_count"`
+	SendSending    bool                 `json:"send_sending"`
+}
+
+// configResponse は /api/config のレスポンス
+type configResponse struct {
+	MaxSpeedKmh int     `json:"max_speed_kmh"`
+	Version     string  `json:"version"`
+	EcoLHGreen  float64 `json:"eco_lh_green"`
+	EcoLHRed    float64 `json:"eco_lh_red"`
+}
+
+// healthResponse は /api/health のレスポンス
+type healthResponse struct {
+	Status        string `json:"status"`
+	Version       string `json:"version"`
+	UptimeSec     int    `json:"uptime_sec"`
+	OBDConnected  bool   `json:"obd_connected"`
+	WiFiConnected bool   `json:"wifi_connected"`
+	PendingCount  int    `json:"pending_count"`
+}
+
+// maintenanceStatusItem はGASに送信するメンテナンス項目
+type maintenanceStatusItem struct {
+	ID          string  `json:"id"`
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	Progress    float64 `json:"progress"`
+	NeedsAlert  bool    `json:"needs_alert"`
+	IsOverdue   bool    `json:"is_overdue"`
+	RemainingKm float64 `json:"remaining_km,omitempty"`
+	CurrentKm   float64 `json:"current_km,omitempty"`
+	DaysLeft    int     `json:"days_left,omitempty"`
+	DaysElapsed int     `json:"days_elapsed,omitempty"`
+}
+
+// maintenancePayload はGASに送信するメンテナンスペイロード
+type maintenancePayload struct {
+	Statuses        []maintenanceStatusItem `json:"statuses"`
+	SentAt          time.Time               `json:"sent_at"`
+	TotalKm         float64                 `json:"total_km"`
+	OdometerApplied bool                    `json:"odometer_applied,omitempty"`
+}
+
+// gasMaintenanceResponse はGASからのメンテナンスレスポンス
+type gasMaintenanceResponse struct {
+	PendingResets      []string `json:"pending_resets"`
+	OdometerCorrection *float64 `json:"odometer_correction"`
+	TripReset          bool     `json:"trip_reset"`
 }
 
 var version = "dev"
 
-// calcFuelEconomy は瞬間燃費(km/L)を計算する
-// MAF対応: 燃料レート = MAF(g/s) × 3600 / (14.7 × 750) L/h
-// MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
+// --- App: アプリケーション状態を集約 ---
+
+// App はアプリケーション全体の状態を管理する
+type App struct {
+	cfg      Config
+	client   *sender.Client
+	maintMgr *maintenance.Manager
+	tracker  *trip.Tracker
+
+	dataMu     sync.RWMutex
+	latestData RealtimeData
+
+	notificationMu  sync.RWMutex
+	notification    string
+	notificationExp time.Time
+
+	totalKmMu    sync.Mutex
+	totalKmAccum float64
+	odoApplied   bool
+
+	startedAt time.Time
+}
+
+// newApp はアプリケーション状態を初期化する
+func newApp(cfg Config) *App {
+	app := &App{
+		cfg:       cfg,
+		client:    sender.NewClient(cfg.WebhookURL),
+		maintMgr:  maintenance.NewManager(cfg.MaintenancePath),
+		tracker:   trip.NewTracker(trip.TrackerConfig{}),
+		startedAt: time.Now(),
+	}
+
+	app.maintMgr.InitDefaults(cfg.MaintenanceReminders)
+	slog.Info("メンテナンスリマインダー初期化", "count", len(app.maintMgr.GetAll()))
+
+	// 累計走行距離の初期化
+	app.totalKmAccum = app.maintMgr.TotalKm()
+	if app.totalKmAccum == 0 && cfg.InitialOdometerKm > 0 {
+		app.totalKmAccum = cfg.InitialOdometerKm
+		app.maintMgr.UpdateTotalKm(app.totalKmAccum)
+		slog.Info("初期ODO設定", "km", app.totalKmAccum)
+	} else {
+		slog.Info("累計走行距離復元済み", "km", app.totalKmAccum)
+	}
+
+	return app
+}
+
+// getNotification は有効期限内の通知を返す（期限切れなら空文字列）
+func (app *App) getNotification() string {
+	app.notificationMu.RLock()
+	defer app.notificationMu.RUnlock()
+	if time.Now().After(app.notificationExp) {
+		return ""
+	}
+	return app.notification
+}
+
+// addDistance は走行距離を累計に加算する
+func (app *App) addDistance(deltaKm float64) {
+	app.totalKmMu.Lock()
+	app.totalKmAccum += deltaKm
+	totalKm := app.totalKmAccum
+	app.totalKmMu.Unlock()
+	app.maintMgr.UpdateTotalKm(totalKm)
+}
+
+// updateRealtimeData はリアルタイムデータをスレッドセーフに更新する
+func (app *App) updateRealtimeData(data RealtimeData) {
+	app.dataMu.Lock()
+	app.latestData = data
+	app.dataMu.Unlock()
+}
+
+// getRealtimeData はリアルタイムデータのコピーを返す
+func (app *App) getRealtimeData() RealtimeData {
+	app.dataMu.RLock()
+	defer app.dataMu.RUnlock()
+	return app.latestData
+}
+
+// sendMaintenanceStatus はメンテナンス状態をGASに送信し、レスポンスを処理する。
+// ODO補正時は再送信するが、再帰ではなくループで処理する。
+func (app *App) sendMaintenanceStatus(ctx context.Context) {
+	const maxRetries = 3
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		statuses := app.maintMgr.CheckAll()
+		if len(statuses) == 0 {
+			return
+		}
+
+		items := make([]maintenanceStatusItem, 0, len(statuses))
+		for _, s := range statuses {
+			item := maintenanceStatusItem{
+				ID:         s.Reminder.ID,
+				Name:       s.Reminder.Name,
+				Type:       string(s.Reminder.Type),
+				Progress:   s.Progress,
+				NeedsAlert: s.NeedsAlert,
+				IsOverdue:  s.IsOverdue,
+			}
+			if s.Reminder.Type == "distance" {
+				item.RemainingKm = s.RemainingKm
+				item.CurrentKm = s.CurrentKm
+			} else {
+				item.DaysLeft = s.DaysLeft
+				item.DaysElapsed = s.DaysElapsed
+			}
+			items = append(items, item)
+		}
+
+		app.totalKmMu.Lock()
+		odoApplied := app.odoApplied
+		app.totalKmMu.Unlock()
+
+		payload := maintenancePayload{
+			Statuses:        items,
+			SentAt:          time.Now(),
+			TotalKm:         app.maintMgr.TotalKm(),
+			OdometerApplied: odoApplied,
+		}
+
+		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
+		if err != nil {
+			return
+		}
+		slog.Info("メンテナンス状態送信完了", "count", len(items))
+
+		if len(respBody) == 0 {
+			return
+		}
+
+		var gasResp gasMaintenanceResponse
+		if json.Unmarshal(respBody, &gasResp) != nil {
+			return
+		}
+
+		// pending_resets 処理
+		for _, id := range gasResp.PendingResets {
+			if app.maintMgr.ResetReminder(id) {
+				slog.Info("メンテナンスリセット", "id", id)
+			}
+		}
+
+		// ODO補正処理
+		if gasResp.OdometerCorrection != nil && *gasResp.OdometerCorrection > 0 {
+			newOdo := *gasResp.OdometerCorrection
+			app.totalKmMu.Lock()
+			app.totalKmAccum = newOdo
+			app.odoApplied = true
+			app.totalKmMu.Unlock()
+			app.maintMgr.UpdateTotalKm(newOdo)
+			slog.Info("ODO補正適用", "odometer_km", newOdo)
+			// 補正後に再送信（ループで次のイテレーションへ）
+			continue
+		}
+
+		app.totalKmMu.Lock()
+		if app.odoApplied {
+			// GASが補正をクリア済み → フラグをリセット
+			app.odoApplied = false
+		}
+		app.totalKmMu.Unlock()
+
+		// トリップリセット処理
+		if gasResp.TripReset {
+			app.tracker.ManualReset()
+			slog.Info("トリップリセット", "reason", "給油記録")
+		}
+
+		return // 正常完了
+	}
+}
+
+// restoreFromGAS はGASから累計走行距離を復元する（起動時用）
+func (app *App) restoreFromGAS(ctx context.Context) {
+	restored, err := app.client.RestoreState(ctx)
+	if err != nil || restored.TotalKm <= 0 {
+		return
+	}
+
+	app.totalKmMu.Lock()
+	if app.totalKmAccum < restored.TotalKm {
+		app.totalKmAccum = restored.TotalKm
+		app.totalKmMu.Unlock()
+		app.maintMgr.UpdateTotalKm(restored.TotalKm)
+		slog.Info("GASからODO復元", "total_km", restored.TotalKm)
+		return
+	}
+	app.totalKmMu.Unlock()
+}
+
+// --- 燃費計算 ---
+
 // 燃費計算用の物理定数
 const (
 	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
@@ -78,6 +318,9 @@ const (
 	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 )
 
+// calcFuelEconomy は瞬間燃費(km/L)を計算する
+// MAF対応: 燃料レート = MAF(g/s) × 3600 / (14.7 × 750) L/h
+// MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
 func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) (kmL, rateLH float64) {
 	if speed < 0.5 && rpm < 100 {
 		return 0, 0 // エンジン停止
@@ -113,24 +356,7 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 	return kmL, fuelRateLH
 }
 
-var (
-	latestData      RealtimeData
-	dataMu          sync.RWMutex
-	notification    string
-	notificationMu  sync.RWMutex
-	notificationExp time.Time
-	startedAt       = time.Now()
-)
-
-// getNotification は有効期限内の通知を返す（期限切れなら空文字列）
-func getNotification() string {
-	notificationMu.RLock()
-	defer notificationMu.RUnlock()
-	if time.Now().After(notificationExp) {
-		return ""
-	}
-	return notification
-}
+// --- ユーティリティ ---
 
 // checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
 func checkWiFi() bool {
@@ -171,6 +397,175 @@ func loadConfig(path string) Config {
 	return cfg
 }
 
+// --- HTTP サーバー ---
+
+// corsMiddleware はCORSヘッダーを付与する（meter.htmlからのfetchリクエスト許可用）
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// startLocalAPI はローカルHTTPサーバーを起動する。
+// meter.html の配信と、リアルタイムデータ・設定・メンテナンスのJSON APIを提供する。
+// ctx がキャンセルされると graceful shutdown する。
+func (app *App) startLocalAPI(ctx context.Context) {
+	mux := http.NewServeMux()
+
+	// --- Web UI配信 ---
+	var webFS http.FileSystem
+	if app.cfg.WebStaticDir != "" {
+		webFS = http.Dir(app.cfg.WebStaticDir)
+		slog.Info("Web UI: ファイルシステムから配信", "dir", app.cfg.WebStaticDir)
+	} else {
+		subFS, _ := fs.Sub(web.StaticFS, "static")
+		webFS = http.FS(subFS)
+		slog.Info("Web UI: 埋め込みファイルから配信")
+	}
+	mux.Handle("GET /", http.FileServer(webFS))
+
+	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(configResponse{
+			MaxSpeedKmh: app.cfg.MaxSpeedKmh,
+			Version:     version,
+			EcoLHGreen:  1.5 * app.cfg.EngineDisplacementL,
+			EcoLHRed:    3.0 * app.cfg.EngineDisplacementL,
+		})
+	})
+
+	// --- リアルタイムAPI（LCD用、200ms間隔でポーリングされる） ---
+	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(app.getRealtimeData())
+	})
+
+	// --- ヘルスチェックAPI ---
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		d := app.getRealtimeData()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(healthResponse{
+			Status:        "ok",
+			Version:       version,
+			UptimeSec:     int(time.Since(app.startedAt).Seconds()),
+			OBDConnected:  d.OBDConnected,
+			WiFiConnected: d.WiFiConnected,
+			PendingCount:  d.PendingCount,
+		})
+	})
+
+	// --- メンテナンスAPI（メーター画面のアラートバー用） ---
+	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(app.maintMgr.CheckAll())
+	})
+
+	addr := fmt.Sprintf(":%d", app.cfg.LocalAPIPort)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: corsMiddleware(mux),
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("HTTPサーバーシャットダウンエラー", "error", err)
+		}
+	}()
+
+	slog.Info("ローカルAPI起動", "addr", addr)
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		slog.Error("HTTPサーバーエラー", "error", err)
+	}
+}
+
+// --- 自動更新 ---
+
+// tryAutoUpdate は起動時にGitHub Releasesから最新版をチェックし、
+// 新しいバージョンがあればアトミックに差し替えて再起動する。
+func tryAutoUpdate(ctx context.Context) {
+	if version == "dev" {
+		return
+	}
+
+	updateCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
+	if !waitForInternet(updateCtx, 90*time.Second) {
+		slog.Info("自動更新: インターネット未接続、スキップ")
+		return
+	}
+
+	latest, found, err := selfupdate.DetectLatest(updateCtx,
+		selfupdate.ParseSlug("RyoheiHashimoto/pi-obd-meter"))
+	if err != nil {
+		slog.Warn("自動更新: 最新バージョン検出失敗", "error", err)
+		return
+	}
+	if !found {
+		slog.Info("自動更新: リリースが見つかりません")
+		return
+	}
+	if latest.LessOrEqual(version) {
+		slog.Info("自動更新: 最新版で稼働中", "version", version)
+		return
+	}
+
+	slog.Info("自動更新: 新バージョン検出", "current", version, "latest", latest.Version())
+	exe, err := selfupdate.ExecutablePath()
+	if err != nil {
+		slog.Error("自動更新: 実行パス取得失敗", "error", err)
+		return
+	}
+	if err := selfupdate.UpdateTo(updateCtx, latest.AssetURL, latest.AssetName, exe); err != nil {
+		slog.Error("自動更新: 更新失敗", "error", err)
+		return
+	}
+	slog.Info("自動更新: 更新完了、再起動します", "version", latest.Version())
+	os.Exit(0) // systemd Restart=always で新バイナリが起動
+}
+
+// waitForInternet はインターネット接続が利用可能になるまで待つ。
+// タイムアウトまでに接続できなければ false を返す。
+func waitForInternet(ctx context.Context, timeout time.Duration) bool {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+
+	// 初回即チェック
+	if resp, err := httpClient.Get("https://api.github.com/zen"); err == nil {
+		resp.Body.Close()
+		return true
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return false
+		case <-ticker.C:
+			if resp, err := httpClient.Get("https://api.github.com/zen"); err == nil {
+				resp.Body.Close()
+				return true
+			}
+		}
+	}
+}
+
+// --- メインエントリーポイント ---
+
 func main() {
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
 	flag.Parse()
@@ -182,29 +577,10 @@ func main() {
 	fmt.Println("=================================")
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 
-	// --- 送信クライアント（Google Sheets） ---
-	client := sender.NewClient(cfg.WebhookURL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// --- メンテナンスマネージャー ---
-	maintMgr := maintenance.NewManager(cfg.MaintenancePath)
-	maintMgr.InitDefaults(cfg.MaintenanceReminders)
-	fmt.Printf("✓ メンテナンスリマインダー: %d 項目\n", len(maintMgr.GetAll()))
-
-	// --- 累計走行距離 ---
-	totalKmAccum := maintMgr.TotalKm()
-	if totalKmAccum == 0 && cfg.InitialOdometerKm > 0 {
-		totalKmAccum = cfg.InitialOdometerKm
-		maintMgr.UpdateTotalKm(totalKmAccum)
-		fmt.Printf("✓ 初期ODO設定: %.0f km\n", totalKmAccum)
-	} else {
-		fmt.Printf("✓ 累計走行距離: %.1f km（復元済み）\n", totalKmAccum)
-	}
-
-	// --- ODO補正フラグ ---
-	odoApplied := false
-
-	// --- トリップトラッカー ---
-	tracker := trip.NewTracker(trip.TrackerConfig{})
+	app := newApp(cfg)
 
 	// --- 輝度制御 ---
 	brightness := display.NewBrightnessController(cfg.Brightness)
@@ -212,25 +588,23 @@ func main() {
 	defer brightness.Stop()
 
 	// --- 自動更新（バックグラウンド） ---
-	go tryAutoUpdate()
+	go tryAutoUpdate(ctx)
 
 	// --- ローカルAPI + Web UI（OBD接続前に起動） ---
-	go startLocalAPI(cfg, maintMgr)
+	go app.startLocalAPI(ctx)
 	fmt.Printf("✓ LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
 
 	// --- WiFi接続後: GASから状態復元 + メンテナンス初回送信 ---
 	go func() {
 		for i := 0; i < 30; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
 			if checkWiFi() {
-				// GASから累計走行距離を復元（電源断リブート対策）
-				if restored, err := client.RestoreState(); err == nil && restored.TotalKm > 0 {
-					if totalKmAccum < restored.TotalKm {
-						totalKmAccum = restored.TotalKm
-						maintMgr.UpdateTotalKm(totalKmAccum)
-						slog.Info("GASからODO復元", "total_km", restored.TotalKm)
-					}
-				}
-				sendMaintenanceStatus(client, maintMgr, &totalKmAccum, &odoApplied, tracker)
+				app.restoreFromGAS(ctx)
+				app.sendMaintenanceStatus(ctx)
 				return
 			}
 			time.Sleep(2 * time.Second)
@@ -306,16 +680,14 @@ func main() {
 				statusCount++
 				if statusCount%7 == 0 {
 					wifiConnected = checkWiFi()
-					dataMu.Lock()
-					latestData = RealtimeData{
-						Alerts:        maintMgr.GetAlerts(),
-						Notification:  getNotification(),
+					app.updateRealtimeData(RealtimeData{
+						Alerts:        app.maintMgr.GetAlerts(),
+						Notification:  app.getNotification(),
 						OBDConnected:  false,
 						WiFiConnected: wifiConnected,
-						PendingCount:  client.QueueSize(),
-						SendSending:   client.IsSending(),
-					}
-					dataMu.Unlock()
+						PendingCount:  app.client.QueueSize(),
+						SendSending:   app.client.IsSending(),
+					})
 				}
 				continue
 			}
@@ -351,28 +723,25 @@ func main() {
 				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
-			tracker.Update(data.SpeedKmh, lastFuelRateLH)
-			totalKmAccum += (data.SpeedKmh / 3600.0) * dtSec
-			maintMgr.UpdateTotalKm(totalKmAccum)
+			app.tracker.Update(data.SpeedKmh, lastFuelRateLH)
+			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
-			dataMu.Lock()
-			latestData = RealtimeData{
+			app.updateRealtimeData(RealtimeData{
 				SpeedKmh:       data.SpeedKmh,
 				RPM:            data.RPM,
 				EngineLoad:     data.EngineLoad,
 				ThrottlePos:    data.ThrottlePos,
 				FuelEconomy:    lastFuelEconomy,
 				FuelRateLH:     lastFuelRateLH,
-				AvgFuelEconomy: tracker.AvgFuelEconomy(),
-				TripKm:         tracker.DistanceKm(),
-				CoolantTemp:   lastCoolantTemp,
-				Alerts:        maintMgr.GetAlerts(),
-				Notification:  getNotification(),
-				OBDConnected:  true,
-				WiFiConnected: wifiConnected,
-				PendingCount:  client.QueueSize(),
-			}
-			dataMu.Unlock()
+				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
+				TripKm:         app.tracker.DistanceKm(),
+				CoolantTemp:    lastCoolantTemp,
+				Alerts:         app.maintMgr.GetAlerts(),
+				Notification:   app.getNotification(),
+				OBDConnected:   true,
+				WiFiConnected:  wifiConnected,
+				PendingCount:   app.client.QueueSize(),
+			})
 
 			if sampleCount%30 == 0 {
 				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm",
@@ -389,250 +758,21 @@ func main() {
 			}
 
 		case <-retryTicker.C:
-			client.RetryPending()
+			app.client.RetryPending(ctx)
 
 		case <-maintTicker.C:
-			sendMaintenanceStatus(client, maintMgr, &totalKmAccum, &odoApplied, tracker)
+			app.sendMaintenanceStatus(ctx)
 
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
-			tracker.SaveState()
-			maintMgr.SaveState()
+			cancel() // HTTP サーバーと goroutine にキャンセルを通知
+			app.tracker.SaveState()
+			app.maintMgr.SaveState()
 			slog.Info("状態保存完了")
 			if obdConnected {
 				elm.Close()
 			}
 			return
-		}
-	}
-}
-
-// sendMaintenanceStatus はメンテナンス状態をGASに送信する
-// totalKm が非nilの場合、ODO補正値を受け取ったら更新する
-// odoApplied が非nilの場合、前回の補正適用フラグを送信・管理する
-func sendMaintenanceStatus(client *sender.Client, maintMgr *maintenance.Manager, totalKm *float64, odoApplied *bool, tracker *trip.Tracker) {
-	statuses := maintMgr.CheckAll()
-	if len(statuses) == 0 {
-		return
-	}
-
-	// 送信用にシンプルな構造に変換
-	var items []map[string]interface{}
-	for _, s := range statuses {
-		item := map[string]interface{}{
-			"id":          s.Reminder.ID,
-			"name":        s.Reminder.Name,
-			"type":        string(s.Reminder.Type),
-			"progress":    s.Progress,
-			"needs_alert": s.NeedsAlert,
-			"is_overdue":  s.IsOverdue,
-		}
-		if s.Reminder.Type == "distance" {
-			item["remaining_km"] = s.RemainingKm
-			item["current_km"] = s.CurrentKm
-		} else {
-			item["days_left"] = s.DaysLeft
-			item["days_elapsed"] = s.DaysElapsed
-		}
-		items = append(items, item)
-	}
-
-	payload := map[string]interface{}{
-		"statuses": items,
-		"sent_at":  time.Now(),
-		"total_km": maintMgr.TotalKm(),
-	}
-	if odoApplied != nil && *odoApplied {
-		payload["odometer_applied"] = true
-	}
-
-	respBody, err := client.SendWithResponse("maintenance", payload)
-	if err != nil {
-		return
-	}
-	fmt.Printf("✓ メンテナンス状態送信: %d 項目\n", len(items))
-
-	// GASレスポンスを処理
-	if len(respBody) > 0 {
-		var gasResp struct {
-			PendingResets      []string `json:"pending_resets"`
-			OdometerCorrection *float64 `json:"odometer_correction"`
-			TripReset          bool     `json:"trip_reset"`
-		}
-		if json.Unmarshal(respBody, &gasResp) == nil {
-			// pending_resets処理
-			for _, id := range gasResp.PendingResets {
-				if maintMgr.ResetReminder(id) {
-					slog.Info("メンテナンスリセット", "id", id)
-				}
-			}
-
-			// ODO補正処理
-			if gasResp.OdometerCorrection != nil && *gasResp.OdometerCorrection > 0 {
-				newOdo := *gasResp.OdometerCorrection
-				if totalKm != nil {
-					*totalKm = newOdo
-				}
-				maintMgr.UpdateTotalKm(newOdo)
-				slog.Info("ODO補正適用", "odometer_km", newOdo)
-				if odoApplied != nil {
-					*odoApplied = true
-				}
-				// 補正後のステータスを即座に再送信（GASシートを更新するため）
-				sendMaintenanceStatus(client, maintMgr, totalKm, odoApplied, tracker)
-				return
-			} else if odoApplied != nil && *odoApplied {
-				// GASが補正をクリア済み → フラグをリセット
-				*odoApplied = false
-			}
-
-			// トリップリセット処理
-			if gasResp.TripReset && tracker != nil {
-				tracker.ManualReset()
-				slog.Info("トリップリセット", "reason", "給油記録")
-			}
-		}
-	}
-}
-
-// corsMiddleware はCORSヘッダーを付与する（meter.htmlからのfetchリクエスト許可用）
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// startLocalAPI はローカルHTTPサーバーを起動する。
-// meter.html の配信と、リアルタイムデータ・設定・メンテナンスのJSON APIを提供する。
-func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
-	mux := http.NewServeMux()
-
-	// --- Web UI配信 ---
-	var webFS http.FileSystem
-	if cfg.WebStaticDir != "" {
-		webFS = http.Dir(cfg.WebStaticDir)
-		slog.Info("Web UI: ファイルシステムから配信", "dir", cfg.WebStaticDir)
-	} else {
-		subFS, _ := fs.Sub(web.StaticFS, "static")
-		webFS = http.FS(subFS)
-		slog.Info("Web UI: 埋め込みファイルから配信")
-	}
-	mux.Handle("GET /", http.FileServer(webFS))
-
-	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
-	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"max_speed_kmh": cfg.MaxSpeedKmh,
-			"version":       version,
-			"eco_lh_green":  1.5 * cfg.EngineDisplacementL,
-			"eco_lh_red":    3.0 * cfg.EngineDisplacementL,
-		})
-	})
-
-	// --- リアルタイムAPI（LCD用、200ms間隔でポーリングされる） ---
-	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
-		dataMu.RLock()
-		defer dataMu.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(latestData)
-	})
-
-	// --- ヘルスチェックAPI ---
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		dataMu.RLock()
-		d := latestData
-		dataMu.RUnlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":         "ok",
-			"version":        version,
-			"uptime_sec":     int(time.Since(startedAt).Seconds()),
-			"obd_connected":  d.OBDConnected,
-			"wifi_connected": d.WiFiConnected,
-			"pending_count":  d.PendingCount,
-		})
-	})
-
-	// --- メンテナンスAPI（メーター画面のアラートバー用） ---
-	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(maintMgr.CheckAll())
-	})
-
-	addr := fmt.Sprintf(":%d", cfg.LocalAPIPort)
-	slog.Info("ローカルAPI起動", "addr", addr)
-	http.ListenAndServe(addr, corsMiddleware(mux))
-}
-
-// tryAutoUpdate は起動時にGitHub Releasesから最新版をチェックし、
-// 新しいバージョンがあればアトミックに差し替えて再起動する。
-func tryAutoUpdate() {
-	if version == "dev" {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
-	if !waitForInternet(ctx, 90*time.Second) {
-		slog.Info("自動更新: インターネット未接続、スキップ")
-		return
-	}
-
-	latest, found, err := selfupdate.DetectLatest(ctx,
-		selfupdate.ParseSlug("RyoheiHashimoto/pi-obd-meter"))
-	if err != nil {
-		slog.Warn("自動更新: 最新バージョン検出失敗", "error", err)
-		return
-	}
-	if !found {
-		slog.Info("自動更新: リリースが見つかりません")
-		return
-	}
-	if latest.LessOrEqual(version) {
-		slog.Info("自動更新: 最新版で稼働中", "version", version)
-		return
-	}
-
-	slog.Info("自動更新: 新バージョン検出", "current", version, "latest", latest.Version())
-	exe, err := selfupdate.ExecutablePath()
-	if err != nil {
-		slog.Error("自動更新: 実行パス取得失敗", "error", err)
-		return
-	}
-	if err := selfupdate.UpdateTo(ctx, latest.AssetURL, latest.AssetName, exe); err != nil {
-		slog.Error("自動更新: 更新失敗", "error", err)
-		return
-	}
-	slog.Info("自動更新: 更新完了、再起動します", "version", latest.Version())
-	os.Exit(0) // systemd Restart=always で新バイナリが起動
-}
-
-// waitForInternet はインターネット接続が利用可能になるまで待つ。
-// タイムアウトまでに接続できなければ false を返す。
-func waitForInternet(ctx context.Context, timeout time.Duration) bool {
-	deadline := time.After(timeout)
-	httpClient := &http.Client{Timeout: 5 * time.Second}
-	for {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-deadline:
-			return false
-		default:
-			resp, err := httpClient.Get("https://api.github.com/zen")
-			if err == nil {
-				resp.Body.Close()
-				return true
-			}
-			time.Sleep(5 * time.Second)
 		}
 	}
 }

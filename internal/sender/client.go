@@ -5,12 +5,14 @@ package sender
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,10 +21,10 @@ type Client struct {
 	webhookURL       string
 	httpClient       *http.Client
 	retryQueue       []GASPayload // メモリ上のリトライキュー（SD書き込み削減のためファイル保存しない）
-	mu               sync.Mutex
-	sending          bool      // 送信中フラグ
-	consecutiveFails int       // 連続失敗回数（指数バックオフ用）
-	lastRetryAt      time.Time // 最後にリトライした時刻
+	mu               sync.RWMutex
+	sending          atomic.Bool // 送信中フラグ
+	consecutiveFails int         // 連続失敗回数（指数バックオフ用）
+	lastRetryAt      time.Time   // 最後にリトライした時刻
 }
 
 // NewClient は新しいクライアントを作成する
@@ -40,20 +42,20 @@ func NewClient(webhookURL string) *Client {
 
 // GASPayload はGoogle Apps Scriptに送信するペイロード
 type GASPayload struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+	Type string `json:"type"`
+	Data any    `json:"data"`
 }
 
 // Send は汎用データをGASに送信する
-func (c *Client) Send(payloadType string, data interface{}) error {
-	_, err := c.SendWithResponse(payloadType, data)
+func (c *Client) Send(ctx context.Context, payloadType string, data any) error {
+	_, err := c.SendWithResponse(ctx, payloadType, data)
 	return err
 }
 
 // SendWithResponse はデータをGASに送信し、レスポンスボディを返す
-func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte, error) {
+func (c *Client) SendWithResponse(ctx context.Context, payloadType string, data any) ([]byte, error) {
 	payload := GASPayload{Type: payloadType, Data: data}
-	respBody, err := c.doPost(payload)
+	respBody, err := c.doPost(ctx, payload)
 	if err != nil {
 		c.enqueue(payload)
 		return nil, err
@@ -63,21 +65,21 @@ func (c *Client) SendWithResponse(payloadType string, data interface{}) ([]byte,
 }
 
 // doPost はHTTP POSTを実行し、レスポンスボディを返す。リトライキューには追加しない。
-func (c *Client) doPost(payload GASPayload) ([]byte, error) {
+func (c *Client) doPost(ctx context.Context, payload GASPayload) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("JSON変換エラー: %w", err)
 	}
 
-	c.mu.Lock()
-	c.sending = true
-	c.mu.Unlock()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("リクエスト作成失敗: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
-
-	c.mu.Lock()
-	c.sending = false
-	c.mu.Unlock()
+	c.sending.Store(true)
+	resp, err := c.httpClient.Do(req)
+	c.sending.Store(false)
 
 	if err != nil {
 		return nil, fmt.Errorf("送信失敗 [%s]: %w", payload.Type, err)
@@ -116,7 +118,7 @@ func (c *Client) retryBackoff() time.Duration {
 
 // RetryPending はキューに溜まったデータの再送を試みる。
 // 連続失敗時は指数バックオフで間隔を広げ、1件でも失敗したら残りをスキップする。
-func (c *Client) RetryPending() {
+func (c *Client) RetryPending(ctx context.Context) {
 	c.mu.Lock()
 	if len(c.retryQueue) == 0 {
 		c.mu.Unlock()
@@ -140,10 +142,11 @@ func (c *Client) RetryPending() {
 	slog.Info("未送信データリトライ開始", "count", len(queue))
 
 	for i, payload := range queue {
-		if _, err := c.doPost(payload); err != nil {
+		if _, err := c.doPost(ctx, payload); err != nil {
 			// 失敗: 残りを全部キューに戻す
 			c.mu.Lock()
 			c.consecutiveFails++
+			backoff := c.retryBackoff()
 			c.mu.Unlock()
 			for j := i; j < len(queue); j++ {
 				c.enqueue(queue[j])
@@ -151,7 +154,7 @@ func (c *Client) RetryPending() {
 			slog.Warn("リトライ失敗、残りスキップ",
 				"failed_type", payload.Type,
 				"remaining", len(queue)-i,
-				"next_backoff", c.retryBackoff().String())
+				"next_backoff", backoff.String())
 			return
 		}
 		slog.Info("リトライ送信完了", "type", payload.Type)
@@ -165,16 +168,14 @@ func (c *Client) RetryPending() {
 
 // QueueSize はリトライキューのサイズを返す
 func (c *Client) QueueSize() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return len(c.retryQueue)
 }
 
 // IsSending は送信中かどうかを返す
 func (c *Client) IsSending() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.sending
+	return c.sending.Load()
 }
 
 // RestoreResponse はGASから返される状態復元レスポンス
@@ -185,9 +186,9 @@ type RestoreResponse struct {
 }
 
 // RestoreState はGASから保存済みの状態を復元する（起動時に1回呼ぶ）
-func (c *Client) RestoreState() (*RestoreResponse, error) {
+func (c *Client) RestoreState(ctx context.Context) (*RestoreResponse, error) {
 	payload := GASPayload{Type: "restore", Data: nil}
-	respBody, err := c.doPost(payload)
+	respBody, err := c.doPost(ctx, payload)
 	if err != nil {
 		return nil, fmt.Errorf("状態復元失敗: %w", err)
 	}

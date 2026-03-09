@@ -7,9 +7,10 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/hashimoto/pi-obd-meter/internal/atomicfile"
 )
 
 // ReminderType はリマインダーの種類
@@ -251,25 +252,11 @@ func (m *Manager) save() {
 		slog.Error("メンテ状態シリアライズ失敗", "error", err)
 		return
 	}
-	tmp := m.filePath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	if err := atomicfile.Write(m.filePath, data, 0644); err != nil {
 		if !m.saveErrLogged {
-			slog.Warn("メンテ状態保存失敗", "path", tmp, "error", err)
+			slog.Warn("メンテ状態保存失敗", "path", m.filePath, "error", err)
 			m.saveErrLogged = true
 		}
-		return
-	}
-	if err := os.Rename(tmp, m.filePath); err != nil {
-		if !m.saveErrLogged {
-			slog.Warn("メンテ状態保存失敗（rename）", "path", m.filePath, "error", err)
-			m.saveErrLogged = true
-		}
-		return
-	}
-	// fsync ディレクトリ: rename のメタデータをディスクに反映
-	if dir, err := os.Open(filepath.Dir(m.filePath)); err == nil {
-		dir.Sync()
-		dir.Close()
 	}
 }
 

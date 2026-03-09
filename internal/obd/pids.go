@@ -12,6 +12,14 @@ const (
 	PIDThrottlePosition byte = 0x11 // スロットル開度 (%)
 )
 
+// Device はOBD-2アダプタの通信インタフェース。
+// テスト時にモック実装に差し替えることでハードウェアなしでのテストを可能にする。
+type Device interface {
+	QueryPID(pid byte) ([]byte, error)
+	QueryMultiPID(pids []byte) (map[byte][]byte, error)
+	ScanSupportedPIDs() ([]byte, error)
+}
+
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
 	RPM         float64 // rpm
@@ -25,20 +33,20 @@ type OBDData struct {
 
 // Reader はOBD-2データを読み取る
 type Reader struct {
-	elm           *ELM327
+	dev           Device
 	supportsMulti bool // マルチPIDリクエスト対応フラグ
 	multiTested   bool // マルチPID対応テスト済みフラグ
 	hasMAF        bool // MAF (PID 0x10) 対応
 }
 
 // NewReader は新しいReaderを作成する
-func NewReader(elm *ELM327) *Reader {
-	return &Reader{elm: elm}
+func NewReader(dev Device) *Reader {
+	return &Reader{dev: dev}
 }
 
 // DetectCapabilities はマルチPIDリクエストの対応をテストする
 func (r *Reader) DetectCapabilities() error {
-	supported, err := r.elm.ScanSupportedPIDs()
+	supported, err := r.dev.ScanSupportedPIDs()
 	if err != nil {
 		return fmt.Errorf("サポートPIDスキャン失敗: %w", err)
 	}
@@ -66,7 +74,7 @@ func (r *Reader) HasMAF() bool { return r.hasMAF }
 // testMultiPID はマルチPIDリクエストの対応をテストする
 func (r *Reader) testMultiPID() {
 	testPIDs := []byte{PIDEngineRPM, PIDVehicleSpeed}
-	result, err := r.elm.QueryMultiPID(testPIDs)
+	result, err := r.dev.QueryMultiPID(testPIDs)
 	if err != nil || len(result) < 2 {
 		r.supportsMulti = false
 		fmt.Println("✗ マルチPIDリクエスト非対応 → 個別クエリで動作")
@@ -84,11 +92,11 @@ func (r *Reader) ReadFast() (*OBDData, error) {
 	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition}
 
 	if r.supportsMulti {
-		result, err := r.elm.QueryMultiPID(pids)
+		result, err := r.dev.QueryMultiPID(pids)
 		if err != nil {
 			// フォールバック: 個別クエリ
 			for _, pid := range pids {
-				raw, err := r.elm.QueryPID(pid)
+				raw, err := r.dev.QueryPID(pid)
 				if err != nil {
 					continue
 				}
@@ -101,7 +109,7 @@ func (r *Reader) ReadFast() (*OBDData, error) {
 		}
 	} else {
 		for _, pid := range pids {
-			if raw, err := r.elm.QueryPID(pid); err == nil {
+			if raw, err := r.dev.QueryPID(pid); err == nil {
 				parsePID(data, pid, raw)
 			}
 		}
@@ -156,7 +164,7 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 
 	// バッチ1: RPM + 車速 + 負荷 + スロットル
 	batch1 := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition}
-	result1, err := r.elm.QueryMultiPID(batch1)
+	result1, err := r.dev.QueryMultiPID(batch1)
 	if err != nil {
 		fmt.Println("⚠ マルチPID失敗、個別クエリにフォールバック")
 		r.supportsMulti = false
@@ -167,13 +175,13 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 	}
 
 	// 冷却水温
-	if raw, err := r.elm.QueryPID(PIDCoolantTemp); err == nil {
+	if raw, err := r.dev.QueryPID(PIDCoolantTemp); err == nil {
 		parsePID(data, PIDCoolantTemp, raw)
 	}
 
 	// MAFエアフロー（燃費計算用）
 	if r.hasMAF {
-		if raw, err := r.elm.QueryPID(PIDMAFAirFlow); err == nil {
+		if raw, err := r.dev.QueryPID(PIDMAFAirFlow); err == nil {
 			parsePID(data, PIDMAFAirFlow, raw)
 		}
 	}
@@ -190,7 +198,7 @@ func (r *Reader) readAllSingle() (*OBDData, error) {
 	}
 
 	for _, pid := range pids {
-		if raw, err := r.elm.QueryPID(pid); err == nil {
+		if raw, err := r.dev.QueryPID(pid); err == nil {
 			parsePID(data, pid, raw)
 		}
 	}

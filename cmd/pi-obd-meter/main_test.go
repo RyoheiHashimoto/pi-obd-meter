@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -120,7 +121,6 @@ func TestCalcFuelEconomy_Idle(t *testing.T) {
 
 func TestCalcFuelEconomy_CappedAtMax(t *testing.T) {
 	// 高速 + 低燃料消費 → maxDisplayKmL でキャップ
-	// MAFなし、低負荷で fuelRate > 0.01 だが km/L が上限超えるケース
 	got, _ := calcFuelEconomy(100, 1000, 5, 0, false, 1.3)
 	if got > maxDisplayKmL {
 		t.Errorf("cap: got %.1f, should not exceed %.1f", got, maxDisplayKmL)
@@ -175,30 +175,38 @@ func TestCalcFuelEconomy_LowSpeedFuelRate(t *testing.T) {
 
 // --- sendMaintenanceStatus テスト ---
 
+// newTestApp はテスト用の App を作成するヘルパー
+func newTestApp(t *testing.T, serverURL string) *App {
+	t.Helper()
+	return &App{
+		cfg:      Config{},
+		client:   sender.NewClient(serverURL),
+		maintMgr: maintenance.NewManager(filepath.Join(t.TempDir(), "maint.json")),
+		tracker:  trip.NewTracker(trip.TrackerConfig{StatePath: filepath.Join(t.TempDir(), "trip.json")}),
+	}
+}
+
 func TestSendMaintenanceStatus_Basic(t *testing.T) {
-	var receivedPayload map[string]interface{}
+	var receivedPayload map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var p sender.GASPayload
 		_ = json.NewDecoder(r.Body).Decode(&p)
-		receivedPayload = p.Data.(map[string]interface{})
+		receivedPayload = p.Data.(map[string]any)
 		w.WriteHeader(200)
 		w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
-	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
-	maintMgr.InitDefaults(nil)
-	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.totalKmAccum = 100.0
 
-	totalKm := 100.0
-	odoApplied := false
-	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, tracker)
+	app.sendMaintenanceStatus(context.Background())
 
 	if receivedPayload == nil {
 		t.Fatal("expected payload to be sent")
 	}
-	statuses, ok := receivedPayload["statuses"].([]interface{})
+	statuses, ok := receivedPayload["statuses"].([]any)
 	if !ok || len(statuses) == 0 {
 		t.Error("expected non-empty statuses array")
 	}
@@ -211,16 +219,14 @@ func TestSendMaintenanceStatus_PendingResets(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
-	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
-	maintMgr.InitDefaults(nil)
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.totalKmAccum = 5000.0
 
-	totalKm := 5000.0
-	odoApplied := false
-	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+	app.sendMaintenanceStatus(context.Background())
 
 	// oil_changeがリセットされたことを確認
-	for _, s := range maintMgr.CheckAll() {
+	for _, s := range app.maintMgr.CheckAll() {
 		if s.Reminder.ID == "oil_change" && s.CurrentKm > 100 {
 			t.Errorf("oil_change should have been reset, current_km=%.1f", s.CurrentKm)
 		}
@@ -240,22 +246,20 @@ func TestSendMaintenanceStatus_OdometerCorrection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
-	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
-	maintMgr.InitDefaults(nil)
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.totalKmAccum = 100.0
 
-	totalKm := 100.0
-	odoApplied := false
-	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+	app.sendMaintenanceStatus(context.Background())
 
-	if totalKm != 50000 {
-		t.Errorf("totalKm should be corrected to 50000, got %.1f", totalKm)
+	if app.totalKmAccum != 50000 {
+		t.Errorf("totalKm should be corrected to 50000, got %.1f", app.totalKmAccum)
 	}
 	// 2回呼ばれる（補正後の再送信）。2回目でGASが補正をクリア済みなのでodoApplied=false
 	if callCount != 2 {
 		t.Errorf("expected 2 calls (initial + re-send after correction), got %d", callCount)
 	}
-	if odoApplied {
+	if app.odoApplied {
 		t.Error("odoApplied should be false after re-send (GAS cleared correction)")
 	}
 }
@@ -267,32 +271,25 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
-	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
-	maintMgr.InitDefaults(nil)
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.tracker.Update(60, 0) // トリップに走行データを追加
+	app.totalKmAccum = 100.0
 
-	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
-	tracker.Update(60, 0) // トリップに走行データを追加
-
-	totalKm := 100.0
-	odoApplied := false
-	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, tracker)
+	app.sendMaintenanceStatus(context.Background())
 
 	// トリップがリセットされている
-	if tracker.DistanceKm() > 0.001 {
-		t.Errorf("trip should be reset, got %.4f km", tracker.DistanceKm())
+	if app.tracker.DistanceKm() > 0.001 {
+		t.Errorf("trip should be reset, got %.4f km", app.tracker.DistanceKm())
 	}
 }
 
 func TestSendMaintenanceStatus_Empty(t *testing.T) {
 	// リマインダー0件 → 送信しない
-	client := sender.NewClient("http://127.0.0.1:1")
-	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
+	app := newTestApp(t, "http://127.0.0.1:1")
 	// InitDefaultsを呼ばない = リマインダー0件
 
-	totalKm := 0.0
-	odoApplied := false
-	sendMaintenanceStatus(client, maintMgr, &totalKm, &odoApplied, nil)
+	app.sendMaintenanceStatus(context.Background())
 	// パニックしなければOK
 }
 
@@ -345,7 +342,7 @@ func TestRestoreState_Success(t *testing.T) {
 	defer srv.Close()
 
 	client := sender.NewClient(srv.URL)
-	resp, err := client.RestoreState()
+	resp, err := client.RestoreState(context.Background())
 	if err != nil {
 		t.Fatalf("RestoreState failed: %v", err)
 	}
@@ -364,7 +361,7 @@ func TestRestoreState_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	client := sender.NewClient(srv.URL)
-	_, err := client.RestoreState()
+	_, err := client.RestoreState(context.Background())
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
@@ -378,7 +375,7 @@ func TestRestoreState_InvalidJSON(t *testing.T) {
 	defer srv.Close()
 
 	client := sender.NewClient(srv.URL)
-	_, err := client.RestoreState()
+	_, err := client.RestoreState(context.Background())
 	if err == nil {
 		t.Fatal("expected error on invalid JSON")
 	}
@@ -413,7 +410,9 @@ func TestLoadConfig_ValidJSON(t *testing.T) {
 		"engine_displacement_l": 2.0,
 		"webhook_url": "https://example.com/webhook"
 	}`
-	os.WriteFile(cfgPath, []byte(content), 0644)
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := loadConfig(cfgPath)
 	if cfg.SerialPort != "/dev/ttyUSB0" {
@@ -437,7 +436,9 @@ func TestLoadConfig_PartialJSON(t *testing.T) {
 	// 一部のフィールドのみ → 残りはデフォルト
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	os.WriteFile(cfgPath, []byte(`{"max_speed_kmh": 260}`), 0644)
+	if err := os.WriteFile(cfgPath, []byte(`{"max_speed_kmh": 260}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := loadConfig(cfgPath)
 	if cfg.MaxSpeedKmh != 260 {
@@ -452,7 +453,9 @@ func TestLoadConfig_PartialJSON(t *testing.T) {
 func TestLoadConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	os.WriteFile(cfgPath, []byte(`{invalid json}`), 0644)
+	if err := os.WriteFile(cfgPath, []byte(`{invalid json}`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := loadConfig(cfgPath)
 	// パース失敗 → デフォルト値
@@ -469,7 +472,9 @@ func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 			{"id": "custom_oil", "name": "Custom Oil", "type": "distance", "interval_km": 5000, "warning_pct": 0.9}
 		]
 	}`
-	os.WriteFile(cfgPath, []byte(content), 0644)
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := loadConfig(cfgPath)
 	if len(cfg.MaintenanceReminders) != 1 {
@@ -483,45 +488,31 @@ func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 // --- getNotification テスト ---
 
 func TestGetNotification_Empty(t *testing.T) {
-	// 初期状態 → 空文字列
-	got := getNotification()
+	app := &App{}
+	got := app.getNotification()
 	if got != "" {
 		t.Errorf("initial notification: got %q, want empty", got)
 	}
 }
 
 func TestGetNotification_Active(t *testing.T) {
-	notificationMu.Lock()
-	notification = "テスト通知"
-	notificationExp = time.Now().Add(10 * time.Second)
-	notificationMu.Unlock()
-
-	got := getNotification()
+	app := &App{
+		notification:    "テスト通知",
+		notificationExp: time.Now().Add(10 * time.Second),
+	}
+	got := app.getNotification()
 	if got != "テスト通知" {
 		t.Errorf("active notification: got %q, want テスト通知", got)
 	}
-
-	// クリーンアップ
-	notificationMu.Lock()
-	notification = ""
-	notificationExp = time.Time{}
-	notificationMu.Unlock()
 }
 
 func TestGetNotification_Expired(t *testing.T) {
-	notificationMu.Lock()
-	notification = "期限切れ"
-	notificationExp = time.Now().Add(-1 * time.Second) // 既に過去
-	notificationMu.Unlock()
-
-	got := getNotification()
+	app := &App{
+		notification:    "期限切れ",
+		notificationExp: time.Now().Add(-1 * time.Second),
+	}
+	got := app.getNotification()
 	if got != "" {
 		t.Errorf("expired notification: got %q, want empty", got)
 	}
-
-	// クリーンアップ
-	notificationMu.Lock()
-	notification = ""
-	notificationExp = time.Time{}
-	notificationMu.Unlock()
 }
