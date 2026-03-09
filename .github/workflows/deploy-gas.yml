@@ -1,0 +1,40 @@
+name: Deploy GAS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gas/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install clasp
+        run: npm install -g @google/clasp
+
+      - name: Setup clasp credentials
+        run: |
+          echo '{
+            "tokens": {
+              "default": {
+                "client_id": "1072944905499-vm2v2i5dvn0a0d2o4ca36i1vge8cvbn0.apps.googleusercontent.com",
+                "client_secret": "v6V3fKV_zWU7iw1DrpO1rknX",
+                "type": "authorized_user",
+                "refresh_token": "${{ secrets.CLASP_REFRESH_TOKEN }}",
+                "access_token": ""
+              }
+            }
+          }' > ~/.clasprc.json
+
+      - name: Push to GAS
+        run: cd gas && clasp push
+
+      - name: Verify deployment
+        run: cd gas && clasp deployments
