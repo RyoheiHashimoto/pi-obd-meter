@@ -186,7 +186,7 @@ func TestSendMaintenanceStatus_Basic(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
 	maintMgr.InitDefaults(nil)
 	tracker := trip.NewTracker(trip.TrackerConfig{StatePath: t.TempDir() + "/trip.json"})
@@ -211,7 +211,7 @@ func TestSendMaintenanceStatus_PendingResets(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
 	maintMgr.InitDefaults(nil)
 
@@ -240,7 +240,7 @@ func TestSendMaintenanceStatus_OdometerCorrection(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
 	maintMgr.InitDefaults(nil)
 
@@ -267,7 +267,7 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
 	maintMgr.InitDefaults(nil)
 
@@ -286,7 +286,7 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 
 func TestSendMaintenanceStatus_Empty(t *testing.T) {
 	// リマインダー0件 → 送信しない
-	client := sender.NewClient("http://127.0.0.1:1")
+	client := sender.NewClient("http://127.0.0.1:1", "")
 	maintMgr := maintenance.NewManager(t.TempDir() + "/maint.json")
 	// InitDefaultsを呼ばない = リマインダー0件
 
@@ -344,7 +344,7 @@ func TestRestoreState_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	resp, err := client.RestoreState()
 	if err != nil {
 		t.Fatalf("RestoreState failed: %v", err)
@@ -363,7 +363,7 @@ func TestRestoreState_ServerError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	_, err := client.RestoreState()
 	if err == nil {
 		t.Fatal("expected error on 500")
@@ -377,7 +377,7 @@ func TestRestoreState_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := sender.NewClient(srv.URL)
+	client := sender.NewClient(srv.URL, "")
 	_, err := client.RestoreState()
 	if err == nil {
 		t.Fatal("expected error on invalid JSON")

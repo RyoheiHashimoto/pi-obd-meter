@@ -17,6 +17,7 @@ import (
 // Client はGoogle Apps Script Webhookへデータを送信するクライアント
 type Client struct {
 	webhookURL       string
+	apiKey           string
 	httpClient       *http.Client
 	retryQueue       []GASPayload // メモリ上のリトライキュー（SD書き込み削減のためファイル保存しない）
 	mu               sync.Mutex
@@ -26,9 +27,10 @@ type Client struct {
 }
 
 // NewClient は新しいクライアントを作成する
-func NewClient(webhookURL string) *Client {
+func NewClient(webhookURL, apiKey string) *Client {
 	return &Client{
 		webhookURL: webhookURL,
+		apiKey:     apiKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -73,7 +75,12 @@ func (c *Client) doPost(payload GASPayload) ([]byte, error) {
 	c.sending = true
 	c.mu.Unlock()
 
-	resp, err := c.httpClient.Post(c.webhookURL, "application/json", bytes.NewReader(body))
+	url := c.webhookURL
+	if c.apiKey != "" {
+		url += "?key=" + c.apiKey
+	}
+
+	resp, err := c.httpClient.Post(url, "application/json", bytes.NewReader(body))
 
 	c.mu.Lock()
 	c.sending = false
