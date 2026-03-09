@@ -12,9 +12,6 @@
     <marker id="arr-cyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
       <polygon points="0 0, 8 3, 0 6" fill="#26c6da"/>
     </marker>
-    <marker id="arr-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-      <polygon points="0 0, 8 3, 0 6" fill="#ab47bc"/>
-    </marker>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#111827"/>
       <stop offset="100%" stop-color="#0f172a"/>
@@ -122,7 +119,7 @@
   <rect x="610" y="105" width="255" height="70" rx="8" fill="#1e293b" stroke="#66bb6a" stroke-width="1.5"/>
   <text x="737" y="130" text-anchor="middle" fill="#66bb6a" font-size="13" font-weight="bold">Google Apps Script</text>
   <text x="737" y="148" text-anchor="middle" fill="#94a3b8" font-size="10">Webhook (doPost)</text>
-  <text x="737" y="163" text-anchor="middle" fill="#64748b" font-size="9">トリップ受信 → Sheets書込 + Discord通知</text>
+  <text x="737" y="163" text-anchor="middle" fill="#64748b" font-size="9">トリップ受信 → Sheets書込</text>
 
   <!-- Google Sheets -->
   <rect x="610" y="195" width="255" height="90" rx="8" fill="#1e293b" stroke="#34d399" stroke-width="1.5"/>
@@ -134,23 +131,11 @@
   <!-- GAS → Sheets -->
   <line x1="737" y1="175" x2="737" y2="193" stroke="#34d399" stroke-width="1.5" marker-end="url(#arr)"/>
 
-  <!-- Discord -->
-  <rect x="610" y="305" width="255" height="30" rx="8" fill="#1e293b" stroke="#818cf8" stroke-width="1.5"/>
-  <text x="737" y="325" text-anchor="middle" fill="#818cf8" font-size="12" font-weight="bold">Discord</text>
-
-  <!-- GAS → Discord -->
-  <path d="M820,175 L855,175 L855,318 L867,318" fill="none" stroke="#818cf8" stroke-width="1.5" marker-end="url(#arr)"/>
-  <text x="862" y="250" fill="#818cf8" font-size="9" transform="rotate(90,862,250)">トリップ通知</text>
-
   <!-- Pi → GAS (WiFi) -->
   <path d="M530,180 L608,135" fill="none" stroke="#66bb6a" stroke-width="2.5" marker-end="url(#arr-green)"/>
   <text x="548" y="143" fill="#66bb6a" font-size="11" font-weight="bold">WiFi</text>
   <text x="548" y="157" fill="#86efac" font-size="9">HTTP POST</text>
   <text x="548" y="169" fill="#64748b" font-size="8">トリップ自動送信</text>
-
-  <!-- Pi → Discord direct (メンテ警告) -->
-  <path d="M530,210 L575,210 L575,318 L608,318" fill="none" stroke="#818cf8" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
-  <text x="555" y="270" fill="#a78bfa" font-size="9" transform="rotate(90,555,270)">メンテ警告</text>
 
   <!-- =============== スマホエリア =============== -->
   <rect x="580" y="380" width="310" height="120" rx="8" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4"/>
@@ -188,7 +173,7 @@
   <text x="105" y="594" fill="#cbd5e1" font-size="11">❷ Bluetooth 2.0 — ELM327 → ラズパイ（/dev/rfcomm0、SPPシリアル通信）</text>
 
   <line x1="50" y1="614" x2="95" y2="614" stroke="#66bb6a" stroke-width="2.5"/>
-  <text x="105" y="618" fill="#cbd5e1" font-size="11">❸ WiFi → インターネット — ラズパイ → GAS Webhook → Google Sheets + Discord（トリップ自動送信）</text>
+  <text x="105" y="618" fill="#cbd5e1" font-size="11">❸ WiFi → インターネット — ラズパイ → GAS Webhook → Google Sheets（トリップ自動送信）</text>
 
   <line x1="50" y1="638" x2="95" y2="638" stroke="#22d3ee" stroke-width="2" stroke-dasharray="6,3"/>
   <text x="105" y="642" fill="#cbd5e1" font-size="11">❹ WiFi ローカル — スマホ → ラズパイ :9090（control.html 操作UI）</text>

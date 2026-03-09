@@ -27,17 +27,9 @@ cmd_deploy() {
   cmd_build
   echo "Deploying to ${PI}:${DEST}..."
   rsync -avz "$ROOT/bin/" "${PI}:${DEST}/"
-  rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
   rsync -avz "$ROOT/configs/" "${PI}:${DEST}/configs/"
   ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
   echo "✓ デプロイ完了"
-}
-
-cmd_deploy_web() {
-  echo "Deploying web UI to ${PI}:${DEST}/web/static/..."
-  rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
-  ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
-  echo "✓ Web UIのみデプロイ完了"
 }
 
 cmd_setup() {
@@ -124,7 +116,6 @@ Usage: ./scripts/deploy.sh <command> [args]
 開発 (Mac上で実行):
   build            クロスコンパイル (ARM64)
   deploy           ビルド + rsync転送 + サービス再起動
-  deploy-web       Web UIのみ転送 + 再起動
 
 ラズパイ管理 (Mac上で実行):
   setup            初回セットアップ (ディレクトリ作成 + systemd登録)
@@ -155,7 +146,6 @@ HELP
 case "${1:-help}" in
   build)           cmd_build ;;
   deploy)          cmd_deploy ;;
-  deploy-web)      cmd_deploy_web ;;
   setup)           cmd_setup ;;
   ssh)             cmd_ssh ;;
   logs)            cmd_logs ;;

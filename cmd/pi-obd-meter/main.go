@@ -4,23 +4,29 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	selfupdate "github.com/creativeprojects/go-selfupdate"
 
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
+	"github.com/hashimoto/pi-obd-meter/web"
 )
 
 // Config はアプリケーション設定
@@ -146,7 +152,7 @@ func loadConfig(path string) Config {
 		PollIntervalMs:      500,
 		LocalAPIPort:        9090,
 		MaintenancePath:     "/var/lib/pi-obd-meter/maintenance.json",
-		WebStaticDir:        "/opt/pi-obd-meter/web/static",
+		WebStaticDir:        "",
 		MaxSpeedKmh:         180,
 		OBDProtocol:         "6",
 		EngineDisplacementL: 1.3,
@@ -203,6 +209,9 @@ func main() {
 	brightness := display.NewBrightnessController(cfg.Brightness)
 	brightness.Start()
 	defer brightness.Stop()
+
+	// --- 自動更新（バックグラウンド） ---
+	go tryAutoUpdate()
 
 	// --- ローカルAPI + Web UI（OBD接続前に起動） ---
 	go startLocalAPI(cfg, maintMgr)
@@ -501,7 +510,16 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	mux := http.NewServeMux()
 
 	// --- Web UI配信 ---
-	mux.Handle("GET /", http.FileServer(http.Dir(cfg.WebStaticDir)))
+	var webFS http.FileSystem
+	if cfg.WebStaticDir != "" {
+		webFS = http.Dir(cfg.WebStaticDir)
+		slog.Info("Web UI: ファイルシステムから配信", "dir", cfg.WebStaticDir)
+	} else {
+		subFS, _ := fs.Sub(web.StaticFS, "static")
+		webFS = http.FS(subFS)
+		slog.Info("Web UI: 埋め込みファイルから配信")
+	}
+	mux.Handle("GET /", http.FileServer(webFS))
 
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
@@ -545,4 +563,90 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 	addr := fmt.Sprintf(":%d", cfg.LocalAPIPort)
 	slog.Info("ローカルAPI起動", "addr", addr)
 	http.ListenAndServe(addr, corsMiddleware(mux))
+}
+
+// tryAutoUpdate は起動時にGitHub Releasesから最新版をチェックし、
+// 新しいバージョンがあればアトミックに差し替えて再起動する。
+func tryAutoUpdate() {
+	if version == "dev" {
+		return
+	}
+	if isOverlayFS() {
+		slog.Info("自動更新: overlayFS有効のためスキップ")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	if !waitForInternet(ctx, 90*time.Second) {
+		slog.Info("自動更新: インターネット未接続、スキップ")
+		return
+	}
+
+	latest, found, err := selfupdate.DetectLatest(ctx,
+		selfupdate.ParseSlug("RyoheiHashimoto/pi-obd-meter"))
+	if err != nil {
+		slog.Warn("自動更新: 最新バージョン検出失敗", "error", err)
+		return
+	}
+	if !found {
+		slog.Info("自動更新: リリースが見つかりません")
+		return
+	}
+	if latest.LessOrEqual(version) {
+		slog.Info("自動更新: 最新版で稼働中", "version", version)
+		return
+	}
+
+	slog.Info("自動更新: 新バージョン検出", "current", version, "latest", latest.Version())
+	exe, err := selfupdate.ExecutablePath()
+	if err != nil {
+		slog.Error("自動更新: 実行パス取得失敗", "error", err)
+		return
+	}
+	if err := selfupdate.UpdateTo(ctx, latest.AssetURL, latest.AssetName, exe); err != nil {
+		slog.Error("自動更新: 更新失敗", "error", err)
+		return
+	}
+	slog.Info("自動更新: 更新完了、再起動します", "version", latest.Version())
+	os.Exit(0) // systemd Restart=always で新バイナリが起動
+}
+
+// isOverlayFS はルートファイルシステムがoverlayFSかどうかを返す。
+// overlayFS有効時は書き込んでも再起動で消えるため自動更新をスキップする。
+func isOverlayFS() bool {
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 3 && fields[1] == "/" && fields[2] == "overlay" {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForInternet はインターネット接続が利用可能になるまで待つ。
+// タイムアウトまでに接続できなければ false を返す。
+func waitForInternet(ctx context.Context, timeout time.Duration) bool {
+	deadline := time.After(timeout)
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-deadline:
+			return false
+		default:
+			resp, err := httpClient.Get("https://api.github.com/zen")
+			if err == nil {
+				resp.Body.Close()
+				return true
+			}
+			time.Sleep(5 * time.Second)
+		}
+	}
 }

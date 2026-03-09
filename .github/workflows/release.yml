@@ -28,16 +28,20 @@ jobs:
             -o pi-obd-meter-arm64 \
             ./cmd/pi-obd-meter
           GOOS=linux GOARCH=arm64 go build \
-            -ldflags "-s -w" \
+            -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o pi-obd-scanner-arm64 \
             ./cmd/pi-obd-scanner
 
       - name: Package release
         run: |
           mkdir -p release/pi-obd-meter
+          # selfupdate 用: バイナリのみ（goreleaser 互換命名）
+          tar czf release/pi-obd-meter_linux_arm64.tar.gz \
+            --transform='s/pi-obd-meter-arm64/pi-obd-meter/' \
+            pi-obd-meter-arm64
+          # 手動インストール用: フルパッケージ（従来互換）
           cp pi-obd-meter-arm64 release/pi-obd-meter/pi-obd-meter
           cp pi-obd-scanner-arm64 release/pi-obd-meter/pi-obd-scanner
-          cp -r web/ release/pi-obd-meter/web/
           cp -r configs/ release/pi-obd-meter/configs/ 2>/dev/null || true
           cp -r gas/ release/pi-obd-meter/gas/ 2>/dev/null || true
           cd release && tar czf pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz pi-obd-meter/
@@ -45,5 +49,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release/pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz
+          files: |
+            release/pi-obd-meter_linux_arm64.tar.gz
+            release/pi-obd-meter-${{ github.ref_name }}-arm64.tar.gz
           generate_release_notes: true

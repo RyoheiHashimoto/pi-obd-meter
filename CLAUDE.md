@@ -28,9 +28,6 @@ go build ./cmd/pi-obd-scanner
 # ラズパイにデプロイ（build + rsync + systemctl restart）
 ./scripts/deploy.sh deploy
 
-# Web UIだけデプロイ + キオスク再起動
-./scripts/deploy.sh deploy-web
-
 # 初回セットアップ（ディレクトリ作成 + systemd登録）
 ./scripts/deploy.sh setup
 
@@ -62,8 +59,10 @@ internal/
   maintenance/
     reminder.go             走行距離/日付ベースのメンテナンスリマインダー
 
-web/static/
-  meter.html                メーター画面HTML（CSS/JSは分離）
+web/
+  embed.go                  go:embed で static/ をバイナリに埋め込み
+  static/
+    meter.html                メーター画面HTML（CSS/JSは分離）
   meter.css                 CSS Custom Properties でテーマ管理
   meter.js                  ゲージ描画・APIポーリング・シミュレーション
 
@@ -179,6 +178,18 @@ hdmi_cvt 800 480 60 6 0 0 0
 - SIGINT/SIGTERM受信時にトリップ状態とメンテナンス状態を保存してから終了
 - バージョン: `-ldflags "-X main.version=vX.Y.Z"` でビルド時に埋め込み
 
+### Web UI 埋め込み（go:embed）
+- `web/embed.go` で `web/static/` をバイナリに埋め込み（`go:embed static`）
+- 本番: 埋め込みファイルから配信（バイナリ1つで完結）
+- 開発: config.json の `web_static_dir` にパスを指定すればファイルシステムから配信
+
+### 自動更新（go-selfupdate）
+- 起動時に GitHub Releases をチェック、新バージョンがあればアトミックにバイナリ差し替え
+- `rename()` によるアトミック操作で電源断時もバイナリ破損なし
+- 更新後は `os.Exit(0)` → systemd `Restart=always` で新バイナリが起動
+- スキップ条件: overlayFS 有効時、開発ビルド (`version = "dev"`)、インターネット未接続時
+- リリースアセット: `pi-obd-meter_linux_arm64.tar.gz`（goreleaser 互換命名）
+
 ## 車両固有の設定（config.json）
 
 以下はすべてconfig.jsonで設定する。コード内にハードコードしない。
@@ -188,6 +199,7 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `engine_displacement_l`: エンジン排気量 (例: ZJ-VE=1.3) — 燃費推定に使用
 - `max_speed_kmh`: 速度メーター最大値 (例: 180)
 - `initial_odometer_km`: 初期ODO値 (km)
+- `web_static_dir`: Web UI配信元（空 = 埋め込みファイル使用、開発時にパス指定可）
 - `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, タイプ, 間隔, 警告閾値）
 
 ### 開発元の確認車両
