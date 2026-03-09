@@ -174,7 +174,8 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		}
 
 		var gasResp gasMaintenanceResponse
-		if json.Unmarshal(respBody, &gasResp) != nil {
+		if err := json.Unmarshal(respBody, &gasResp); err != nil {
+			slog.Warn("GASレスポンスJSON解析失敗", "error", err)
 			return
 		}
 

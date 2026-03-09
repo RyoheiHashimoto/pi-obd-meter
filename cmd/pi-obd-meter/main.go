@@ -108,12 +108,15 @@ func main() {
 	}
 
 	// --- メインループ ---
-	// 2層ポーリング: 高速(150ms)で RPM/速度/負荷/スロットル を取得し、
-	// その5回に1回(750ms)で水温・MAF等の全PIDを取得する。
-	const fastIntervalMs = 150
+	// 2層ポーリング: 高速(デフォルト150ms)で RPM/速度/負荷/スロットル を取得し、
+	// その5回に1回で水温・MAF等の全PIDを取得する。
+	fastIntervalMs := cfg.PollIntervalMs
+	if fastIntervalMs <= 0 {
+		fastIntervalMs = 150
+	}
 	const fullEveryN = 5
 
-	ticker := time.NewTicker(fastIntervalMs * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(fastIntervalMs) * time.Millisecond)
 	defer ticker.Stop()
 
 	retryTicker := time.NewTicker(5 * time.Minute) // 送信失敗キューのリトライ間隔
@@ -233,9 +236,18 @@ func main() {
 		case sig := <-sigCh:
 			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
 			cancel() // HTTP サーバーと goroutine にキャンセルを通知
-			app.tracker.SaveState()
-			app.maintMgr.SaveState()
-			slog.Info("状態保存完了")
+			done := make(chan struct{})
+			go func() {
+				app.tracker.SaveState()
+				app.maintMgr.SaveState()
+				close(done)
+			}()
+			select {
+			case <-done:
+				slog.Info("状態保存完了")
+			case <-time.After(5 * time.Second):
+				slog.Warn("状態保存タイムアウト（5秒）")
+			}
 			if obdConnected {
 				elm.Close()
 			}
