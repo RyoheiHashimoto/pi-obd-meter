@@ -51,6 +51,7 @@ type RealtimeData struct {
 	EngineLoad    float64              `json:"engine_load"`
 	ThrottlePos   float64              `json:"throttle_pos"`
 	FuelEconomy   float64              `json:"fuel_economy"`
+	FuelRateLH    float64              `json:"fuel_rate_lh"`
 	TripKm        float64              `json:"trip_km"`
 	CoolantTemp   float64              `json:"coolant_temp"`
 	Alerts        []maintenance.Status `json:"alerts"`
@@ -76,9 +77,9 @@ const (
 	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 )
 
-func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) float64 {
+func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) (kmL, rateLH float64) {
 	if speed < 0.5 && rpm < 100 {
-		return 0 // エンジン停止
+		return 0, 0 // エンジン停止
 	}
 
 	var fuelRateLH float64
@@ -99,16 +100,16 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 	}
 
 	if fuelRateLH < 0.01 {
-		return maxDisplayKmL // エンブレ・コースティング
+		return -1, fuelRateLH // エンブレ・燃料カット（-1 = 特別表示）
 	}
 	if speed < minDisplaySpeedKm {
-		return 0 // 低速域（クリープ等）は燃費表示しない
+		return 0, fuelRateLH // 低速域（クリープ等）は燃費表示しない
 	}
-	kmL := speed / fuelRateLH
+	kmL = speed / fuelRateLH
 	if kmL > maxDisplayKmL {
 		kmL = maxDisplayKmL
 	}
-	return kmL
+	return kmL, fuelRateLH
 }
 
 var (
@@ -292,6 +293,7 @@ func main() {
 	statusCount := 0
 	var lastCoolantTemp float64
 	var lastFuelEconomy float64
+	var lastFuelRateLH float64
 	var errCount int
 	var wifiConnected bool
 	const maxConsecutiveErrors = 10
@@ -345,7 +347,7 @@ func main() {
 			if isFull {
 				lastCoolantTemp = data.CoolantTemp
 				wifiConnected = checkWiFi()
-				lastFuelEconomy = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
+				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
 			tracker.Update(data.SpeedKmh)
@@ -359,6 +361,7 @@ func main() {
 				EngineLoad:    data.EngineLoad,
 				ThrottlePos:   data.ThrottlePos,
 				FuelEconomy:   lastFuelEconomy,
+				FuelRateLH:    lastFuelRateLH,
 				TripKm:        tracker.DistanceKm(),
 				CoolantTemp:   lastCoolantTemp,
 				Alerts:        maintMgr.GetAlerts(),
@@ -526,6 +529,8 @@ func startLocalAPI(cfg Config, maintMgr *maintenance.Manager) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"max_speed_kmh": cfg.MaxSpeedKmh,
 			"version":       version,
+			"eco_lh_green":  1.5 * cfg.EngineDisplacementL,
+			"eco_lh_red":    3.0 * cfg.EngineDisplacementL,
 		})
 	})
 

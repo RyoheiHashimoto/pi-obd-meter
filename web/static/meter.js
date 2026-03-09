@@ -28,7 +28,8 @@ const POLL_INTERVAL_MS = 200;
 const SIM_TICK_MS = 50;
 const SIM_CYCLE_S = 16;
 
-const DEFAULTS = { max_speed_kmh: 180 };
+const DEFAULTS = { max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9 };
+const ECO_LOW_SPEED_THRESHOLD = 30;
 
 // 極座標→直交座標（12時=0°、時計回り正）
 function polarToXY(cx, cy, r, deg) {
@@ -251,13 +252,28 @@ function updateIndicators(d) {
   setDot(dom.maint, hasOverdue ? 'red' : alerts.length > 0 ? 'orange' : 'green');
   dom.maint.val.textContent = String(alerts.length);
 
-  // ECO
+  // ECO — エンブレ(-1)=緑+「--」、低速域はL/h判定、通常域はkm/L判定
   const eco = d.fuel_economy || 0;
-  if (eco < 0.1)       setDot(dom.eco, null);
-  else if (eco >= 15)  setDot(dom.eco, 'green');
-  else if (eco >= 10)  setDot(dom.eco, 'orange');
-  else                 setDot(dom.eco, 'red');
-  dom.eco.val.textContent = eco > 0.1 ? eco.toFixed(1) : '0';
+  const fuelRate = d.fuel_rate_lh || 0;
+  const speed = d.speed_kmh || 0;
+  if (eco < 0) {
+    // エンブレ・燃料カット: 最もエコな状態
+    setDot(dom.eco, 'green');
+    dom.eco.val.textContent = '--';
+  } else if (eco < 0.1) {
+    setDot(dom.eco, null);
+    dom.eco.val.textContent = '0';
+  } else if (speed < ECO_LOW_SPEED_THRESHOLD && fuelRate > 0) {
+    if (fuelRate < conf.eco_lh_green)      setDot(dom.eco, 'green');
+    else if (fuelRate < conf.eco_lh_red)   setDot(dom.eco, 'orange');
+    else                                   setDot(dom.eco, 'red');
+    dom.eco.val.textContent = eco.toFixed(1);
+  } else {
+    if (eco >= 15)      setDot(dom.eco, 'green');
+    else if (eco >= 10) setDot(dom.eco, 'orange');
+    else                setDot(dom.eco, 'red');
+    dom.eco.val.textContent = eco.toFixed(1);
+  }
 
   // TRIP
   const tripKm = d.trip_km || 0;
@@ -406,10 +422,12 @@ function simTick() {
 // ============================================================
 // Initialization
 // ============================================================
+let conf = DEFAULTS;
+
 async function initApp() {
   initDOM();
 
-  let conf = DEFAULTS;
+  conf = DEFAULTS;
   try {
     const resp = await fetch('/api/config');
     if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
