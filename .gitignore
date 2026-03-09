@@ -22,5 +22,8 @@ coverage.out
 # Serena
 .serena/
 
+# clasp (OAuth認証情報)
+.clasprc.json
+
 # Secrets (実際のURLが入ったconfig)
 configs/config.local.json

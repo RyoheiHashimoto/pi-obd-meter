@@ -1,6 +1,6 @@
 # pi-obd-meter Makefile
 
-.PHONY: test test-cover lint build build-arm64 clean check deploy logs ssh status restart release
+.PHONY: test test-cover lint build build-arm64 clean check deploy deploy-gas logs ssh status restart release
 
 # --- 開発 ---
 
@@ -37,6 +37,10 @@ clean:
 
 deploy:
 	./scripts/deploy.sh deploy
+
+deploy-gas:
+	cd gas && clasp push
+	@echo "✓ GAS コード更新完了（HEADデプロイメントに反映）"
 
 logs:
 	./scripts/deploy.sh logs

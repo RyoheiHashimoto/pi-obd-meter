@@ -29,6 +29,9 @@ make restart         # サービス再起動（転送なし）
 make release         # パッチ自動インクリメント (v0.3.0 → v0.3.1)
 make release V=v1.0.0  # バージョン明示指定
 
+# GAS デプロイ (clasp)
+make deploy-gas      # gas/webhook.gs を GAS に push（HEADデプロイメント）
+
 # ビルド・テスト
 make build           # ローカルビルド
 make test            # テスト実行
