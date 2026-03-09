@@ -16,6 +16,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Lint GAS code
+        run: npx eslint gas/*.gs
+
       - name: Install clasp
         run: npm install -g @google/clasp
 
@@ -36,5 +39,5 @@ jobs:
       - name: Push to GAS
         run: cd gas && clasp push
 
-      - name: Verify deployment
-        run: cd gas && clasp deployments
+      - name: Deploy to production
+        run: cd gas && clasp deploy -i AKfycbwYszp7P8kYlZabnLgUTCLUHqOZ-cBS1nv9umJp6NGXcyArT83PMJq_AfmEH3Pk_SshFg
