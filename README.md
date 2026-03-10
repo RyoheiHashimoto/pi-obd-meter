@@ -160,6 +160,8 @@ hdmi_cvt 800 480 60 6 0 0 0
 | `initial_odometer_km` | 初期ODO値 (km) |
 | `maintenance_reminders` | メンテナンスリマインダー項目 |
 
+他車種への適用時に必要なチューニング項目（ハードコード値を含む）は [docs/calculation-logic.md](docs/calculation-logic.md) を参照。
+
 ## プロジェクト構成
 
 ```
