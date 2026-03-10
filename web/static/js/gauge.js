@@ -45,9 +45,11 @@ function ensureGlowFilter(svg) {
   if (glowFilterCreated) return;
   glowFilterCreated = true;
   const defs = svgEl(svg, 'defs', {});
-  defs.innerHTML = '<filter id="gl" x="-50%" y="-50%" width="200%" height="200%">' +
-    '<feGaussianBlur stdDeviation="3" result="b"/>' +
-    '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+  const f = svgEl(defs, 'filter', { id: 'gl', x: '-50%', y: '-50%', width: '200%', height: '200%' });
+  svgEl(f, 'feGaussianBlur', { stdDeviation: '3', result: 'b' });
+  const m = svgEl(f, 'feMerge', {});
+  svgEl(m, 'feMergeNode', { in: 'b' });
+  svgEl(m, 'feMergeNode', { in: 'SourceGraphic' });
 }
 
 // 速度→ゲージ色（寒色→暖色）
