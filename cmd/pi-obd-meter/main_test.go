@@ -331,7 +331,7 @@ func TestCorsMiddleware_OPTIONSRequest(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status: got %d, want 204", rec.Code)
 	}
-	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, OPTIONS" {
+	if rec.Header().Get("Access-Control-Allow-Methods") != "GET, POST, OPTIONS" {
 		t.Error("missing CORS methods header")
 	}
 }

@@ -19,6 +19,21 @@ CONFIG="/opt/pi-obd-meter/configs/config.json"
 PORT=$(grep -o '"local_api_port":[[:space:]]*[0-9]*' "$CONFIG" | grep -o '[0-9]*')
 PORT="${PORT:-9090}"
 
+# WiFi接続を待つ（未接続ならキオスク起動しない → コンソール操作可能）
+echo "Waiting for WiFi connection..."
+WIFI_TIMEOUT=30
+for i in $(seq 1 $WIFI_TIMEOUT); do
+    if ip addr show wlan0 2>/dev/null | grep -q 'inet '; then
+        echo "WiFi connected."
+        break
+    fi
+    if [ "$i" -eq "$WIFI_TIMEOUT" ]; then
+        echo "WiFi not connected after ${WIFI_TIMEOUT}s — skipping kiosk to allow manual config."
+        exit 0
+    fi
+    sleep 1
+done
+
 # pi-obd-meterの起動を待つ
 echo "Waiting for pi-obd-meter API on port ${PORT}..."
 until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do

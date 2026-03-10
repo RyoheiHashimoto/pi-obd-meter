@@ -99,6 +99,27 @@ async function initApp() {
     document.getElementById('version').textContent = conf.version;
   }
 
+  // --- バージョン長押しでキオスク終了（3秒） ---
+  const verEl = document.getElementById('version');
+  let kioskTimer = null;
+  const KIOSK_HOLD_MS = 3000;
+
+  function startHold(e) {
+    e.preventDefault();
+    kioskTimer = setTimeout(async () => {
+      showToast('Closing...');
+      try { await fetch('/api/kiosk/stop', { method: 'POST' }); } catch {}
+    }, KIOSK_HOLD_MS);
+  }
+  function cancelHold() { if (kioskTimer) { clearTimeout(kioskTimer); kioskTimer = null; } }
+
+  verEl.addEventListener('touchstart', startHold, { passive: false });
+  verEl.addEventListener('touchend', cancelHold);
+  verEl.addEventListener('touchmove', cancelHold);
+  verEl.addEventListener('mousedown', startHold);
+  verEl.addEventListener('mouseup', cancelHold);
+  verEl.addEventListener('mouseleave', cancelHold);
+
   gs = buildSpeedGauge('gs', {
     cx: 280, cy: 260, r: 220,
     min: 0, max: conf.max_speed_kmh, color: '#78909c',

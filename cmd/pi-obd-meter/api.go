@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/web"
@@ -34,7 +35,7 @@ type healthResponse struct {
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -96,6 +97,19 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(app.maintMgr.CheckAll())
+	})
+
+	// --- キオスク停止API（タッチパネルから Chromium を終了する） ---
+	mux.HandleFunc("POST /api/kiosk/stop", func(w http.ResponseWriter, r *http.Request) {
+		slog.Info("キオスク停止リクエスト受信")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "closing"})
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			if err := exec.Command("pkill", "chromium").Run(); err != nil {
+				slog.Warn("Chromium停止失敗", "error", err)
+			}
+		}()
 	})
 
 	addr := fmt.Sprintf(":%d", app.cfg.LocalAPIPort)
