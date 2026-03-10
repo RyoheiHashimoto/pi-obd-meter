@@ -2,7 +2,7 @@ name: Deploy GAS
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'gas/**'
 
