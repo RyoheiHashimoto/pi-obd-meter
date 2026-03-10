@@ -142,6 +142,13 @@ func main() {
 	var errCount int
 	var wifiConnected bool
 
+	// OBD値フィルター（スパイク除去 + EMA平滑化）
+	speedFilter := newOBDFilter(0.5, 20)    // 速度: max 20km/h per 150ms
+	rpmFilter := newOBDFilter(0.5, 2000)    // RPM: max 2000 per 150ms
+	loadFilter := newOBDFilter(0.4, 40)     // 負荷: max 40% per 150ms
+	throttleFilter := newOBDFilter(0.5, 60) // スロットル: max 60% per 150ms
+	coolantFilter := newOBDFilter(0.3, 5)   // 水温: max 5°C per 750ms
+
 	// 燃費スムージング（EMA: 指数移動平均）
 	const fuelEmaAlpha = 0.3
 	var smoothedEco, smoothedRate float64
@@ -188,6 +195,15 @@ func main() {
 				continue
 			}
 			errCount = 0
+
+			// OBD値フィルタリング（ノイズ・スパイク除去）
+			data.SpeedKmh = speedFilter.Update(data.SpeedKmh)
+			data.RPM = rpmFilter.Update(data.RPM)
+			data.EngineLoad = loadFilter.Update(data.EngineLoad)
+			data.ThrottlePos = throttleFilter.Update(data.ThrottlePos)
+			if isFull {
+				data.CoolantTemp = coolantFilter.Update(data.CoolantTemp)
+			}
 
 			// 累計走行距離の積算（トリップとは別にメンテナンス用に独立管理）
 			dtSec := float64(fastIntervalMs) / 1000.0
@@ -252,6 +268,12 @@ func main() {
 				if obdConnected {
 					sampleCount = 0
 					errCount = 0
+					speedFilter.Reset()
+					rpmFilter.Reset()
+					loadFilter.Reset()
+					throttleFilter.Reset()
+					coolantFilter.Reset()
+					smoothedValid = false
 				}
 			}
 
