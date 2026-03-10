@@ -8,6 +8,7 @@ const SIM_CYCLE_S = 16;
 
 export function createSimulation(gauge, updateThrottle, dom, setDot, speedColor, conf) {
   let t = 0;
+  let timerId = null;
 
   function tick() {
     t += 0.02;
@@ -51,6 +52,7 @@ export function createSimulation(gauge, updateThrottle, dom, setDot, speedColor,
   }
 
   return {
-    start() { setInterval(tick, SIM_TICK_MS); }
+    start() { timerId = setInterval(tick, SIM_TICK_MS); },
+    stop() { if (timerId) { clearInterval(timerId); timerId = null; } }
   };
 }

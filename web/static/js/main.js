@@ -79,6 +79,7 @@ async function fetchRealtime() {
     const resp = await fetch('/api/realtime');
     if (!resp.ok) throw new Error(resp.status);
     connected = true;
+    if (sim) { sim.stop(); sim = null; }
     applyData(await resp.json());
   } catch {
     if (connected || !sim) {
