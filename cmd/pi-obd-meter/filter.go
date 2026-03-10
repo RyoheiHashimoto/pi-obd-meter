@@ -2,12 +2,11 @@ package main
 
 import "math"
 
-// obdFilter はOBD値のスパイク除去 + EMA平滑化フィルター。
+// obdFilter はOBD値のスパイク除去フィルター。
 // 通信ノイズで値が飛ぶのを防ぐ。
 type obdFilter struct {
-	alpha       float64 // EMA係数（0-1、大きいほど追従が速い）
 	maxDelta    float64 // 1サイクルの最大許容変動量
-	value       float64 // 現在のスムーズ値
+	value       float64 // 現在の値
 	valid       bool    // 初期化済みか
 	rejectCount int     // 連続リジェクト回数
 }
@@ -15,8 +14,8 @@ type obdFilter struct {
 // 連続リジェクト上限。超えたら値が本当に変わったとみなして受入
 const maxRejects = 3
 
-func newOBDFilter(alpha, maxDelta float64) *obdFilter {
-	return &obdFilter{alpha: alpha, maxDelta: maxDelta}
+func newOBDFilter(maxDelta float64) *obdFilter {
+	return &obdFilter{maxDelta: maxDelta}
 }
 
 // Update は新しい値をフィルタリングして返す
@@ -36,9 +35,9 @@ func (f *obdFilter) Update(raw float64) float64 {
 		return f.value
 	}
 
-	// EMA平滑化
+	// スパイク通過 → 値を更新
 	f.rejectCount = 0
-	f.value = f.alpha*raw + (1-f.alpha)*f.value
+	f.value = raw
 	return f.value
 }
 

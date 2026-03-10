@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -143,18 +142,12 @@ func main() {
 	var errCount int
 	var wifiConnected bool
 
-	// OBD値フィルター（スパイク除去 + EMA平滑化）
-	speedFilter := newOBDFilter(0.5, 20)    // 速度: max 20km/h per 150ms
-	rpmFilter := newOBDFilter(0.5, 2000)    // RPM: max 2000 per 150ms
-	loadFilter := newOBDFilter(0.4, 40)     // 負荷: max 40% per 150ms
-	throttleFilter := newOBDFilter(0.5, 60) // スロットル: max 60% per 150ms
-	coolantFilter := newOBDFilter(0.3, 5)   // 水温: max 5°C per 750ms
-
-	// 燃費スムージング（EMA: 指数移動平均）
-	// rateのみ平滑化し、ecoは speed/smoothedRate で都度算出（比率の独立平滑化による乖離を防止）
-	const fuelEmaAlpha = 0.3
-	var smoothedRate float64
-	var smoothedValid bool
+	// OBD値フィルター（スパイク除去のみ）
+	speedFilter := newOBDFilter(20)    // 速度: max 20km/h per 150ms
+	rpmFilter := newOBDFilter(2000)    // RPM: max 2000 per 150ms
+	loadFilter := newOBDFilter(40)     // 負荷: max 40% per 150ms
+	throttleFilter := newOBDFilter(60) // スロットル: max 60% per 150ms
+	coolantFilter := newOBDFilter(5)   // 水温: max 5°C per 750ms
 	const maxConsecutiveErrors = 10
 	for {
 		select {
@@ -213,28 +206,7 @@ func main() {
 			if isFull {
 				lastCoolantTemp = data.CoolantTemp
 				wifiConnected = checkWiFi()
-				rawEco, rawRate := calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
-
-				// rateのみEMA平滑化。ecoはspeed/smoothedRateで都度算出
-				// エンブレ(-1)・低速(0)はそのまま通す
-				if rawEco > 0 && smoothedValid {
-					smoothedRate = fuelEmaAlpha*rawRate + (1-fuelEmaAlpha)*smoothedRate
-					lastFuelRateLH = smoothedRate
-					if data.SpeedKmh >= minDisplaySpeedKm && smoothedRate > 0.01 {
-						lastFuelEconomy = math.Min(data.SpeedKmh/smoothedRate, maxDisplayKmL)
-					} else {
-						lastFuelEconomy = 0
-					}
-				} else {
-					lastFuelEconomy = rawEco
-					lastFuelRateLH = rawRate
-					if rawEco > 0 {
-						smoothedRate = rawRate
-						smoothedValid = true
-					} else {
-						smoothedValid = false
-					}
-				}
+				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
 			}
 
 			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
@@ -278,7 +250,6 @@ func main() {
 					loadFilter.Reset()
 					throttleFilter.Reset()
 					coolantFilter.Reset()
-					smoothedValid = false
 				}
 			}
 
