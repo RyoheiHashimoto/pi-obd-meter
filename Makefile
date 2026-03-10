@@ -63,6 +63,14 @@ V ?= $(shell git describe --tags --abbrev=0 2>/dev/null | awk -F. '{print $$1"."
 release:
 	@if [ -z "$(V)" ]; then echo "Error: タグが見つかりません。V=v0.1.0 で指定してください"; exit 1; fi
 	@echo "Releasing $(V)..."
+	@CURRENT=$$(git branch --show-current); \
+	if [ "$$CURRENT" = "develop" ]; then \
+		echo "develop → main にマージ中..."; \
+		git checkout main && git pull origin main && git merge develop --no-edit && git push origin main; \
+	elif [ "$$CURRENT" != "main" ]; then \
+		echo "Error: release は main または develop ブランチで実行してください"; exit 1; \
+	fi
 	git tag $(V)
 	git push origin $(V)
+	@git checkout develop 2>/dev/null || true
 	@echo "✓ $(V) — GitHub Actions がリリースを作成します"
