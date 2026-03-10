@@ -141,6 +141,11 @@ func main() {
 	var lastFuelRateLH float64
 	var errCount int
 	var wifiConnected bool
+
+	// 燃費スムージング（EMA: 指数移動平均）
+	const fuelEmaAlpha = 0.3
+	var smoothedEco, smoothedRate float64
+	var smoothedValid bool
 	const maxConsecutiveErrors = 10
 	for {
 		select {
@@ -190,7 +195,25 @@ func main() {
 			if isFull {
 				lastCoolantTemp = data.CoolantTemp
 				wifiConnected = checkWiFi()
-				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
+				rawEco, rawRate := calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
+
+				// 正の瞬間燃費のみEMA平滑化。エンブレ(-1)・低速(0)はそのまま通す
+				if rawEco > 0 && smoothedValid {
+					smoothedEco = fuelEmaAlpha*rawEco + (1-fuelEmaAlpha)*smoothedEco
+					smoothedRate = fuelEmaAlpha*rawRate + (1-fuelEmaAlpha)*smoothedRate
+					lastFuelEconomy = smoothedEco
+					lastFuelRateLH = smoothedRate
+				} else {
+					lastFuelEconomy = rawEco
+					lastFuelRateLH = rawRate
+					if rawEco > 0 {
+						smoothedEco = rawEco
+						smoothedRate = rawRate
+						smoothedValid = true
+					} else {
+						smoothedValid = false
+					}
+				}
 			}
 
 			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
