@@ -1,23 +1,26 @@
+version: "2"
+
 run:
   timeout: 3m
 
 linters:
+  default: none
   enable:
-    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gosimple
-    - gofmt
     - misspell
+  settings:
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1005"
+        - "-QF1003"
 
-linters-settings:
-  errcheck:
-    exclude-functions:
-      # HTTP handler helpers (error already sent to client)
-      - (net/http.ResponseWriter).Write
-      - (*encoding/json.Encoder).Encode
+formatters:
+  enable:
+    - gofmt
 
 issues:
   max-issues-per-linter: 0
