@@ -192,9 +192,9 @@ func TestTrackerFuelAccumulation(t *testing.T) {
 func TestTrackerAvgFuelEconomy(t *testing.T) {
 	tr := newTestTracker(t)
 	// 60 km/h、600 L/h（大きいレートで閾値を素早く超える）
-	// 600/3600*0.015 ≈ 0.0025 L/tick → 4回で 0.01L を超える
+	// 600/3600*0.015 ≈ 0.0025 L/tick → 50回で 0.1L を超える
 	// 期待平均燃費 = 60/600 = 0.1 km/L
-	feedWithFuel(tr, 60, 600.0, 20)
+	feedWithFuel(tr, 60, 600.0, 50)
 
 	avg := tr.AvgFuelEconomy()
 	if avg < 0.05 || avg > 0.5 {

@@ -28,6 +28,7 @@ cmd_deploy() {
   echo "Deploying to ${PI}:${DEST}..."
   rsync -avz "$ROOT/bin/" "${PI}:${DEST}/"
   rsync -avz "$ROOT/configs/" "${PI}:${DEST}/configs/"
+  rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
   ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
   echo "✓ デプロイ完了"
 }

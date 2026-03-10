@@ -73,7 +73,7 @@ export function updateIndicators(dom, d, conf) {
 
   // ECO — エンブレ/停車/クリープ時は平均燃費(▸付き)、走行中は瞬間燃費
   const eco = d.fuel_economy || 0;
-  const avgEco = d.avg_fuel_economy || 0;
+  const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
   const fuelRate = d.fuel_rate_lh || 0;
   const speed = d.speed_kmh || 0;
   if (eco < 0) {
@@ -111,7 +111,7 @@ export function updateIndicators(dom, d, conf) {
   // TRIP
   const tripKm = d.trip_km || 0;
   if (tripKm >= 0.1) {
-    dom.trip.val.textContent = tripKm < 10 ? tripKm.toFixed(1) : Math.round(tripKm);
+    dom.trip.val.textContent = tripKm.toFixed(1);
     setDot(dom.trip, tripKm < 300 ? 'green' : tripKm <= 500 ? 'orange' : 'red');
   } else {
     dom.trip.val.textContent = '0';

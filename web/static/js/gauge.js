@@ -39,17 +39,9 @@ function svgEl(parent, tag, attrs) {
   return e;
 }
 
-// グロー効果用SVGフィルター（1回だけ生成）
-let glowFilterCreated = false;
-function ensureGlowFilter(svg) {
-  if (glowFilterCreated) return;
-  glowFilterCreated = true;
-  const defs = svgEl(svg, 'defs', {});
-  const f = svgEl(defs, 'filter', { id: 'gl', x: '-50%', y: '-50%', width: '200%', height: '200%' });
-  svgEl(f, 'feGaussianBlur', { stdDeviation: '3', result: 'b' });
-  const m = svgEl(f, 'feMerge', {});
-  svgEl(m, 'feMergeNode', { in: 'b' });
-  svgEl(m, 'feMergeNode', { in: 'SourceGraphic' });
+// グロー効果（CSS drop-shadow）をSVG要素に適用
+function applyGlow(el, color) {
+  el.style.filter = `drop-shadow(0 0 6px ${color})`;
 }
 
 // 速度→ゲージ色（寒色→暖色）
@@ -76,6 +68,7 @@ function thrLerp() {
   const hue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
   const col = pct > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#333';
   thrArc.setAttribute('stroke', col);
+  applyGlow(thrArc, col);
   thrLabel.setAttribute('fill', col);
   thrRafId = Math.abs(thrCur - thrTgt) > LERP_STOP ? requestAnimationFrame(thrLerp) : 0;
 }
@@ -95,7 +88,6 @@ export function buildSpeedGauge(svgId, cfg) {
   thrCy = cy;
   thrR = throttleR;
 
-  ensureGlowFilter(svg);
 
   // Track (thick bezel)
   svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -120,19 +112,21 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // Throttle inner arc (track)
   svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  thrArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+  thrArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // THROTTLE label
   thrLabel = svgEl(svg, 'text', { x: cx, y: cy - Math.round(throttleR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
   thrLabel.textContent = 'THROTTLE';
 
   // Value arc
-  const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round', filter: 'url(#gl)' });
+  const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round' });
+  applyGlow(va, cfg.color);
 
   // Needle
   const [nx0, ny0] = polarToXY(cx, cy, r - 24, ARC_START);
   const [tx0, ty0] = polarToXY(cx, cy, -16, ARC_START);
-  const nd = svgEl(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', filter: 'url(#gl)', 'transform-origin': `${cx}px ${cy}px` });
+  const nd = svgEl(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` });
+  applyGlow(nd, cfg.color);
   nd.style.transition = 'transform 0.3s ease-out';
 
   // Center dot
@@ -165,7 +159,7 @@ export function buildSpeedGauge(svgId, cfg) {
       const clamped = Math.max(min, Math.min(max, value));
       const angle = ARC_START + ((clamped - min) / (max - min)) * ARC_SWEEP;
       nd.style.transform = `rotate(${angle - ARC_START}deg)`;
-      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); }
+      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); applyGlow(nd, col); applyGlow(va, col); }
       if (!rafId) rafId = requestAnimationFrame(lerp);
     }
   };

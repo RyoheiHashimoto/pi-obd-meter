@@ -168,7 +168,7 @@ func (t *Tracker) DistanceKm() float64 {
 func (t *Tracker) AvgFuelEconomy() float64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.current.FuelConsumptionL < 0.01 {
+	if t.current.FuelConsumptionL < 0.05 {
 		return 0
 	}
 	return t.current.DistanceKm / t.current.FuelConsumptionL

@@ -193,7 +193,12 @@ func main() {
 				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
 			}
 
-			app.tracker.Update(data.SpeedKmh, lastFuelRateLH)
+			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
+			trackerFuelRate := lastFuelRateLH
+			if lastFuelEconomy < 0 {
+				trackerFuelRate = 0
+			}
+			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			app.updateRealtimeData(RealtimeData{
