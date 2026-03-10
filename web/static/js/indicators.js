@@ -88,9 +88,9 @@ export function updateIndicators(dom, d, conf) {
   } else if (eco < 0.1) {
     // 停車・クリープ: 平均燃費を表示
     if (avgEco > 0.1) {
-      if (avgEco >= 15)      setDot(dom.eco, 'green');
-      else if (avgEco >= 10) setDot(dom.eco, 'orange');
-      else                   setDot(dom.eco, 'red');
+      if (avgEco >= conf.eco_kmpl_green)      setDot(dom.eco, 'green');
+      else if (avgEco >= conf.eco_kmpl_orange) setDot(dom.eco, 'orange');
+      else                                     setDot(dom.eco, 'red');
       dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
     } else {
       setDot(dom.eco, null);
@@ -111,9 +111,9 @@ export function updateIndicators(dom, d, conf) {
     else                                   setDot(dom.eco, 'red');
     dom.eco.val.textContent = eco.toFixed(1);
   } else {
-    if (eco >= 15)      setDot(dom.eco, 'green');
-    else if (eco >= 10) setDot(dom.eco, 'orange');
-    else                setDot(dom.eco, 'red');
+    if (eco >= conf.eco_kmpl_green)      setDot(dom.eco, 'green');
+    else if (eco >= conf.eco_kmpl_orange) setDot(dom.eco, 'orange');
+    else                                  setDot(dom.eco, 'red');
     dom.eco.val.textContent = eco.toFixed(1);
   }
 
@@ -121,7 +121,7 @@ export function updateIndicators(dom, d, conf) {
   const tripKm = d.trip_km || 0;
   if (tripKm >= 0.1) {
     dom.trip.val.textContent = tripKm.toFixed(1);
-    setDot(dom.trip, tripKm < 300 ? 'green' : tripKm <= 500 ? 'orange' : 'red');
+    setDot(dom.trip, tripKm < conf.trip_warn_km ? 'green' : tripKm <= conf.trip_danger_km ? 'orange' : 'red');
   } else {
     dom.trip.val.textContent = '0';
     setDot(dom.trip, 'green');

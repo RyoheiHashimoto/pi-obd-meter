@@ -2,11 +2,16 @@
 // Main — エントリポイント + API ポーリング + Toast
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, speedColor } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline } from './gauge.js';
 import { createIndicators, updateIndicators, setDot } from './indicators.js';
 import { createSimulation } from './sim.js';
 
-const DEFAULTS = { max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9 };
+const DEFAULTS = {
+  max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,
+  throttle_idle_pct: 11.5,
+  eco_kmpl_green: 15, eco_kmpl_orange: 10,
+  trip_warn_km: 300, trip_danger_km: 500,
+};
 const POLL_INTERVAL_MS = 200;
 const TOAST_DURATION_MS = 5000;
 const ALERT_INTERVAL_MS = 5500;
@@ -79,7 +84,7 @@ async function fetchRealtime() {
     if (connected || !sim) {
       connected = false;
       if (!sim) {
-        sim = createSimulation(gs, updateThrottle, dom, setDot, speedColor);
+        sim = createSimulation(gs, updateThrottle, dom, setDot, speedColor, conf);
         sim.start();
       }
     }
@@ -94,6 +99,8 @@ async function initApp() {
     const resp = await fetch('/api/config');
     if (resp.ok) conf = { ...DEFAULTS, ...await resp.json() };
   } catch { /* file:// mode */ }
+
+  setThrottleIdleBaseline(conf.throttle_idle_pct);
 
   if (conf.version) {
     document.getElementById('version').textContent = conf.version;

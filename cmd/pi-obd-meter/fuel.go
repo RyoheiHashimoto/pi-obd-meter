@@ -2,12 +2,12 @@ package main
 
 // 燃費計算用の物理定数
 const (
-	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
-	gasolineDensityGL = 750.0 // ガソリン密度 (g/L)
-	airDensityGL      = 1.225 // 標準大気密度 (g/L = kg/m³)
-	idleFuelRateLH    = 0.8   // アイドリング時の最低燃料消費量 (L/h)
-	maxDisplayKmL     = 99.9  // 燃費表示の上限値 (km/L)
-	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
+	stoichiometricAFR  = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
+	gasolineDensityGL  = 750.0 // ガソリン密度 (g/L)
+	airDensityGL       = 1.225 // 標準大気密度 (g/L = kg/m³)
+	idleFuelRateCoeff  = 0.6   // アイドル燃料消費係数 (L/h per L排気量)
+	maxDisplayKmL      = 99.9  // 燃費表示の上限値 (km/L)
+	minDisplaySpeedKm  = 10.0  // 燃費表示の最低速度 (km/h)
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
@@ -27,7 +27,7 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 		// 4ストロークなので吸気は2回転に1回
 		// 体積効率を負荷%で近似
 		if rpm < 100 || load < 0.1 {
-			fuelRateLH = idleFuelRateLH
+			fuelRateLH = idleFuelRateCoeff * displacementL
 		} else {
 			airFlowEstimate := (rpm / 2.0) * (load / 100.0) * displacementL / 60.0 // L/s of air
 			airMassGS := airFlowEstimate * airDensityGL                            // g/s

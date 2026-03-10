@@ -83,8 +83,9 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 	if got != -1 {
 		t.Errorf("engine braking (load=0): got %.1f, want -1", got)
 	}
-	if rateLH != idleFuelRateLH {
-		t.Errorf("engine braking: rateLH got %.2f, want %.2f", rateLH, idleFuelRateLH)
+	expectedIdleRate := idleFuelRateCoeff * 1.3
+	if rateLH != expectedIdleRate {
+		t.Errorf("engine braking: rateLH got %.2f, want %.2f", rateLH, expectedIdleRate)
 	}
 	// 負荷3%でもエンブレ判定（<5%）
 	got3, _ := calcFuelEconomy(60, 2000, 3, 0, false, 1.3)
@@ -401,6 +402,12 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 	}
 	if cfg.EngineDisplacementL != 1.3 {
 		t.Errorf("EngineDisplacementL: got %.1f, want 1.3", cfg.EngineDisplacementL)
+	}
+	if cfg.ThrottleIdlePct != 11.5 {
+		t.Errorf("ThrottleIdlePct: got %.1f, want 11.5", cfg.ThrottleIdlePct)
+	}
+	if cfg.FuelTankL != 40 {
+		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
 	}
 }
 

@@ -13,7 +13,7 @@ const LERP_THR_SPEED = 0.2;
 const LERP_THRESHOLD = 0.05;
 const LERP_STOP = 0.01;
 
-const THR_IDLE_BASELINE = 11.5;
+let thrIdleBaseline = 11.5;
 const THR_HUE_MAX = 210;
 
 // 極座標→直交座標（12時=0°、時計回り正）
@@ -73,8 +73,10 @@ function thrLerp() {
   thrRafId = Math.abs(thrCur - thrTgt) > LERP_STOP ? requestAnimationFrame(thrLerp) : 0;
 }
 
+export function setThrottleIdleBaseline(val) { thrIdleBaseline = val; }
+
 export function updateThrottle(pct) {
-  thrTgt = Math.max(0, pct - THR_IDLE_BASELINE);
+  thrTgt = Math.max(0, pct - thrIdleBaseline);
   if (!thrRafId) thrRafId = requestAnimationFrame(thrLerp);
 }
 

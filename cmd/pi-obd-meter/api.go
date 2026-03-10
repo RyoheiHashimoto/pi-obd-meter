@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"os/exec"
 	"time"
@@ -15,10 +16,15 @@ import (
 
 // configResponse は /api/config のレスポンス
 type configResponse struct {
-	MaxSpeedKmh int     `json:"max_speed_kmh"`
-	Version     string  `json:"version"`
-	EcoLHGreen  float64 `json:"eco_lh_green"`
-	EcoLHRed    float64 `json:"eco_lh_red"`
+	MaxSpeedKmh     int     `json:"max_speed_kmh"`
+	Version         string  `json:"version"`
+	EcoLHGreen      float64 `json:"eco_lh_green"`
+	EcoLHRed        float64 `json:"eco_lh_red"`
+	ThrottleIdlePct float64 `json:"throttle_idle_pct"`
+	EcoKmplGreen    float64 `json:"eco_kmpl_green"`
+	EcoKmplOrange   float64 `json:"eco_kmpl_orange"`
+	TripWarnKm      float64 `json:"trip_warn_km"`
+	TripDangerKm    float64 `json:"trip_danger_km"`
 }
 
 // healthResponse は /api/health のレスポンス
@@ -65,11 +71,20 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		d := app.cfg.EngineDisplacementL
+		ecoKmplGreen := math.Round(20/d*10) / 10
+		ecoKmplOrange := math.Round(13/d*10) / 10
+		estRange := app.cfg.FuelTankL * ecoKmplGreen
 		json.NewEncoder(w).Encode(configResponse{
-			MaxSpeedKmh: app.cfg.MaxSpeedKmh,
-			Version:     version,
-			EcoLHGreen:  1.5 * app.cfg.EngineDisplacementL,
-			EcoLHRed:    3.0 * app.cfg.EngineDisplacementL,
+			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,
+			Version:         version,
+			EcoLHGreen:      1.5 * d,
+			EcoLHRed:        3.0 * d,
+			ThrottleIdlePct: app.cfg.ThrottleIdlePct,
+			EcoKmplGreen:    ecoKmplGreen,
+			EcoKmplOrange:   ecoKmplOrange,
+			TripWarnKm:      math.Round(estRange * 0.5),
+			TripDangerKm:    math.Round(estRange * 0.85),
 		})
 	})
 

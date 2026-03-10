@@ -6,7 +6,7 @@
 const SIM_TICK_MS = 50;
 const SIM_CYCLE_S = 16;
 
-export function createSimulation(gauge, updateThrottle, dom, setDot, speedColor) {
+export function createSimulation(gauge, updateThrottle, dom, setDot, speedColor, conf) {
   let t = 0;
 
   function tick() {
@@ -46,7 +46,7 @@ export function createSimulation(gauge, updateThrottle, dom, setDot, speedColor)
     setDot(dom.trip, 'green');  dom.trip.val.textContent = '12.3';
     setDot(dom.temp, 'green');  dom.temp.val.textContent = '82\u00B0';
 
-    setDot(dom.eco, fuelEco >= 15 ? 'green' : fuelEco >= 10 ? 'orange' : 'red');
+    setDot(dom.eco, fuelEco >= conf.eco_kmpl_green ? 'green' : fuelEco >= conf.eco_kmpl_orange ? 'orange' : 'red');
     dom.eco.val.textContent = fuelEco.toFixed(1);
   }
 
