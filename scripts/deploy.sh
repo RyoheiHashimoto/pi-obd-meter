@@ -29,6 +29,8 @@ cmd_deploy() {
   rsync -avz "$ROOT/bin/" "${PI}:${DEST}/"
   rsync -avz "$ROOT/configs/" "${PI}:${DEST}/configs/"
   rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
+  ssh "$PI" "mkdir -p ${DEST}/scripts"
+  rsync -avz "$ROOT/scripts/auto-update.sh" "${PI}:${DEST}/scripts/auto-update.sh"
   ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
   echo "✓ デプロイ完了"
 }
@@ -47,6 +49,13 @@ cmd_setup() {
   echo "Installing kiosk service..."
   rsync -avz "$ROOT/configs/kiosk.service" "${PI}:/tmp/kiosk.service"
   ssh "$PI" "sudo cp /tmp/kiosk.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable kiosk"
+  # 自動更新タイマー登録
+  echo "Installing auto-update timer..."
+  rsync -avz "$ROOT/scripts/auto-update.sh" "${PI}:${DEST}/scripts/auto-update.sh"
+  ssh "$PI" "chmod +x ${DEST}/scripts/auto-update.sh"
+  rsync -avz "$ROOT/configs/auto-update.service" "${PI}:/tmp/auto-update.service"
+  rsync -avz "$ROOT/configs/auto-update.timer" "${PI}:/tmp/auto-update.timer"
+  ssh "$PI" "sudo cp /tmp/auto-update.service /tmp/auto-update.timer /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now auto-update.timer"
   cmd_deploy
   echo "✓ 初期セットアップ完了"
 }

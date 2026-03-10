@@ -1,0 +1,8 @@
+[Unit]
+Description=Pi OBD Meter auto-update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pi-obd-meter/scripts/auto-update.sh

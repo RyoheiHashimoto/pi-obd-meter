@@ -1,0 +1,54 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches: [develop]
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build ARM64 binaries
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags "-s -w -X main.version=dev-${SHORT_SHA}" \
+            -o pi-obd-meter ./cmd/pi-obd-meter
+          GOOS=linux GOARCH=arm64 go build \
+            -ldflags "-s -w -X main.version=dev-${SHORT_SHA}" \
+            -o pi-obd-scanner ./cmd/pi-obd-scanner
+
+      - name: Package
+        run: |
+          tar czf pi-obd-meter-dev.tar.gz \
+            pi-obd-meter \
+            pi-obd-scanner \
+            web/static/
+
+      - name: Update dev-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 既存の dev-latest リリースを削除（あれば）
+          gh release delete dev-latest --yes 2>/dev/null || true
+          git tag -d dev-latest 2>/dev/null || true
+          git push origin :refs/tags/dev-latest 2>/dev/null || true
+
+          # 新しい dev-latest リリースを作成
+          git tag dev-latest
+          git push origin dev-latest
+          gh release create dev-latest \
+            --title "Development Build (${GITHUB_SHA::7})" \
+            --notes "Auto-built from develop branch at $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Commit: ${GITHUB_SHA}" \
+            --prerelease \
+            pi-obd-meter-dev.tar.gz

@@ -1,0 +1,9 @@
+[Unit]
+Description=Pi OBD Meter auto-update check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
