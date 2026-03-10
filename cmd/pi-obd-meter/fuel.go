@@ -13,7 +13,8 @@ const (
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
 // MAF対応: 燃料レート = MAF(g/s) × 3600 / (14.7 × 750) L/h
 // MAF非対応: 燃料レート ≈ RPM × 負荷% × 排気量 / 定数 L/h
-func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL float64) (kmL, rateLH float64) {
+// correction は燃料レート補正係数（理論値と実燃費の乖離を補正、1.0=補正なし）
+func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL, correction float64) (kmL, rateLH float64) {
 	if speed < 0.5 && rpm < 100 {
 		return 0, 0 // エンジン停止
 	}
@@ -33,6 +34,11 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 			airMassGS := airFlowEstimate * airDensityGL                            // g/s
 			fuelRateLH = airMassGS * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
 		}
+	}
+
+	// 補正係数を適用（暖機増量・過渡補正等の理論値との乖離を補正）
+	if correction > 0 {
+		fuelRateLH *= correction
 	}
 
 	if fuelRateLH < 0.01 {

@@ -24,6 +24,7 @@ type Config struct {
 	ThrottleIdlePct      float64                  `json:"throttle_idle_pct"`
 	ThrottleMaxPct       float64                  `json:"throttle_max_pct"`
 	FuelTankL            float64                  `json:"fuel_tank_l"`
+	FuelRateCorrection   float64                  `json:"fuel_rate_correction"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
@@ -62,6 +63,7 @@ func loadConfig(path string) Config {
 		ThrottleIdlePct:     11.5,
 		ThrottleMaxPct:      78,
 		FuelTankL:           40,
+		FuelRateCorrection:  1.3,
 		Brightness:          display.DefaultConfig(),
 	}
 

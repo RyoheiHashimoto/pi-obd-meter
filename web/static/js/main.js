@@ -133,7 +133,7 @@ async function initApp() {
     cx: 280, cy: 260, r: 220,
     min: 0, max: conf.max_speed_kmh, color: '#78909c',
     unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
-    fmt: v => v > 0.5 ? String(Math.round(v)) : '--'
+    fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
   // fetch完了後に次を予約（setIntervalだとリクエスト重複の恐れ）

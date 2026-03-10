@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -150,8 +151,9 @@ func main() {
 	coolantFilter := newOBDFilter(0.3, 5)   // 水温: max 5°C per 750ms
 
 	// 燃費スムージング（EMA: 指数移動平均）
+	// rateのみ平滑化し、ecoは speed/smoothedRate で都度算出（比率の独立平滑化による乖離を防止）
 	const fuelEmaAlpha = 0.3
-	var smoothedEco, smoothedRate float64
+	var smoothedRate float64
 	var smoothedValid bool
 	const maxConsecutiveErrors = 10
 	for {
@@ -211,19 +213,22 @@ func main() {
 			if isFull {
 				lastCoolantTemp = data.CoolantTemp
 				wifiConnected = checkWiFi()
-				rawEco, rawRate := calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL)
+				rawEco, rawRate := calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
 
-				// 正の瞬間燃費のみEMA平滑化。エンブレ(-1)・低速(0)はそのまま通す
+				// rateのみEMA平滑化。ecoはspeed/smoothedRateで都度算出
+				// エンブレ(-1)・低速(0)はそのまま通す
 				if rawEco > 0 && smoothedValid {
-					smoothedEco = fuelEmaAlpha*rawEco + (1-fuelEmaAlpha)*smoothedEco
 					smoothedRate = fuelEmaAlpha*rawRate + (1-fuelEmaAlpha)*smoothedRate
-					lastFuelEconomy = smoothedEco
 					lastFuelRateLH = smoothedRate
+					if data.SpeedKmh >= minDisplaySpeedKm && smoothedRate > 0.01 {
+						lastFuelEconomy = math.Min(data.SpeedKmh/smoothedRate, maxDisplayKmL)
+					} else {
+						lastFuelEconomy = 0
+					}
 				} else {
 					lastFuelEconomy = rawEco
 					lastFuelRateLH = rawRate
 					if rawEco > 0 {
-						smoothedEco = rawEco
 						smoothedRate = rawRate
 						smoothedValid = true
 					} else {

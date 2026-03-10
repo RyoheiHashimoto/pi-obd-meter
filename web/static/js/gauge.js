@@ -140,7 +140,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // Number display
   const numY = cy + r * 0.35;
   const nm = svgEl(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
-  nm.textContent = '--';
+  nm.textContent = '0';
 
   // Unit label
   const ut = svgEl(svg, 'text', { x: cx, y: numY + numSz * 0.55, class: 'g-unit', fill: '#fff', 'font-size': 28 });
