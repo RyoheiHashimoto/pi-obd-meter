@@ -8,8 +8,8 @@ const ARC_END = 135;
 const ARC_SWEEP = 270;
 const THROTTLE_R_OFFSET = 80;
 
-const LERP_SPEED = 0.15;
-const LERP_THR_SPEED = 0.2;
+const LERP_SPEED = 0.35;
+const LERP_THR_SPEED = 0.4;
 const LERP_THRESHOLD = 0.05;
 const LERP_STOP = 0.01;
 
@@ -132,7 +132,7 @@ export function buildSpeedGauge(svgId, cfg) {
   const [tx0, ty0] = polarToXY(cx, cy, -16, ARC_START);
   const nd = svgEl(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` });
   applyGlow(nd, cfg.color);
-  nd.style.transition = 'transform 0.3s ease-out';
+  nd.style.transition = 'transform 0.15s ease-out';
 
   // Center dot
   svgEl(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });

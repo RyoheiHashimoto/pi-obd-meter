@@ -109,7 +109,7 @@ body {
   background: var(--color-surface);
   border: 2px solid var(--color-dim);
   flex-shrink: 0;
-  transition: background-color 0.5s, box-shadow 0.5s;
+  transition: background-color 0.2s, box-shadow 0.2s;
 }
 .ind-dot.on-green  { background: var(--color-green);  box-shadow: 0 0 var(--ind-glow-radius) var(--color-green); }
 .ind-dot.on-orange { background: var(--color-orange); box-shadow: 0 0 var(--ind-glow-radius) var(--color-orange); }
