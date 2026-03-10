@@ -6,6 +6,7 @@ const ECO_LOW_SPEED_THRESHOLD = 30;
 
 const INDICATOR_DEFS = [
   { id: 'eco',   label: 'ECO' },
+  { id: 'map',   label: 'MAP',   defaultVal: '--' },
   { id: 'trip',  label: 'TRIP',  defaultVal: '--' },
   { id: 'temp',  label: 'TEMP',  defaultVal: '--' },
   { id: 'maint', label: 'MAINT' },
@@ -125,6 +126,20 @@ export function updateIndicators(dom, d, conf) {
   } else {
     dom.trip.val.textContent = '0';
     setDot(dom.trip, 'green');
+  }
+
+  // MAP (Intake Manifold Absolute Pressure)
+  const mapKPa = d.intake_map || 0;
+  if (mapKPa > 0) {
+    dom.map.val.textContent = Math.round(mapKPa);
+    // 大気圧101kPa基準: 低い=バキューム(エンブレ/アイドル)、高い=高負荷
+    if (mapKPa < 35)       setDot(dom.map, 'blue');   // 強い負圧（エンブレ）
+    else if (mapKPa < 60)  setDot(dom.map, 'green');  // 巡航
+    else if (mapKPa < 85)  setDot(dom.map, 'orange'); // 高負荷
+    else                   setDot(dom.map, 'red');     // ほぼ全開
+  } else {
+    dom.map.val.textContent = '--';
+    setDot(dom.map, null);
   }
 
   // TEMP

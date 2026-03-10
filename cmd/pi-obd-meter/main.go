@@ -95,7 +95,7 @@ func main() {
 	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	var reader *obd.Reader
 	obdConnected := false
-	var hasMAF bool
+	var hasMAF, hasMAP bool
 
 	tryConnectOBD := func() bool {
 		if err := elm.Connect(); err != nil {
@@ -110,6 +110,7 @@ func main() {
 		}
 		reader = r
 		hasMAF = reader.HasMAF()
+		hasMAP = reader.HasMAP()
 		fmt.Println("✓ ELM327接続完了")
 		return true
 	}
@@ -149,6 +150,7 @@ func main() {
 	sampleCount := 0
 	statusCount := 0
 	var lastCoolantTemp float64
+	var lastIntakeMAP float64
 	var lastFuelEconomy float64
 	var lastFuelRateLH float64
 	var errCount int
@@ -160,6 +162,7 @@ func main() {
 	loadFilter := newOBDFilter(40)     // 負荷: max 40% per 150ms
 	throttleFilter := newOBDFilter(60) // スロットル: max 60% per 150ms
 	coolantFilter := newOBDFilter(5)   // 水温: max 5°C per 750ms
+	mapFilter := newOBDFilter(30)      // MAP: max 30kPa per 750ms
 	const maxConsecutiveErrors = 10
 	for {
 		select {
@@ -210,6 +213,9 @@ func main() {
 			data.ThrottlePos = throttleFilter.Update(data.ThrottlePos)
 			if isFull {
 				data.CoolantTemp = coolantFilter.Update(data.CoolantTemp)
+				if hasMAP {
+					data.IntakeMAP = mapFilter.Update(data.IntakeMAP)
+				}
 			}
 
 			// 累計走行距離の積算（トリップとは別にメンテナンス用に独立管理）
@@ -217,8 +223,9 @@ func main() {
 
 			if isFull {
 				lastCoolantTemp = data.CoolantTemp
+				lastIntakeMAP = data.IntakeMAP
 				wifiConnected = checkWiFi()
-				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
+				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, data.IntakeMAP, hasMAP, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
 			}
 
 			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
@@ -239,6 +246,7 @@ func main() {
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolantTemp,
+				IntakeMAP:      lastIntakeMAP,
 				Alerts:         app.maintMgr.GetAlerts(),
 				Notification:   app.getNotification(),
 				OBDConnected:   true,
@@ -262,6 +270,7 @@ func main() {
 					loadFilter.Reset()
 					throttleFilter.Reset()
 					coolantFilter.Reset()
+					mapFilter.Reset()
 				}
 			}
 

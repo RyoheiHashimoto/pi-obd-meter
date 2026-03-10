@@ -40,6 +40,7 @@ type RealtimeData struct {
 	AvgFuelEconomy float64              `json:"avg_fuel_economy"`
 	TripKm         float64              `json:"trip_km"`
 	CoolantTemp    float64              `json:"coolant_temp"`
+	IntakeMAP      float64              `json:"intake_map"`
 	Alerts         []maintenance.Status `json:"alerts"`
 	Notification   string               `json:"notification,omitempty"`
 	OBDConnected   bool                 `json:"obd_connected"`
