@@ -96,6 +96,15 @@ export function updateIndicators(dom, d, conf) {
       setDot(dom.eco, null);
       dom.eco.val.textContent = '0';
     }
+  } else if (eco > 30) {
+    // 高燃費（エンブレ等の検出漏れ）: 平均燃費を表示
+    if (avgEco > 0.1) {
+      setDot(dom.eco, 'green');
+      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
+    } else {
+      setDot(dom.eco, 'green');
+      dom.eco.val.textContent = '--';
+    }
   } else if (speed < ECO_LOW_SPEED_THRESHOLD && fuelRate > 0) {
     if (fuelRate < conf.eco_lh_green)      setDot(dom.eco, 'green');
     else if (fuelRate < conf.eco_lh_red)   setDot(dom.eco, 'orange');
@@ -122,7 +131,7 @@ export function updateIndicators(dom, d, conf) {
   const ct = d.coolant_temp || 0;
   if (ct > 0) {
     dom.temp.val.textContent = Math.round(ct) + '\u00B0';
-    setDot(dom.temp, ct < 70 ? 'orange' : ct <= 100 ? 'green' : 'red');
+    setDot(dom.temp, ct < 70 ? 'orange' : ct < 105 ? 'green' : 'red');
   } else {
     dom.temp.val.textContent = '--';
     setDot(dom.temp, null);

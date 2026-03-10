@@ -78,19 +78,23 @@ func TestCalcFuelEconomy_HighLoad(t *testing.T) {
 }
 
 func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
-	// エンブレ: 速度あり、負荷ほぼ0 → idle燃料消費(0.8L/h)で計算
-	// 負荷0 → fuelRate = idleFuelRateLH(0.8) → 0.01以上なので通常計算
+	// エンブレ: 速度あり + 極低負荷 → -1（燃料カット判定）
 	got, rateLH := calcFuelEconomy(60, 2000, 0, 0, false, 1.3)
-	if got <= 0 {
-		t.Errorf("engine braking: got %.1f, expected positive", got)
+	if got != -1 {
+		t.Errorf("engine braking (load=0): got %.1f, want -1", got)
 	}
 	if rateLH != idleFuelRateLH {
 		t.Errorf("engine braking: rateLH got %.2f, want %.2f", rateLH, idleFuelRateLH)
 	}
-	// 低負荷なので高燃費が出る
-	normalGot, _ := calcFuelEconomy(60, 2000, 30, 0, false, 1.3)
-	if got <= normalGot {
-		t.Errorf("engine braking (%.1f) should be better than normal driving (%.1f)", got, normalGot)
+	// 負荷3%でもエンブレ判定（<5%）
+	got3, _ := calcFuelEconomy(60, 2000, 3, 0, false, 1.3)
+	if got3 != -1 {
+		t.Errorf("engine braking (load=3): got %.1f, want -1", got3)
+	}
+	// 負荷10%は通常走行
+	got10, _ := calcFuelEconomy(60, 2000, 10, 0, false, 1.3)
+	if got10 <= 0 {
+		t.Errorf("light driving (load=10): got %.1f, expected positive", got10)
 	}
 }
 

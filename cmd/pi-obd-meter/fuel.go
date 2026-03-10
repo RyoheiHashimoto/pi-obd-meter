@@ -38,6 +38,10 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, displacementL f
 	if fuelRateLH < 0.01 {
 		return -1, fuelRateLH // エンブレ・燃料カット（-1 = 特別表示）
 	}
+	// エンブレ検出（負荷ベース）: 走行中に極低負荷 → 燃料カットと判定
+	if speed >= minDisplaySpeedKm && load < 5.0 {
+		return -1, fuelRateLH
+	}
 	if speed < minDisplaySpeedKm {
 		return 0, fuelRateLH // 低速域（クリープ等）は燃費表示しない
 	}
