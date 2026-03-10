@@ -231,6 +231,10 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `max_speed_kmh`: 速度メーター最大値 (例: 180)
 - `initial_odometer_km`: 初期ODO値 (km)
 - `web_static_dir`: Web UI配信元（空 = 埋め込みファイル使用、開発時にパス指定可）
+- `throttle_idle_pct`: スロットルアイドル開度 (例: 11.5) — スロットル表示のゼロ基準
+- `throttle_max_pct`: スロットル最大開度 (例: 78) — スロットル表示の100%基準
+- `fuel_tank_l`: 燃料タンク容量 (例: 40) — トリップ警告閾値の導出に使用
+- `fuel_rate_correction`: 燃料レート補正係数 (例: 1.3) — 理論値と実燃費の乖離を補正
 - `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, タイプ, 間隔, 警告閾値）
 
 ### 開発元の確認車両

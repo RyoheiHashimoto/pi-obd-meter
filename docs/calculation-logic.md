@@ -27,6 +27,7 @@
 | パラメータ | 現在値 | 設定方法 | 備考 |
 |---|---|---|---|
 | エンジン排気量 | 1.3 L | **config** (`engine_displacement_l`) | 燃費推定の基本パラメータ |
+| 燃料レート補正係数 | 1.3 | **config** (`fuel_rate_correction`) | 理論値と実燃費の乖離を補正（暖機増量・過渡補正等） |
 | アイドル燃料消費量 | 0.6 × 排気量 L/h | **排気量から導出** (`idleFuelRateCoeff * displacementL`) | 1.3L→0.78, 2.0L→1.2 L/h |
 | エンブレ負荷閾値 | 5.0% | **ハードコード** (`load < 5.0`) | 走行中の極低負荷を燃料カットと判定 |
 | 燃費表示最低速度 | 10.0 km/h | **ハードコード** (`minDisplaySpeedKm`) | これ以下ではノイジーなため非表示 |
@@ -40,7 +41,9 @@
 ├─ MAFセンサーなし ──→  airFlow = (RPM / 2) × (負荷% / 100) × 排気量L / 60  [L/s]
 │                        fuelRate = airFlow × 1.225 × 3600 / (14.7 × 750)  [L/h]
 │
-├─ RPM < 100 or 負荷 < 0.1% → fuelRate = 0.8 L/h（アイドル最低値）
+├─ RPM < 100 or 負荷 < 0.1% → fuelRate = 0.6 × 排気量 L/h（アイドル最低値）
+│
+├─ 補正係数を適用 ──→  fuelRate *= fuel_rate_correction (デフォルト 1.3)
 │
 └─ 燃費 = 速度(km/h) / fuelRate(L/h)  [km/L]
 ```
@@ -339,6 +342,7 @@ ECO_LOW_SPEED_THRESHOLD = 30  // km/h
 | エンジン排気量 | `engine_displacement_l` | 1.5, 2.0 等 |
 | スロットルアイドル開度 | `throttle_idle_pct` | 11.5 (DYデミオ), 8.0 (軽), 15.0 (大排気量) |
 | 燃料タンク容量 | `fuel_tank_l` | 40 (DYデミオ), 60 (セダン) |
+| 燃料レート補正係数 | `fuel_rate_correction` | 1.3 (DYデミオ)。給油燃費と比較して調整 |
 | メーター最大速度 | `max_speed_kmh` | 180, 260 等 |
 | OBDプロトコル | `obd_protocol` | "0"=自動, "6"=CAN 11bit |
 | ポーリング間隔 | `poll_interval_ms` | ECU応答速度に依存 |

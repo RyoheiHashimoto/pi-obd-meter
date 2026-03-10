@@ -1,9 +1,6 @@
 package main
 
-import (
-	"math"
-	"testing"
-)
+import "testing"
 
 func TestOBDFilter_FirstValue(t *testing.T) {
 	f := newOBDFilter(20)
@@ -33,7 +30,7 @@ func TestOBDFilter_SpikeForceAccept(t *testing.T) {
 	f.Update(200) // reject 2
 	f.Update(200) // reject 3
 	got := f.Update(200) // force accept
-	if math.Abs(got-200) > 0.01 {
+	if got != 200 {
 		t.Errorf("should force accept after %d rejects: got %f, want 200", maxRejects, got)
 	}
 }

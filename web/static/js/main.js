@@ -4,7 +4,6 @@
 
 import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setDot } from './indicators.js';
-import { createSimulation } from './sim.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,
@@ -20,7 +19,6 @@ let conf = DEFAULTS;
 let gs;
 let dom;
 let connected = false;
-let sim = null;
 
 // --- Toast ---
 let lastNotification = '';
@@ -79,16 +77,9 @@ async function fetchRealtime() {
     const resp = await fetch('/api/realtime');
     if (!resp.ok) throw new Error(resp.status);
     connected = true;
-    if (sim) { sim.stop(); sim = null; }
     applyData(await resp.json());
   } catch {
-    if (connected || !sim) {
-      connected = false;
-      if (!sim) {
-        sim = createSimulation(gs, updateThrottle, dom, setDot, speedColor, conf);
-        sim.start();
-      }
-    }
+    connected = false;
   }
 }
 
