@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/web"
@@ -30,12 +31,15 @@ type configResponse struct {
 
 // healthResponse は /api/health のレスポンス
 type healthResponse struct {
-	Status        string `json:"status"`
-	Version       string `json:"version"`
-	UptimeSec     int    `json:"uptime_sec"`
-	OBDConnected  bool   `json:"obd_connected"`
-	WiFiConnected bool   `json:"wifi_connected"`
-	PendingCount  int    `json:"pending_count"`
+	Status        string  `json:"status"`
+	Version       string  `json:"version"`
+	UptimeSec     int     `json:"uptime_sec"`
+	OBDConnected  bool    `json:"obd_connected"`
+	WiFiConnected bool    `json:"wifi_connected"`
+	PendingCount  int     `json:"pending_count"`
+	MemAllocMB    float64 `json:"mem_alloc_mb"`
+	MemSysMB      float64 `json:"mem_sys_mb"`
+	NumGoroutine  int     `json:"num_goroutine"`
 }
 
 // corsMiddleware はCORSヘッダーを付与する（meter.htmlからのfetchリクエスト許可用）
@@ -99,6 +103,8 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	// --- ヘルスチェックAPI ---
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		d := app.getRealtimeData()
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(healthResponse{
 			Status:        "ok",
@@ -107,6 +113,9 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			OBDConnected:  d.OBDConnected,
 			WiFiConnected: d.WiFiConnected,
 			PendingCount:  d.PendingCount,
+			MemAllocMB:    float64(mem.Alloc) / 1024 / 1024,
+			MemSysMB:      float64(mem.Sys) / 1024 / 1024,
+			NumGoroutine:  runtime.NumGoroutine(),
 		})
 	})
 

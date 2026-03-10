@@ -478,6 +478,79 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_InvalidValues(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: -1,
+		FuelRateCorrection:  -5,
+		FuelTankL:           0,
+		MaxSpeedKmh:         0,
+		LocalAPIPort:        -1,
+		ThrottleIdlePct:     -10,
+		ThrottleMaxPct:      0,
+	}
+	validateConfig(&cfg)
+
+	if cfg.EngineDisplacementL != 1.3 {
+		t.Errorf("EngineDisplacementL: got %.1f, want 1.3", cfg.EngineDisplacementL)
+	}
+	if cfg.FuelRateCorrection != 1.3 {
+		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
+	}
+	if cfg.FuelTankL != 40 {
+		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	}
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh: got %d, want 180", cfg.MaxSpeedKmh)
+	}
+	if cfg.LocalAPIPort != 9090 {
+		t.Errorf("LocalAPIPort: got %d, want 9090", cfg.LocalAPIPort)
+	}
+	if cfg.ThrottleIdlePct != 11.5 {
+		t.Errorf("ThrottleIdlePct: got %.1f, want 11.5", cfg.ThrottleIdlePct)
+	}
+	if cfg.ThrottleMaxPct != 78 {
+		t.Errorf("ThrottleMaxPct: got %.1f, want 78", cfg.ThrottleMaxPct)
+	}
+}
+
+func TestValidateConfig_ValidValues(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: 2.0,
+		FuelRateCorrection:  1.5,
+		FuelTankL:           50,
+		MaxSpeedKmh:         260,
+		LocalAPIPort:        8080,
+		ThrottleIdlePct:     15,
+		ThrottleMaxPct:      85,
+	}
+	validateConfig(&cfg)
+
+	// 有効な値は変更されない
+	if cfg.EngineDisplacementL != 2.0 {
+		t.Errorf("EngineDisplacementL should not change: got %.1f", cfg.EngineDisplacementL)
+	}
+	if cfg.FuelRateCorrection != 1.5 {
+		t.Errorf("FuelRateCorrection should not change: got %.1f", cfg.FuelRateCorrection)
+	}
+	if cfg.MaxSpeedKmh != 260 {
+		t.Errorf("MaxSpeedKmh should not change: got %d", cfg.MaxSpeedKmh)
+	}
+}
+
+func TestValidateConfig_MaxSpeedTooHigh(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: 1.3,
+		FuelTankL:           40,
+		MaxSpeedKmh:         500,
+		LocalAPIPort:        9090,
+		ThrottleMaxPct:      78,
+	}
+	validateConfig(&cfg)
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh >400 should reset: got %d, want 180", cfg.MaxSpeedKmh)
+	}
+}
+
 func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
@@ -500,6 +573,54 @@ func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 }
 
 // --- getNotification テスト ---
+
+func TestCalcFuelEconomy_CorrectionFactor(t *testing.T) {
+	// correction=1.0 と correction=1.3 で燃費が変わることを確認
+	eco10, rate10 := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.0)
+	eco13, rate13 := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.3)
+
+	// 補正係数が大きい → 燃料レートが高い → 燃費が悪い
+	if rate13 <= rate10 {
+		t.Errorf("correction 1.3 should increase fuel rate: 1.0=%.2f, 1.3=%.2f", rate10, rate13)
+	}
+	if eco13 >= eco10 {
+		t.Errorf("correction 1.3 should decrease economy: 1.0=%.1f, 1.3=%.1f", eco10, eco13)
+	}
+
+	// correction=0 は補正なし（1.0と同じ挙動）
+	eco0, rate0 := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 0)
+	if rate0 != rate10 {
+		t.Errorf("correction=0 should equal correction=1.0: 0=%.2f, 1.0=%.2f", rate0, rate10)
+	}
+	if eco0 != eco10 {
+		t.Errorf("correction=0 should equal correction=1.0: 0=%.1f, 1.0=%.1f", eco0, eco10)
+	}
+}
+
+func TestCalcFuelEconomy_MAFWithCorrection(t *testing.T) {
+	// MAFパスでも補正係数が効くことを確認
+	_, rate10 := calcFuelEconomy(60, 2000, 30, 5.0, true, 1.3, 1.0)
+	_, rate15 := calcFuelEconomy(60, 2000, 30, 5.0, true, 1.3, 1.5)
+	if rate15 <= rate10 {
+		t.Errorf("MAF path: correction should increase rate: 1.0=%.2f, 1.5=%.2f", rate10, rate15)
+	}
+}
+
+func TestCalcFuelEconomy_IdleFuelRate(t *testing.T) {
+	// アイドル時（RPM<100 or load<0.1）の燃料レートは排気量に比例
+	_, rate := calcFuelEconomy(5, 50, 0, 0, false, 1.3, 1.0)
+	expected := idleFuelRateCoeff * 1.3
+	if math.Abs(rate-expected) > 0.001 {
+		t.Errorf("idle fuel rate: got %.3f, want %.3f", rate, expected)
+	}
+
+	// 2.0Lのアイドル燃料レート
+	_, rate20 := calcFuelEconomy(5, 50, 0, 0, false, 2.0, 1.0)
+	expected20 := idleFuelRateCoeff * 2.0
+	if math.Abs(rate20-expected20) > 0.001 {
+		t.Errorf("idle fuel rate 2.0L: got %.3f, want %.3f", rate20, expected20)
+	}
+}
 
 func TestGetNotification_Empty(t *testing.T) {
 	app := &App{}

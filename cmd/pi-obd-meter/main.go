@@ -43,6 +43,18 @@ func main() {
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
 	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
+	slog.Info("設定読み込み完了",
+		"serial_port", cfg.SerialPort,
+		"engine_displacement_l", cfg.EngineDisplacementL,
+		"fuel_tank_l", cfg.FuelTankL,
+		"fuel_rate_correction", cfg.FuelRateCorrection,
+		"throttle_idle_pct", cfg.ThrottleIdlePct,
+		"throttle_max_pct", cfg.ThrottleMaxPct,
+		"max_speed_kmh", cfg.MaxSpeedKmh,
+		"poll_interval_ms", cfg.PollIntervalMs,
+		"local_api_port", cfg.LocalAPIPort,
+		"obd_protocol", cfg.OBDProtocol,
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

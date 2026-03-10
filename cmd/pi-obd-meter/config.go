@@ -75,5 +75,39 @@ func loadConfig(path string) Config {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		slog.Warn("設定ファイルのJSON解析失敗、デフォルト使用", "path", path, "error", err)
 	}
+
+	validateConfig(&cfg)
 	return cfg
+}
+
+// validateConfig は設定値の妥当性をチェックし、不正値をデフォルトに修正する
+func validateConfig(cfg *Config) {
+	if cfg.EngineDisplacementL <= 0 {
+		slog.Warn("engine_displacement_l が不正、デフォルト使用", "value", cfg.EngineDisplacementL)
+		cfg.EngineDisplacementL = 1.3
+	}
+	if cfg.FuelRateCorrection < 0 {
+		slog.Warn("fuel_rate_correction が負数、デフォルト使用", "value", cfg.FuelRateCorrection)
+		cfg.FuelRateCorrection = 1.3
+	}
+	if cfg.FuelTankL <= 0 {
+		slog.Warn("fuel_tank_l が不正、デフォルト使用", "value", cfg.FuelTankL)
+		cfg.FuelTankL = 40
+	}
+	if cfg.MaxSpeedKmh <= 0 || cfg.MaxSpeedKmh > 400 {
+		slog.Warn("max_speed_kmh が不正、デフォルト使用", "value", cfg.MaxSpeedKmh)
+		cfg.MaxSpeedKmh = 180
+	}
+	if cfg.LocalAPIPort <= 0 || cfg.LocalAPIPort > 65535 {
+		slog.Warn("local_api_port が不正、デフォルト使用", "value", cfg.LocalAPIPort)
+		cfg.LocalAPIPort = 9090
+	}
+	if cfg.ThrottleIdlePct < 0 || cfg.ThrottleIdlePct > 100 {
+		slog.Warn("throttle_idle_pct が不正、デフォルト使用", "value", cfg.ThrottleIdlePct)
+		cfg.ThrottleIdlePct = 11.5
+	}
+	if cfg.ThrottleMaxPct <= cfg.ThrottleIdlePct || cfg.ThrottleMaxPct > 100 {
+		slog.Warn("throttle_max_pct が不正、デフォルト使用", "value", cfg.ThrottleMaxPct)
+		cfg.ThrottleMaxPct = 78
+	}
 }
