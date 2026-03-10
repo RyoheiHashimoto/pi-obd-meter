@@ -2,13 +2,13 @@
 // Main — エントリポイント + API ポーリング + Toast
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setDot } from './indicators.js';
 import { createSimulation } from './sim.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,
-  throttle_idle_pct: 11.5,
+  throttle_idle_pct: 11.5, throttle_max_pct: 78,
   eco_kmpl_green: 15, eco_kmpl_orange: 10,
   trip_warn_km: 300, trip_danger_km: 500,
 };
@@ -101,6 +101,7 @@ async function initApp() {
   } catch { /* file:// mode */ }
 
   setThrottleIdleBaseline(conf.throttle_idle_pct);
+  setThrottleMaxPct(conf.throttle_max_pct);
 
   if (conf.version) {
     document.getElementById('version').textContent = conf.version;

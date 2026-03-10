@@ -21,6 +21,7 @@ type configResponse struct {
 	EcoLHGreen      float64 `json:"eco_lh_green"`
 	EcoLHRed        float64 `json:"eco_lh_red"`
 	ThrottleIdlePct float64 `json:"throttle_idle_pct"`
+	ThrottleMaxPct  float64 `json:"throttle_max_pct"`
 	EcoKmplGreen    float64 `json:"eco_kmpl_green"`
 	EcoKmplOrange   float64 `json:"eco_kmpl_orange"`
 	TripWarnKm      float64 `json:"trip_warn_km"`
@@ -81,6 +82,7 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			EcoLHGreen:      1.5 * d,
 			EcoLHRed:        3.0 * d,
 			ThrottleIdlePct: app.cfg.ThrottleIdlePct,
+			ThrottleMaxPct:  app.cfg.ThrottleMaxPct,
 			EcoKmplGreen:    ecoKmplGreen,
 			EcoKmplOrange:   ecoKmplOrange,
 			TripWarnKm:      math.Round(estRange * 0.5),

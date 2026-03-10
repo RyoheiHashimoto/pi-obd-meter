@@ -22,6 +22,7 @@ type Config struct {
 	EngineDisplacementL  float64                  `json:"engine_displacement_l"`
 	InitialOdometerKm    float64                  `json:"initial_odometer_km"`
 	ThrottleIdlePct      float64                  `json:"throttle_idle_pct"`
+	ThrottleMaxPct       float64                  `json:"throttle_max_pct"`
 	FuelTankL            float64                  `json:"fuel_tank_l"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
@@ -59,6 +60,7 @@ func loadConfig(path string) Config {
 		OBDProtocol:         "6",
 		EngineDisplacementL: 1.3,
 		ThrottleIdlePct:     11.5,
+		ThrottleMaxPct:      78,
 		FuelTankL:           40,
 		Brightness:          display.DefaultConfig(),
 	}
