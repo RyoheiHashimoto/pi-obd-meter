@@ -38,8 +38,9 @@ type Tracker struct {
 	speedSum      float64
 
 	// 永続化パス
-	statePath     string
-	saveErrLogged bool // 書き込みエラーを既にログ出力したか
+	statePath      string
+	saveErrLogged  bool    // 書き込みエラーを既にログ出力したか
+	lastSavedKm    float64 // 最後に保存した時点の走行距離
 }
 
 // TrackerConfig はトラッカーの設定
@@ -108,9 +109,10 @@ func (t *Tracker) Update(speedKmh, fuelRateLH float64) {
 
 	t.lastTimestamp = now
 
-	// 定期的に状態を保存（1分ごと）
-	if t.current.Samples%60 == 0 {
+	// 距離ベースで状態を保存（0.1km=100mごと）
+	if t.current.DistanceKm-t.lastSavedKm >= 0.1 {
 		t.saveState()
+		t.lastSavedKm = t.current.DistanceKm
 	}
 }
 
@@ -222,6 +224,7 @@ func (t *Tracker) loadState() {
 	}
 
 	t.current = state.Current
+	t.lastSavedKm = t.current.DistanceKm
 	if state.LastTimestamp > 0 {
 		t.lastTimestamp = time.Unix(state.LastTimestamp, 0)
 	}

@@ -151,9 +151,10 @@ func TestTrackerPersistence(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "trip_state.json")
 
-	// トラッカー1: データを蓄積
+	// トラッカー1: データを蓄積して強制保存
 	tr1 := NewTracker(TrackerConfig{StatePath: statePath})
-	feed(tr1, 60, 65) // 60超でsaveStateが呼ばれる（Samples%60==0）
+	feed(tr1, 60, 65)
+	tr1.SaveState()
 
 	cur1 := tr1.GetCurrent()
 
@@ -236,7 +237,8 @@ func TestTrackerPersistence_FuelConsumption(t *testing.T) {
 	statePath := filepath.Join(dir, "trip_state.json")
 
 	tr1 := NewTracker(TrackerConfig{StatePath: statePath})
-	feedWithFuel(tr1, 60, 6.0, 65) // 60超でsaveState
+	feedWithFuel(tr1, 60, 6.0, 65)
+	tr1.SaveState()
 
 	cur1 := tr1.GetCurrent()
 
