@@ -1,7 +1,9 @@
 name: Deploy Dev
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [develop]
 
 permissions:
@@ -10,8 +12,11 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-go@v5
         with:
@@ -19,7 +24,8 @@ jobs:
 
       - name: Build ARM64 binaries
         run: |
-          SHORT_SHA="${GITHUB_SHA::7}"
+          SHORT_SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${SHORT_SHA::7}"
           GOOS=linux GOARCH=arm64 go build \
             -ldflags "-s -w -X main.version=dev-${SHORT_SHA}" \
             -o pi-obd-meter ./cmd/pi-obd-meter
@@ -38,6 +44,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          SHORT_SHA="${{ github.event.workflow_run.head_sha }}"
+          SHORT_SHA="${SHORT_SHA::7}"
+
           # 既存の dev-latest リリースを削除（あれば）
           gh release delete dev-latest --yes 2>/dev/null || true
           git tag -d dev-latest 2>/dev/null || true
@@ -47,8 +56,8 @@ jobs:
           git tag dev-latest
           git push origin dev-latest
           gh release create dev-latest \
-            --title "Development Build (${GITHUB_SHA::7})" \
+            --title "Development Build (${SHORT_SHA})" \
             --notes "Auto-built from develop branch at $(date -u +%Y-%m-%dT%H:%M:%SZ)
-          Commit: ${GITHUB_SHA}" \
+          Commit: ${{ github.event.workflow_run.head_sha }}" \
             --prerelease \
             pi-obd-meter-dev.tar.gz
