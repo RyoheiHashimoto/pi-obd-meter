@@ -211,6 +211,94 @@ func TestIsSending(t *testing.T) {
 	}
 }
 
+// --- RestoreState テスト ---
+
+func TestRestoreState_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var p GASPayload
+		if err := json.Unmarshal(body, &p); err != nil {
+			t.Errorf("unmarshal: %v", err)
+		}
+		if p.Type != "restore" {
+			t.Errorf("type: got %q, want restore", p.Type)
+		}
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"status":"ok","total_km":12345.6,"last_refuel_km":12000}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	resp, err := c.RestoreState(context.Background())
+	if err != nil {
+		t.Fatalf("RestoreState failed: %v", err)
+	}
+	if resp.Status != "ok" {
+		t.Errorf("status: got %q, want ok", resp.Status)
+	}
+	if resp.TotalKm != 12345.6 {
+		t.Errorf("total_km: got %.1f, want 12345.6", resp.TotalKm)
+	}
+	if resp.LastRefuelKm != 12000 {
+		t.Errorf("last_refuel_km: got %.1f, want 12000", resp.LastRefuelKm)
+	}
+}
+
+func TestRestoreState_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.RestoreState(context.Background())
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+}
+
+func TestRestoreState_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.RestoreState(context.Background())
+	if err == nil {
+		t.Fatal("expected error on invalid JSON")
+	}
+}
+
+func TestRestoreState_NetworkError(t *testing.T) {
+	c := NewClient("http://127.0.0.1:1")
+	_, err := c.RestoreState(context.Background())
+	if err == nil {
+		t.Fatal("expected error on unreachable server")
+	}
+}
+
+func TestRestoreState_EmptyResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	resp, err := c.RestoreState(context.Background())
+	if err != nil {
+		t.Fatalf("RestoreState failed: %v", err)
+	}
+	if resp.TotalKm != 0 {
+		t.Errorf("total_km should be 0 when missing, got %.1f", resp.TotalKm)
+	}
+	if resp.LastRefuelKm != 0 {
+		t.Errorf("last_refuel_km should be 0 when missing, got %.1f", resp.LastRefuelKm)
+	}
+}
+
 func TestPayloadJSON(t *testing.T) {
 	p := GASPayload{Type: "refuel", Data: map[string]float64{"fuel_economy": 12.5}}
 	b, err := json.Marshal(p)

@@ -124,6 +124,25 @@ func TestTrackerManualReset(t *testing.T) {
 	}
 }
 
+func TestTrackerDistanceKm(t *testing.T) {
+	tr := newTestTracker(t)
+	if tr.DistanceKm() != 0 {
+		t.Errorf("initial DistanceKm: got %.6f, want 0", tr.DistanceKm())
+	}
+
+	feed(tr, 60, 20)
+	if tr.DistanceKm() <= 0 {
+		t.Error("expected positive DistanceKm after driving")
+	}
+
+	// GetCurrent と一致する
+	cur := tr.GetCurrent()
+	if tr.DistanceKm() != cur.DistanceKm {
+		t.Errorf("DistanceKm() and GetCurrent().DistanceKm differ: %.6f vs %.6f",
+			tr.DistanceKm(), cur.DistanceKm)
+	}
+}
+
 func TestTrackerManualReset_NoData(t *testing.T) {
 	tr := newTestTracker(t)
 	completed := tr.ManualReset()
