@@ -2,14 +2,14 @@ package main
 
 // 燃費計算用の物理定数
 const (
-	stoichiometricAFR  = 14.7   // ガソリンの理論空燃比 (空気kg / 燃料kg)
-	gasolineDensityGL  = 750.0  // ガソリン密度 (g/L)
-	airDensityGL       = 1.225  // 標準大気密度 (g/L = kg/m³)
-	idleFuelRateCoeff  = 0.6    // アイドル燃料消費係数 (L/h per L排気量)
-	maxDisplayKmL      = 99.9   // 燃費表示の上限値 (km/L)
-	minDisplaySpeedKm  = 10.0   // 燃費表示の最低速度 (km/h)
-	atmosphericKPa     = 101.3  // 標準大気圧 (kPa)
-	engineBrakeMAPKPa  = 35.0   // エンブレ判定MAP閾値 (kPa) — 強い負圧
+	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
+	gasolineDensityGL = 750.0 // ガソリン密度 (g/L)
+	airDensityGL      = 1.225 // 標準大気密度 (g/L = kg/m³)
+	idleFuelRateCoeff = 0.6   // アイドル燃料消費係数 (L/h per L排気量)
+	maxDisplayKmL     = 99.9  // 燃費表示の上限値 (km/L)
+	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
+	atmosphericKPa    = 101.3 // 標準大気圧 (kPa)
+	engineBrakeMAPKPa = 35.0  // エンブレ判定MAP閾値 (kPa) — 強い負圧
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
@@ -33,9 +33,9 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 		// Speed-Density法: MAPから吸入空気量を推定
 		// 4ストロークなので吸気は2回転に1回
 		// MAPを大気圧で正規化して体積効率の代わりに使う
-		ve := intakeMAP / atmosphericKPa // 体積効率の近似（MAP/大気圧）
+		ve := intakeMAP / atmosphericKPa                     // 体積効率の近似（MAP/大気圧）
 		airFlowLS := ve * (rpm / 2.0) * displacementL / 60.0 // L/s of air
-		airMassGS := airFlowLS * airDensityGL                 // g/s
+		airMassGS := airFlowLS * airDensityGL                // g/s
 		fuelRateLH = airMassGS * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
 	} else {
 		// 負荷×RPM×排気量から推定（フォールバック）

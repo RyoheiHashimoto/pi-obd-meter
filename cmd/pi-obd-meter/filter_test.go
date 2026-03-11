@@ -26,9 +26,9 @@ func TestOBDFilter_SpikeForceAccept(t *testing.T) {
 	f.Update(60)
 
 	// maxRejects(3)回リジェクトされた後、4回目で受入
-	f.Update(200) // reject 1
-	f.Update(200) // reject 2
-	f.Update(200) // reject 3
+	f.Update(200)        // reject 1
+	f.Update(200)        // reject 2
+	f.Update(200)        // reject 3
 	got := f.Update(200) // force accept
 	if got != 200 {
 		t.Errorf("should force accept after %d rejects: got %f, want 200", maxRejects, got)

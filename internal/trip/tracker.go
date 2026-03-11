@@ -38,9 +38,9 @@ type Tracker struct {
 	speedSum      float64
 
 	// 永続化パス
-	statePath      string
-	saveErrLogged  bool    // 書き込みエラーを既にログ出力したか
-	lastSavedKm    float64 // 最後に保存した時点の走行距離
+	statePath     string
+	saveErrLogged bool    // 書き込みエラーを既にログ出力したか
+	lastSavedKm   float64 // 最後に保存した時点の走行距離
 }
 
 // TrackerConfig はトラッカーの設定
