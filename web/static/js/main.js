@@ -2,7 +2,7 @@
 // Main — エントリポイント + API ポーリング + Toast
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, updateMAP, updateFuelRate, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setDot } from './indicators.js';
 
 const DEFAULTS = {
@@ -49,6 +49,8 @@ function applyData(d) {
   const spd = d.speed_kmh || 0;
   gs.update(spd, speedColor(spd));
   updateThrottle(d.throttle_pos || 0);
+  updateMAP(d.intake_map || 0);
+  updateFuelRate(d.fuel_rate_lh || 0);
   updateIndicators(dom, d, conf);
 
   // Maintenance toast（全件を順番に表示）
@@ -95,17 +97,11 @@ async function initApp() {
   setThrottleIdleBaseline(conf.throttle_idle_pct);
   setThrottleMaxPct(conf.throttle_max_pct);
 
-  if (conf.version) {
-    document.getElementById('version').textContent = conf.version;
-  }
-
-  // --- バージョン長押しでキオスク終了（3秒） ---
-  const verEl = document.getElementById('version');
+  // --- 画面長押しでキオスク終了（3秒） ---
   let kioskTimer = null;
   const KIOSK_HOLD_MS = 3000;
 
   function startHold(e) {
-    e.preventDefault();
     kioskTimer = setTimeout(async () => {
       showToast('Closing...');
       try { await fetch('/api/kiosk/stop', { method: 'POST' }); } catch {}
@@ -113,12 +109,11 @@ async function initApp() {
   }
   function cancelHold() { if (kioskTimer) { clearTimeout(kioskTimer); kioskTimer = null; } }
 
-  verEl.addEventListener('touchstart', startHold, { passive: false });
-  verEl.addEventListener('touchend', cancelHold);
-  verEl.addEventListener('touchmove', cancelHold);
-  verEl.addEventListener('mousedown', startHold);
-  verEl.addEventListener('mouseup', cancelHold);
-  verEl.addEventListener('mouseleave', cancelHold);
+  document.body.addEventListener('touchstart', startHold, { passive: true });
+  document.body.addEventListener('touchend', cancelHold);
+  document.body.addEventListener('touchmove', cancelHold);
+  document.body.addEventListener('mousedown', startHold);
+  document.body.addEventListener('mouseup', cancelHold);
 
   gs = buildSpeedGauge('gs', {
     cx: 280, cy: 260, r: 220,

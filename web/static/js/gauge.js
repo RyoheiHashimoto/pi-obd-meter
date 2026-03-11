@@ -1,21 +1,29 @@
 // ============================================================
-// Speed Gauge — SVGアークゲージ + スロットルアーク + 60fps補間
+// Speed Gauge — SVGアークゲージ + スロットルアーク + MAPアーク + 60fps補間
 // ============================================================
 
 const DEG_TO_RAD = Math.PI / 180;
 const ARC_START = -135;
 const ARC_END = 135;
 const ARC_SWEEP = 270;
-const THROTTLE_R_OFFSET = 80;
+const MAP_R_OFFSET = 80;
+const FUEL_R_OFFSET = 18;
+const THROTTLE_R_OFFSET = 18;
 
 const LERP_SPEED = 0.35;
 const LERP_THR_SPEED = 0.4;
+const LERP_MAP_SPEED = 0.3;
 const LERP_THRESHOLD = 0.05;
 const LERP_STOP = 0.01;
 
 let thrIdleBaseline = 11.5;
 let thrMaxPct = 78;
 const THR_HUE_MAX = 210;
+
+// MAP表示定数
+const MAP_MAX_KPA = 101.3;  // NA車の最大（大気圧）
+const FUEL_MAX_LH = 20;     // 燃料レートアーク最大値
+const LERP_FUEL_SPEED = 0.35;
 
 // 極座標→直交座標（12時=0°、時計回り正）
 function polarToXY(cx, cy, r, deg) {
@@ -83,16 +91,98 @@ export function updateThrottle(pct) {
   if (!thrRafId) thrRafId = requestAnimationFrame(thrLerp);
 }
 
+// --- MAPアーク ---
+let mapArc, mapVal, mapUnit;
+let mapCx, mapCy, mapR;
+let mapCur = 0, mapTgt = 0, mapRafId = 0;
+
+// MAP kPa → 色（負圧=青、巡航=緑、高負荷=橙、全開=赤）
+function mapColor(kPa) {
+  if (kPa < 35)  return '#29b6f6'; // 青: エンブレ
+  if (kPa < 60)  return '#4caf50'; // 緑: 巡航
+  if (kPa < 85)  return '#ff9800'; // 橙: 高負荷
+  return '#f44336';                 // 赤: ほぼ全開
+}
+
+function mapLerp() {
+  const delta = mapTgt - mapCur;
+  mapCur = Math.abs(delta) > LERP_THRESHOLD ? mapCur + delta * LERP_MAP_SPEED : mapTgt;
+  const pct = Math.max(0, Math.min(100, mapCur / MAP_MAX_KPA * 100));
+  const angle = ARC_START + (pct / 100) * ARC_SWEEP;
+  mapArc.setAttribute('d', pct > 0.5 ? arcPath(mapCx, mapCy, mapR, ARC_START, angle) : '');
+  const hue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
+  const col = mapCur > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#222';
+  mapArc.setAttribute('stroke', col);
+  applyGlow(mapArc, col);
+  if (mapVal) {
+    const rdCol = mapCur > 0.5 ? col : '#333';
+    mapVal.setAttribute('fill', rdCol);
+    mapUnit.setAttribute('fill', rdCol);
+    mapVal.textContent = mapCur > 0.5 ? String(Math.round(mapCur)) : '--';
+  }
+  mapRafId = Math.abs(mapCur - mapTgt) > LERP_STOP ? requestAnimationFrame(mapLerp) : 0;
+}
+
+export function updateMAP(kPa) {
+  mapTgt = kPa;
+  if (!mapRafId) mapRafId = requestAnimationFrame(mapLerp);
+}
+
+// --- 燃料レートアーク ---
+let fuelArc, fuelVal, fuelUnit;
+let fuelCx, fuelCy, fuelR;
+let fuelCur = 0, fuelTgt = 0, fuelRafId = 0;
+
+function fuelColor(lh) {
+  if (lh < 2)  return '#29b6f6'; // 青: アイドル
+  if (lh < 5)  return '#4caf50'; // 緑: 巡航
+  if (lh < 10) return '#ff9800'; // 橙: 高負荷
+  return '#f44336';               // 赤: 全開
+}
+
+function fuelLerp() {
+  const delta = fuelTgt - fuelCur;
+  fuelCur = Math.abs(delta) > LERP_THRESHOLD ? fuelCur + delta * LERP_FUEL_SPEED : fuelTgt;
+  const pct = Math.max(0, Math.min(100, fuelCur / FUEL_MAX_LH * 100));
+  const angle = ARC_START + (pct / 100) * ARC_SWEEP;
+  fuelArc.setAttribute('d', pct > 0.5 ? arcPath(fuelCx, fuelCy, fuelR, ARC_START, angle) : '');
+  const fHue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
+  const col = fuelCur > 0.01 ? `hsl(${fHue}, 100%, 55%)` : '#222';
+  fuelArc.setAttribute('stroke', col);
+  applyGlow(fuelArc, col);
+  if (fuelVal) {
+    const rdCol = fuelCur > 0.01 ? col : '#333';
+    fuelVal.setAttribute('fill', rdCol);
+    fuelUnit.setAttribute('fill', rdCol);
+    fuelVal.textContent = fuelCur > 0.01 ? fuelCur.toFixed(1) : '--';
+  }
+  fuelRafId = Math.abs(fuelCur - fuelTgt) > LERP_STOP ? requestAnimationFrame(fuelLerp) : 0;
+}
+
+export function updateFuelRate(lh) {
+  fuelTgt = lh;
+  if (!fuelRafId) fuelRafId = requestAnimationFrame(fuelLerp);
+}
+
 // --- スピードゲージ構築 ---
 export function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
   const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
-  const throttleR = r - THROTTLE_R_OFFSET;
+  const mapArcR = r - MAP_R_OFFSET;
+  const fuelArcR = mapArcR - FUEL_R_OFFSET;
+  const throttleR = fuelArcR - THROTTLE_R_OFFSET;
+
+  mapCx = cx;
+  mapCy = cy;
+  mapR = mapArcR;
+
+  fuelCx = cx;
+  fuelCy = cy;
+  fuelR = fuelArcR;
 
   thrCx = cx;
   thrCy = cy;
   thrR = throttleR;
-
 
   // Track (thick bezel)
   svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -115,8 +205,16 @@ export function buildSpeedGauge(svgId, cfg) {
     }
   }
 
-  // Throttle inner arc (track)
-  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  // MAP arc (track) — outer inner arc
+  svgEl(svg, 'path', { d: arcPath(cx, cy, mapArcR, ARC_START, ARC_END), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  mapArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
+
+  // Fuel rate arc (track)
+  svgEl(svg, 'path', { d: arcPath(cx, cy, fuelArcR, ARC_START, ARC_END), fill: 'none', stroke: '#0e0e14', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  fuelArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
+
+  // Throttle arc (track) — innermost
+  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
   thrArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // THROTTLE label
@@ -145,6 +243,18 @@ export function buildSpeedGauge(svgId, cfg) {
   // Unit label
   const ut = svgEl(svg, 'text', { x: cx, y: numY + numSz * 0.55, class: 'g-unit', fill: '#fff', 'font-size': 28 });
   ut.textContent = unit;
+
+  // MAP / Fuel readouts (km/h の下) — 値と単位を分離して単位位置を固定
+  const rdY = numY + numSz * 0.55 + 58;
+  const rdFs = 24;
+  mapVal  = svgEl(svg, 'text', { x: cx - 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
+  mapVal.textContent = '--';
+  mapUnit = svgEl(svg, 'text', { x: cx - 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
+  mapUnit.textContent = 'kPa';
+  fuelVal  = svgEl(svg, 'text', { x: cx + 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
+  fuelVal.textContent = '--';
+  fuelUnit = svgEl(svg, 'text', { x: cx + 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
+  fuelUnit.textContent = 'L/h';
 
   // Lerp animation
   let curVal = min, tgtVal = min, rafId = 0;
