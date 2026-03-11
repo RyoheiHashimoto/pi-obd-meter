@@ -35,7 +35,7 @@ generate_pr_body() {
 if [ -n "${1:-}" ]; then
   VERSION="$1"
 else
-  VERSION=$(git describe --tags --abbrev=0 2>/dev/null | awk -F. '{print $1"."$2"."$3+1}')
+  VERSION=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null | awk -F. '{print $1"."$2"."$3+1}')
 fi
 
 if [ -z "$VERSION" ]; then
@@ -77,7 +77,7 @@ fi
 
 # --- Step 2: PR作成 or 既存PR検出 ---
 
-PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+PREV_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
 PR_NUMBER=""
 
 # 既存のオープンPRを探す
