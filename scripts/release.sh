@@ -117,8 +117,8 @@ PR_STATE=$(gh pr view "$PR_NUMBER" --json state --jq '.state')
 if [ "$PR_STATE" = "MERGED" ]; then
   echo "PR #${PR_NUMBER} は既にマージ済み"
 else
-  echo "CI 完了を待機中..."
-  gh pr checks "$PR_NUMBER" --watch
+  echo "CI 完了を待機中（必須チェックのみ）..."
+  gh pr checks "$PR_NUMBER" --required --watch
 
   echo "マージ中..."
   gh pr merge "$PR_NUMBER" --merge --delete-branch=false
