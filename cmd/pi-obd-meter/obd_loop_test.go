@@ -2,91 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 )
-
-// mockELM327 は ELM327 のテスト用モック
-type mockELM327 struct {
-	connectErr     error
-	connectCount   int
-	closeCount     int
-	reader         *obd.Reader
-	scanPIDs       []byte
-	pidResponses   map[byte][]byte
-	failMulti      bool
-	failPIDs       map[byte]bool
-	connectDelay   time.Duration
-	failConnectN   int // 最初のN回は接続失敗させる
-	readFailAfterN int // N回読み取り後にエラーを返す
-	readCount      int
-}
-
-func newMockELM327() *mockELM327 {
-	return &mockELM327{
-		pidResponses: map[byte][]byte{
-			obd.PIDEngineRPM:        {0x0C, 0x00}, // 768 rpm
-			obd.PIDVehicleSpeed:     {60},         // 60 km/h
-			obd.PIDEngineLoad:       {128},        // ~50.2%
-			obd.PIDThrottlePosition: {64},         // ~25.1%
-			obd.PIDCoolantTemp:      {130},        // 90℃
-		},
-		scanPIDs: []byte{
-			obd.PIDEngineRPM, obd.PIDVehicleSpeed,
-			obd.PIDEngineLoad, obd.PIDThrottlePosition, obd.PIDCoolantTemp,
-		},
-		failPIDs: make(map[byte]bool),
-	}
-}
-
-func (m *mockELM327) QueryPID(pid byte) ([]byte, error) {
-	if m.readFailAfterN > 0 {
-		m.readCount++
-		if m.readCount > m.readFailAfterN {
-			return nil, fmt.Errorf("読み取りエラー（テスト）")
-		}
-	}
-	if m.failPIDs[pid] {
-		return nil, fmt.Errorf("PID 0x%02X 失敗", pid)
-	}
-	if data, ok := m.pidResponses[pid]; ok {
-		return data, nil
-	}
-	return nil, fmt.Errorf("PID 0x%02X 非対応", pid)
-}
-
-func (m *mockELM327) QueryMultiPID(pids []byte) (map[byte][]byte, error) {
-	if m.failMulti {
-		return nil, fmt.Errorf("マルチPID非対応")
-	}
-	result := make(map[byte][]byte)
-	for _, pid := range pids {
-		if m.failPIDs[pid] {
-			continue
-		}
-		if data, ok := m.pidResponses[pid]; ok {
-			result[pid] = data
-		}
-	}
-	if len(result) == 0 {
-		return nil, fmt.Errorf("レスポンスなし")
-	}
-	return result, nil
-}
-
-func (m *mockELM327) ScanSupportedPIDs() ([]byte, error) {
-	if m.scanPIDs != nil {
-		return m.scanPIDs, nil
-	}
-	return nil, fmt.Errorf("スキャン失敗")
-}
-
-// mockELM327Wrapper は ELM327 の Connect/Close をモックするラッパー
-// obdReaderLoop は *obd.ELM327 を受け取るため、テストでは obdReaderLoop を直接テストできない。
-// 代わりに OBDEvent の型と goroutine の振る舞いを検証するテストを書く。
 
 // --- OBDEvent テスト ---
 
@@ -352,19 +272,22 @@ func TestOBDEventChannel_FilterResetOnReconnect(t *testing.T) {
 	filters.rpm.Update(2000)
 	filters.load.Update(30)
 
-	// 再接続検出でリセット
+	// 再接続検出でリセット（メインループのロジックを再現）
 	wasConnected := true
 
 	// 切断イベント
 	ev := OBDEvent{Connected: false}
-	wasConnected = ev.Connected
+	if ev.Connected && !wasConnected {
+		filters.ResetAll() // ここでは呼ばれない（false && true = false）
+	}
+	wasConnected = ev.Connected // false
 
 	// 再接続イベント
 	ev = OBDEvent{Connected: true, HasMAP: true}
 	if ev.Connected && !wasConnected {
-		filters.ResetAll()
+		filters.ResetAll() // ここで呼ばれる（true && !false = true）
 	}
-	wasConnected = ev.Connected
+	_ = ev.Connected // wasConnected はこれ以降不要
 
 	// リセット後は次の値がそのまま通る（スパイクフィルターなし）
 	// 大きなジャンプもリジェクトされない
