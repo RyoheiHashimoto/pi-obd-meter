@@ -150,10 +150,10 @@ func TestDetectCapabilities_NoMultiPIDSupport(t *testing.T) {
 
 func TestReadFast_MultiPID(t *testing.T) {
 	dev := newMockDevice()
-	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20}    // 1672 rpm
-	dev.pidResponses[PIDVehicleSpeed] = []byte{60}          // 60 km/h
-	dev.pidResponses[PIDEngineLoad] = []byte{128}           // ~50.2%
-	dev.pidResponses[PIDThrottlePosition] = []byte{64}      // ~25.1%
+	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20} // 1672 rpm
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}      // 60 km/h
+	dev.pidResponses[PIDEngineLoad] = []byte{128}       // ~50.2%
+	dev.pidResponses[PIDThrottlePosition] = []byte{64}  // ~25.1%
 
 	r := &Reader{dev: dev, supportsMulti: true, multiTested: true}
 	data, err := r.ReadFast()
@@ -178,7 +178,7 @@ func TestReadFast_MultiPID(t *testing.T) {
 
 func TestReadFast_SinglePID(t *testing.T) {
 	dev := newMockDevice()
-	dev.pidResponses[PIDEngineRPM] = []byte{0x0C, 0x00}    // 768 rpm
+	dev.pidResponses[PIDEngineRPM] = []byte{0x0C, 0x00} // 768 rpm
 	dev.pidResponses[PIDVehicleSpeed] = []byte{30}
 	dev.pidResponses[PIDEngineLoad] = []byte{50}
 	dev.pidResponses[PIDThrottlePosition] = []byte{32}
@@ -244,9 +244,9 @@ func TestReadAll_MultiPID_WithMAFAndMAP(t *testing.T) {
 	dev.pidResponses[PIDVehicleSpeed] = []byte{60}
 	dev.pidResponses[PIDEngineLoad] = []byte{128}
 	dev.pidResponses[PIDThrottlePosition] = []byte{64}
-	dev.pidResponses[PIDCoolantTemp] = []byte{130}          // 90℃
-	dev.pidResponses[PIDIntakeMAP] = []byte{80}             // 80 kPa
-	dev.pidResponses[PIDMAFAirFlow] = []byte{0x01, 0xF4}   // 5.0 g/s
+	dev.pidResponses[PIDCoolantTemp] = []byte{130}       // 90℃
+	dev.pidResponses[PIDIntakeMAP] = []byte{80}          // 80 kPa
+	dev.pidResponses[PIDMAFAirFlow] = []byte{0x01, 0xF4} // 5.0 g/s
 
 	r := &Reader{dev: dev, supportsMulti: true, multiTested: true, hasMAF: true, hasMAP: true}
 	data, err := r.ReadAll()
