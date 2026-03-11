@@ -35,7 +35,8 @@ generate_pr_body() {
 if [ -n "${1:-}" ]; then
   VERSION="$1"
 else
-  VERSION=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null | awk -F. '{print $1"."$2"."$3+1}')
+  # git describe は現ブランチ祖先のみ検索するため、全タグから最新 semver を取得
+  VERSION=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 | awk -F. '{print $1"."$2"."$3+1}')
 fi
 
 if [ -z "$VERSION" ]; then
