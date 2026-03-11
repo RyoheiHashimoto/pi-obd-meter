@@ -176,6 +176,17 @@ function updateOdometer(km) {
   return { status: 'ok', odometer: val };
 }
 
+// === トリップリセット (ダッシュボードから呼ばれる) ===
+// last_refuel_km を現在の total_km に設定し、trip_reset を Pi に通知
+function resetTrip() {
+  const currentKm = parseFloat(getSettingValue('total_km')) || 0;
+  if (currentKm <= 0) throw new Error('ODOデータがありません');
+
+  upsertSetting('last_refuel_km', currentKm);
+  upsertSetting('trip_reset', 'true');
+  return { status: 'ok', reset_km: currentKm };
+}
+
 // === 設定値取得 (設定シートからキーで検索) ===
 function getSettingValue(key) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -269,8 +280,12 @@ function buildDashboardHtml() {
   const maintData = getSheetData('メンテ状態');
   const completedIds = getCompletedIds();
   const currentOdo = parseFloat(getSettingValue('total_km')) || 0;
+  const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
 
   const recentFuel = fuelData.length > 0 ? fuelData.slice(-10).reverse() : [];
+
+  // 走行統計の算出
+  const tripStats = computeTripStats(fuelData, currentOdo, lastRefuelKm);
 
   // メンテ分割
   const alertItems = maintData.filter(r => {
@@ -299,6 +314,9 @@ function buildDashboardHtml() {
   html += '<div class="wrap">';
   html += '<h1>DYデミオ ダッシュボード</h1>';
   html += `<div class="sub">更新: ${now}</div>`;
+
+  // 走行統計カード
+  html += renderTripStatsCard(tripStats);
 
   // 給油記録フォーム
   html += '<div class="card">';
@@ -356,6 +374,17 @@ function buildDashboardHtml() {
   html += '<div class="form-hint">車のメーターと合わせて補正します。次回メンテナンス送信時にPiに反映されます。</div>';
   html += '<button class="form-submit" id="odo-btn" onclick="submitOdo()">ODOを補正</button>';
   html += '<div class="form-result" id="odo-result"></div>';
+  html += '</div>';
+
+  // トリップ修正フォーム
+  html += '<div class="card">';
+  html += '<h2>🔄 トリップ修正</h2>';
+  if (tripStats.tripKm > 0) {
+    html += `<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在のトリップ: <b style="color:#fff">${round(tripStats.tripKm, 0)} km</b></div>`;
+  }
+  html += '<button class="form-submit" style="background:#ff9800" id="trip-reset-btn" onclick="submitTripReset()">トリップをリセット</button>';
+  html += '<div class="form-hint">給油後の走行距離をゼロに戻します。給油記録の距離計算に影響します。</div>';
+  html += '<div class="form-result" id="trip-result"></div>';
   html += '</div>';
 
   html += `<script>${getDashboardJS()}</script>`;
@@ -421,7 +450,11 @@ function getDashboardCSS() {
     + '.form-result{margin-top:14px;padding:14px;border-radius:10px;font-size:24px;display:none}'
     + '.form-result.success{display:block;background:#1b3a1b;color:#69f0ae}'
     + '.form-result.error{display:block;background:#3a1b1b;color:#f44336}'
-    + '.form-hint{font-size:20px;color:#555;margin-top:6px}';
+    + '.form-hint{font-size:20px;color:#555;margin-top:6px}'
+    + '.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}'
+    + '.stat-item{background:#1a1a24;border-radius:12px;padding:18px;text-align:center}'
+    + '.stat-value{font-size:32px;font-weight:700;color:#fff}'
+    + '.stat-label{font-size:20px;color:#666;margin-top:4px}';
 }
 
 // === ダッシュボード JavaScript ===
@@ -500,7 +533,113 @@ function submitOdo() {
     })
     .updateOdometer(km);
 }
+
+function submitTripReset() {
+  if (!confirm('トリップをリセットしますか？')) return;
+
+  var btn = document.getElementById('trip-reset-btn');
+  var res = document.getElementById('trip-result');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  res.className = 'form-result';
+
+  google.script.run
+    .withSuccessHandler(function() {
+      res.className = 'form-result success';
+      res.textContent = 'トリップをリセットしました';
+      btn.disabled = false;
+      btn.textContent = 'トリップをリセット';
+    })
+    .withFailureHandler(function(e) {
+      res.className = 'form-result error';
+      res.textContent = 'エラー: ' + e.message;
+      btn.disabled = false;
+      btn.textContent = 'トリップをリセット';
+    })
+    .resetTrip();
+}
 `.trim();
+}
+
+// === 走行統計の算出 ===
+// 給油記録: [0]=日時, [1]=距離(km), [2]=燃費(km/L), [3]=給油量(L)
+function computeTripStats(fuelData, currentOdo, lastRefuelKm) {
+  const stats = {
+    currentOdo: currentOdo,
+    tripKm: (currentOdo > 0 && lastRefuelKm > 0) ? currentOdo - lastRefuelKm : 0,
+    totalFuelL: 0,
+    totalDistKm: 0,
+    avgEconomy: 0,
+    recentAvg: 0,
+    bestEconomy: 0,
+    recordCount: 0,
+  };
+
+  // 有効な給油記録（燃費 > 0）のみ集計
+  const valid = fuelData.filter(r => (r[2] || 0) > 0);
+  stats.recordCount = valid.length;
+
+  for (const r of valid) {
+    stats.totalDistKm += r[1] || 0;
+    stats.totalFuelL += r[3] || 0;
+    const e = r[2] || 0;
+    if (e > stats.bestEconomy) stats.bestEconomy = e;
+  }
+
+  if (stats.totalFuelL > 0) {
+    stats.avgEconomy = stats.totalDistKm / stats.totalFuelL;
+  }
+
+  // 直近3回の平均
+  const recent = valid.slice(-3);
+  if (recent.length > 0) {
+    const dist = recent.reduce((s, r) => s + (r[1] || 0), 0);
+    const fuel = recent.reduce((s, r) => s + (r[3] || 0), 0);
+    stats.recentAvg = fuel > 0 ? dist / fuel : 0;
+  }
+
+  return stats;
+}
+
+// === 走行統計カードの描画 ===
+function renderTripStatsCard(s) {
+  let html = '<div class="card">';
+  html += '<h2>📈 走行統計</h2>';
+
+  html += '<div class="stat-grid">';
+
+  if (s.tripKm > 0) {
+    html += renderStatItem('給油後', round(s.tripKm, 0) + ' km', '');
+  }
+  if (s.currentOdo > 0) {
+    html += renderStatItem('総走行', Math.round(s.currentOdo).toLocaleString() + ' km', '');
+  }
+  if (s.avgEconomy > 0) {
+    html += renderStatItem('通算燃費', round(s.avgEconomy, 1) + ' km/L', '#69f0ae');
+  }
+  if (s.recentAvg > 0) {
+    html += renderStatItem('直近3回', round(s.recentAvg, 1) + ' km/L', '#4fc3f7');
+  }
+  if (s.bestEconomy > 0) {
+    html += renderStatItem('最高燃費', round(s.bestEconomy, 1) + ' km/L', '#ffd54f');
+  }
+  if (s.totalFuelL > 0) {
+    html += renderStatItem('総給油量', round(s.totalFuelL, 0) + ' L', '');
+  }
+
+  html += '</div>';
+
+  if (s.recordCount === 0) {
+    html += '<div style="color:#555;font-size:24px;text-align:center;padding:12px 0">給油記録がありません</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderStatItem(label, value, color) {
+  const style = color ? ` style="color:${color}"` : '';
+  return `<div class="stat-item"><div class="stat-value"${style}>${value}</div><div class="stat-label">${label}</div></div>`;
 }
 
 // === Render helper: 給油行 ===
