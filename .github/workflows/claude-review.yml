@@ -25,22 +25,42 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            Review this PR and fix issues you find. Focus on:
-            1. Bugs and logic errors — fix them
-            2. Security issues — fix them
-            3. Go best practices (gofmt, govet, errcheck) — fix violations
-            4. Test coverage for changed code — add tests if missing
+            You are a code reviewer for a Go project (OBD-2 car meter on Raspberry Pi).
+            Review this PR thoroughly. Follow CLAUDE.md conventions.
 
-            Guidelines:
-            - Follow CLAUDE.md conventions
+            ## Review process
+
+            1. Read the PR diff and understand the changes
+            2. Run `go build ./...` and `go test -race ./...` to verify
+            3. Check for:
+               - Bugs and logic errors
+               - Security issues
+               - Go best practices (gofmt, govet, errcheck violations)
+               - Missing test coverage for changed code
+
+            ## Actions
+
+            - **Minor issues** (formatting, lint): Fix them silently with a commit
+            - **Medium issues** (bugs, missing error handling): Fix and commit with explanation
+            - **Design decisions**: Leave a review comment asking the author, do NOT fix
+            - **All clear**: If no issues found, approve the PR
+
+            ## Rules
+
             - Commit each fix separately with a clear message in Japanese
-            - If the issue is minor (formatting, lint), fix it silently
-            - If the issue requires a design decision, leave a review comment instead
-            - Run `go build ./...` and `go test ./...` after fixes to verify
+            - Always run `go build ./...` and `go test -race ./...` after any fix
+            - If you made fixes, submit a review with COMMENT summarizing what you changed
+            - If no issues found (or only minor fixes), APPROVE the PR
+            - If there are unresolved design questions, REQUEST_CHANGES with clear explanation
+            - Review comments in Japanese
 
-            Review comments in Japanese.
-          claude_args: "--max-turns 10"
+          claude_args: "--max-turns 15"
