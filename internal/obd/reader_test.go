@@ -348,3 +348,143 @@ func TestReadAll_MAPOnly(t *testing.T) {
 		t.Errorf("MAF should be 0 when not supported, got %.2f", data.MAFAirFlow)
 	}
 }
+
+// --- ReadAll 2バッチ化テスト ---
+
+func TestReadAll_2Batch_VerifyBatchCount(t *testing.T) {
+	// マルチPID対応 + MAP + MAF → QueryMultiPIDが2回呼ばれることを検証
+	dev := newMockDevice()
+	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20}
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}
+	dev.pidResponses[PIDEngineLoad] = []byte{128}
+	dev.pidResponses[PIDThrottlePosition] = []byte{64}
+	dev.pidResponses[PIDCoolantTemp] = []byte{130}
+	dev.pidResponses[PIDIntakeMAP] = []byte{80}
+	dev.pidResponses[PIDMAFAirFlow] = []byte{0x01, 0xF4}
+
+	r := &Reader{dev: dev, supportsMulti: true, multiTested: true, hasMAF: true, hasMAP: true}
+	data, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+
+	// QueryMultiPIDは2回（バッチ1 + バッチ2）
+	if dev.multiCalls != 2 {
+		t.Errorf("QueryMultiPID calls: got %d, want 2", dev.multiCalls)
+	}
+
+	// 全データが取得できている
+	if data.CoolantTemp != 90 {
+		t.Errorf("Coolant: got %.0f, want 90", data.CoolantTemp)
+	}
+	if data.IntakeMAP != 80 {
+		t.Errorf("MAP: got %.0f, want 80", data.IntakeMAP)
+	}
+	if data.MAFAirFlow != 5.0 {
+		t.Errorf("MAF: got %.2f, want 5.0", data.MAFAirFlow)
+	}
+}
+
+func TestReadAll_2Batch_MAPOnly_NoBatchCount(t *testing.T) {
+	// MAP対応・MAF非対応 → バッチ2は [水温, MAP] の2PID
+	dev := newMockDevice()
+	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20}
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}
+	dev.pidResponses[PIDEngineLoad] = []byte{128}
+	dev.pidResponses[PIDThrottlePosition] = []byte{64}
+	dev.pidResponses[PIDCoolantTemp] = []byte{130}
+	dev.pidResponses[PIDIntakeMAP] = []byte{80}
+
+	r := &Reader{dev: dev, supportsMulti: true, multiTested: true, hasMAP: true, hasMAF: false}
+	data, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+
+	if dev.multiCalls != 2 {
+		t.Errorf("QueryMultiPID calls: got %d, want 2", dev.multiCalls)
+	}
+	if data.CoolantTemp != 90 {
+		t.Errorf("Coolant: got %.0f, want 90", data.CoolantTemp)
+	}
+	if data.IntakeMAP != 80 {
+		t.Errorf("MAP: got %.0f, want 80", data.IntakeMAP)
+	}
+	if data.MAFAirFlow != 0 {
+		t.Errorf("MAF should be 0: got %.2f", data.MAFAirFlow)
+	}
+}
+
+func TestReadAll_2Batch_CoolantOnly(t *testing.T) {
+	// MAP・MAF両方非対応 → バッチ2は [水温] のみ
+	dev := newMockDevice()
+	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20}
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}
+	dev.pidResponses[PIDEngineLoad] = []byte{128}
+	dev.pidResponses[PIDThrottlePosition] = []byte{64}
+	dev.pidResponses[PIDCoolantTemp] = []byte{130}
+
+	r := &Reader{dev: dev, supportsMulti: true, multiTested: true, hasMAP: false, hasMAF: false}
+	data, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+
+	if dev.multiCalls != 2 {
+		t.Errorf("QueryMultiPID calls: got %d, want 2", dev.multiCalls)
+	}
+	if data.CoolantTemp != 90 {
+		t.Errorf("Coolant: got %.0f, want 90", data.CoolantTemp)
+	}
+}
+
+func TestReadAll_2Batch_Batch2Fallback(t *testing.T) {
+	// バッチ2が失敗 → 個別クエリにフォールバック
+	dev := newMockDevice()
+	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20}
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}
+	dev.pidResponses[PIDEngineLoad] = []byte{128}
+	dev.pidResponses[PIDThrottlePosition] = []byte{64}
+	dev.pidResponses[PIDCoolantTemp] = []byte{130}
+	dev.pidResponses[PIDIntakeMAP] = []byte{80}
+
+	// バッチ2だけ失敗させるため、カウントベースのフック
+	batch2Fails := &batch2FailDevice{mockDevice: dev, failOnCall: 2}
+
+	r := &Reader{dev: batch2Fails, supportsMulti: true, multiTested: true, hasMAP: true, hasMAF: false}
+	data, err := r.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll failed: %v", err)
+	}
+
+	// バッチ1は成功、バッチ2は失敗してフォールバック
+	if data.SpeedKmh != 60 {
+		t.Errorf("Speed: got %.0f, want 60", data.SpeedKmh)
+	}
+	if data.CoolantTemp != 90 {
+		t.Errorf("Coolant (fallback): got %.0f, want 90", data.CoolantTemp)
+	}
+	if data.IntakeMAP != 80 {
+		t.Errorf("MAP (fallback): got %.0f, want 80", data.IntakeMAP)
+	}
+
+	// supportsMulti はまだ true（バッチ1は成功しているため）
+	if !r.supportsMulti {
+		t.Error("supportsMulti should remain true (batch1 succeeded)")
+	}
+}
+
+// batch2FailDevice は N 回目の QueryMultiPID を失敗させるラッパー
+type batch2FailDevice struct {
+	*mockDevice
+	failOnCall int
+	callCount  int
+}
+
+func (d *batch2FailDevice) QueryMultiPID(pids []byte) (map[byte][]byte, error) {
+	d.callCount++
+	if d.callCount == d.failOnCall {
+		return nil, fmt.Errorf("バッチ2失敗")
+	}
+	return d.mockDevice.QueryMultiPID(pids)
+}
