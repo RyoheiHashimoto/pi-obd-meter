@@ -1,5 +1,5 @@
 // ============================================================
-// Speed Gauge — SVGアークゲージ + スロットルアーク + MAPアーク + 60fps補間
+// Speed Gauge — SVGアークゲージ + ArcAnimator + 60fps補間
 // ============================================================
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -11,19 +11,15 @@ const FUEL_R_OFFSET = 18;
 const THROTTLE_R_OFFSET = 18;
 
 const LERP_SPEED = 0.35;
-const LERP_THR_SPEED = 0.4;
-const LERP_MAP_SPEED = 0.3;
 const LERP_THRESHOLD = 0.05;
 const LERP_STOP = 0.01;
+const HUE_MAX = 210;
+
+const MAP_MAX_KPA = 101.3;  // NA車の最大（大気圧）
+const FUEL_MAX_LH = 20;     // 燃料レートアーク最大値
 
 let thrIdleBaseline = 11.5;
 let thrMaxPct = 78;
-const THR_HUE_MAX = 210;
-
-// MAP表示定数
-const MAP_MAX_KPA = 101.3;  // NA車の最大（大気圧）
-const FUEL_MAX_LH = 20;     // 燃料レートアーク最大値
-const LERP_FUEL_SPEED = 0.35;
 
 // 極座標→直交座標（12時=0°、時計回り正）
 function polarToXY(cx, cy, r, deg) {
@@ -63,105 +59,74 @@ export function speedColor(v) {
   return '#78909c';
 }
 
-// --- スロットルアーク ---
-let thrArc, thrLabel;
-let thrCx, thrCy, thrR;
-let thrCur = 0, thrTgt = 0, thrRafId = 0;
+// --- ArcAnimator: アーク LERP アニメーションの共通クラス ---
+// スロットル・MAP・燃料レートの3アークで共通のパターンを集約。
+// 各アークは value → percentage → angle → arcPath → HSL色 → glow の流れで描画する。
+class ArcAnimator {
+  constructor({ cx, cy, r, maxVal, lerpSpeed, arcEl, offColor, activeThreshold, labelEl, readoutVal, readoutUnit, formatVal }) {
+    this.cx = cx;
+    this.cy = cy;
+    this.r = r;
+    this.maxVal = maxVal;
+    this.lerpSpeed = lerpSpeed;
+    this.arcEl = arcEl;
+    this.offColor = offColor || '#222';
+    this.activeThreshold = activeThreshold ?? 0.5;
+    this.labelEl = labelEl || null;
+    this.readoutVal = readoutVal || null;
+    this.readoutUnit = readoutUnit || null;
+    this.formatVal = formatVal || (v => String(Math.round(v)));
+    this.cur = 0;
+    this.tgt = 0;
+    this.rafId = 0;
+    this._lerp = this._lerp.bind(this);
+  }
 
-function thrLerp() {
-  const delta = thrTgt - thrCur;
-  thrCur = Math.abs(delta) > LERP_THRESHOLD ? thrCur + delta * LERP_THR_SPEED : thrTgt;
-  const pct = Math.max(0, Math.min(100, thrCur));
-  const angle = ARC_START + (pct / 100) * ARC_SWEEP;
-  thrArc.setAttribute('d', pct > 0.5 ? arcPath(thrCx, thrCy, thrR, ARC_START, angle) : '');
-  const hue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
-  const col = pct > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#333';
-  thrArc.setAttribute('stroke', col);
-  applyGlow(thrArc, col);
-  thrLabel.setAttribute('fill', col);
-  thrRafId = Math.abs(thrCur - thrTgt) > LERP_STOP ? requestAnimationFrame(thrLerp) : 0;
+  update(value) {
+    this.tgt = value;
+    if (!this.rafId) this.rafId = requestAnimationFrame(this._lerp);
+  }
+
+  _lerp() {
+    const delta = this.tgt - this.cur;
+    this.cur = Math.abs(delta) > LERP_THRESHOLD ? this.cur + delta * this.lerpSpeed : this.tgt;
+    const pct = Math.max(0, Math.min(100, this.cur / this.maxVal * 100));
+    const angle = ARC_START + (pct / 100) * ARC_SWEEP;
+    this.arcEl.setAttribute('d', pct > 0.5 ? arcPath(this.cx, this.cy, this.r, ARC_START, angle) : '');
+    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
+    const active = this.cur > this.activeThreshold;
+    const col = active ? `hsl(${hue}, 100%, 55%)` : this.offColor;
+    this.arcEl.setAttribute('stroke', col);
+    applyGlow(this.arcEl, col);
+    if (this.labelEl) this.labelEl.setAttribute('fill', col);
+    if (this.readoutVal) {
+      const rdCol = active ? col : '#333';
+      this.readoutVal.setAttribute('fill', rdCol);
+      this.readoutUnit.setAttribute('fill', rdCol);
+      this.readoutVal.textContent = active ? this.formatVal(this.cur) : '--';
+    }
+    this.rafId = Math.abs(this.cur - this.tgt) > LERP_STOP ? requestAnimationFrame(this._lerp) : 0;
+  }
 }
+
+// --- スロットル / MAP / FuelRate アニメーター ---
+let thrAnimator, mapAnimator, fuelAnimator;
 
 export function setThrottleIdleBaseline(val) { thrIdleBaseline = val; }
 export function setThrottleMaxPct(val) { thrMaxPct = val; }
 
 export function updateThrottle(pct) {
   const range = thrMaxPct - thrIdleBaseline;
-  thrTgt = range > 0 ? Math.min(100, Math.max(0, (pct - thrIdleBaseline) / range * 100)) : 0;
-  if (!thrRafId) thrRafId = requestAnimationFrame(thrLerp);
-}
-
-// --- MAPアーク ---
-let mapArc, mapVal, mapUnit;
-let mapCx, mapCy, mapR;
-let mapCur = 0, mapTgt = 0, mapRafId = 0;
-
-// MAP kPa → 色（負圧=青、巡航=緑、高負荷=橙、全開=赤）
-function mapColor(kPa) {
-  if (kPa < 35)  return '#29b6f6'; // 青: エンブレ
-  if (kPa < 60)  return '#4caf50'; // 緑: 巡航
-  if (kPa < 85)  return '#ff9800'; // 橙: 高負荷
-  return '#f44336';                 // 赤: ほぼ全開
-}
-
-function mapLerp() {
-  const delta = mapTgt - mapCur;
-  mapCur = Math.abs(delta) > LERP_THRESHOLD ? mapCur + delta * LERP_MAP_SPEED : mapTgt;
-  const pct = Math.max(0, Math.min(100, mapCur / MAP_MAX_KPA * 100));
-  const angle = ARC_START + (pct / 100) * ARC_SWEEP;
-  mapArc.setAttribute('d', pct > 0.5 ? arcPath(mapCx, mapCy, mapR, ARC_START, angle) : '');
-  const hue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
-  const col = mapCur > 0.5 ? `hsl(${hue}, 100%, 55%)` : '#222';
-  mapArc.setAttribute('stroke', col);
-  applyGlow(mapArc, col);
-  if (mapVal) {
-    const rdCol = mapCur > 0.5 ? col : '#333';
-    mapVal.setAttribute('fill', rdCol);
-    mapUnit.setAttribute('fill', rdCol);
-    mapVal.textContent = mapCur > 0.5 ? String(Math.round(mapCur)) : '--';
-  }
-  mapRafId = Math.abs(mapCur - mapTgt) > LERP_STOP ? requestAnimationFrame(mapLerp) : 0;
+  const normalized = range > 0 ? Math.min(100, Math.max(0, (pct - thrIdleBaseline) / range * 100)) : 0;
+  thrAnimator.update(normalized);
 }
 
 export function updateMAP(kPa) {
-  mapTgt = kPa;
-  if (!mapRafId) mapRafId = requestAnimationFrame(mapLerp);
-}
-
-// --- 燃料レートアーク ---
-let fuelArc, fuelVal, fuelUnit;
-let fuelCx, fuelCy, fuelR;
-let fuelCur = 0, fuelTgt = 0, fuelRafId = 0;
-
-function fuelColor(lh) {
-  if (lh < 2)  return '#29b6f6'; // 青: アイドル
-  if (lh < 5)  return '#4caf50'; // 緑: 巡航
-  if (lh < 10) return '#ff9800'; // 橙: 高負荷
-  return '#f44336';               // 赤: 全開
-}
-
-function fuelLerp() {
-  const delta = fuelTgt - fuelCur;
-  fuelCur = Math.abs(delta) > LERP_THRESHOLD ? fuelCur + delta * LERP_FUEL_SPEED : fuelTgt;
-  const pct = Math.max(0, Math.min(100, fuelCur / FUEL_MAX_LH * 100));
-  const angle = ARC_START + (pct / 100) * ARC_SWEEP;
-  fuelArc.setAttribute('d', pct > 0.5 ? arcPath(fuelCx, fuelCy, fuelR, ARC_START, angle) : '');
-  const fHue = THR_HUE_MAX - (pct / 100) * THR_HUE_MAX;
-  const col = fuelCur > 0.01 ? `hsl(${fHue}, 100%, 55%)` : '#222';
-  fuelArc.setAttribute('stroke', col);
-  applyGlow(fuelArc, col);
-  if (fuelVal) {
-    const rdCol = fuelCur > 0.01 ? col : '#333';
-    fuelVal.setAttribute('fill', rdCol);
-    fuelUnit.setAttribute('fill', rdCol);
-    fuelVal.textContent = fuelCur > 0.01 ? fuelCur.toFixed(1) : '--';
-  }
-  fuelRafId = Math.abs(fuelCur - fuelTgt) > LERP_STOP ? requestAnimationFrame(fuelLerp) : 0;
+  mapAnimator.update(kPa);
 }
 
 export function updateFuelRate(lh) {
-  fuelTgt = lh;
-  if (!fuelRafId) fuelRafId = requestAnimationFrame(fuelLerp);
+  fuelAnimator.update(lh);
 }
 
 // --- スピードゲージ構築 ---
@@ -171,18 +136,6 @@ export function buildSpeedGauge(svgId, cfg) {
   const mapArcR = r - MAP_R_OFFSET;
   const fuelArcR = mapArcR - FUEL_R_OFFSET;
   const throttleR = fuelArcR - THROTTLE_R_OFFSET;
-
-  mapCx = cx;
-  mapCy = cy;
-  mapR = mapArcR;
-
-  fuelCx = cx;
-  fuelCy = cy;
-  fuelR = fuelArcR;
-
-  thrCx = cx;
-  thrCy = cy;
-  thrR = throttleR;
 
   // Track (thick bezel)
   svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -205,20 +158,20 @@ export function buildSpeedGauge(svgId, cfg) {
     }
   }
 
-  // MAP arc (track) — outer inner arc
+  // MAP arc (track)
   svgEl(svg, 'path', { d: arcPath(cx, cy, mapArcR, ARC_START, ARC_END), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  mapArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  const mapArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // Fuel rate arc (track)
   svgEl(svg, 'path', { d: arcPath(cx, cy, fuelArcR, ARC_START, ARC_END), fill: 'none', stroke: '#0e0e14', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  fuelArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  const fuelArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // Throttle arc (track) — innermost
   svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  thrArc = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // THROTTLE label
-  thrLabel = svgEl(svg, 'text', { x: cx, y: cy - Math.round(throttleR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
+  const thrLabel = svgEl(svg, 'text', { x: cx, y: cy - Math.round(throttleR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
   thrLabel.textContent = 'THROTTLE';
 
   // Value arc
@@ -247,16 +200,32 @@ export function buildSpeedGauge(svgId, cfg) {
   // MAP / Fuel readouts (km/h の下) — 値と単位を分離して単位位置を固定
   const rdY = numY + numSz * 0.55 + 58;
   const rdFs = 24;
-  mapVal  = svgEl(svg, 'text', { x: cx - 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
-  mapVal.textContent = '--';
-  mapUnit = svgEl(svg, 'text', { x: cx - 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
-  mapUnit.textContent = 'kPa';
-  fuelVal  = svgEl(svg, 'text', { x: cx + 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
-  fuelVal.textContent = '--';
-  fuelUnit = svgEl(svg, 'text', { x: cx + 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
-  fuelUnit.textContent = 'L/h';
+  const mapValEl  = svgEl(svg, 'text', { x: cx - 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
+  mapValEl.textContent = '--';
+  const mapUnitEl = svgEl(svg, 'text', { x: cx - 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
+  mapUnitEl.textContent = 'kPa';
+  const fuelValEl  = svgEl(svg, 'text', { x: cx + 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
+  fuelValEl.textContent = '--';
+  const fuelUnitEl = svgEl(svg, 'text', { x: cx + 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
+  fuelUnitEl.textContent = 'L/h';
 
-  // Lerp animation
+  // ArcAnimator インスタンス生成
+  thrAnimator = new ArcAnimator({
+    cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
+    arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel,
+  });
+  mapAnimator = new ArcAnimator({
+    cx, cy, r: mapArcR, maxVal: MAP_MAX_KPA, lerpSpeed: 0.3,
+    arcEl: mapArcEl, offColor: '#222', activeThreshold: 0.5,
+    readoutVal: mapValEl, readoutUnit: mapUnitEl, formatVal: v => String(Math.round(v)),
+  });
+  fuelAnimator = new ArcAnimator({
+    cx, cy, r: fuelArcR, maxVal: FUEL_MAX_LH, lerpSpeed: 0.35,
+    arcEl: fuelArcEl, offColor: '#222', activeThreshold: 0.01,
+    readoutVal: fuelValEl, readoutUnit: fuelUnitEl, formatVal: v => v.toFixed(1),
+  });
+
+  // Speed Lerp animation
   let curVal = min, tgtVal = min, rafId = 0;
   function lerp() {
     const delta = tgtVal - curVal;

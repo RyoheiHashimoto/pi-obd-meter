@@ -67,7 +67,7 @@ func (e *ELM327) Connect() error {
 	for _, cmd := range initCmds {
 		resp, err := e.sendCommand(cmd)
 		if err != nil {
-			e.port.Close()
+			_ = e.port.Close()
 			return fmt.Errorf("初期化コマンド %s 失敗: %w", cmd, err)
 		}
 		_ = resp

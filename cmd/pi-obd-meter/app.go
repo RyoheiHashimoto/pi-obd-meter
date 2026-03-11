@@ -216,6 +216,24 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 	}
 }
 
+// initializeFromGAS はWiFi接続を待機し、GASから状態復元とメンテナンス初回送信を行う
+func (app *App) initializeFromGAS(ctx context.Context) {
+	for i := 0; i < 30; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if checkWiFi() {
+			app.restoreFromGAS(ctx)
+			app.sendMaintenanceStatus(ctx)
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+	slog.Warn("WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
+}
+
 // restoreFromGAS はGASから累計走行距離を復元する（起動時用）
 func (app *App) restoreFromGAS(ctx context.Context) {
 	restored, err := app.client.RestoreState(ctx)

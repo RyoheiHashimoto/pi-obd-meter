@@ -16,11 +16,11 @@ func Write(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	if _, err := f.Write(data); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err := f.Close(); err != nil {
@@ -32,7 +32,7 @@ func Write(path string, data []byte, perm os.FileMode) error {
 	// ディレクトリの fsync で rename のメタデータをディスクに反映
 	if dir, err := os.Open(filepath.Dir(path)); err == nil {
 		_ = dir.Sync()
-		dir.Close()
+		_ = dir.Close()
 	}
 	return nil
 }

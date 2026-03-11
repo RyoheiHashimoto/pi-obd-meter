@@ -46,3 +46,35 @@ func (f *obdFilter) Reset() {
 	f.valid = false
 	f.rejectCount = 0
 }
+
+// obdFilters はOBD値フィルターをまとめて管理する
+type obdFilters struct {
+	speed    *obdFilter
+	rpm      *obdFilter
+	load     *obdFilter
+	throttle *obdFilter
+	coolant  *obdFilter
+	mapKPa   *obdFilter
+}
+
+// newOBDFilters はデフォルト設定でフィルター群を作成する
+func newOBDFilters() obdFilters {
+	return obdFilters{
+		speed:    newOBDFilter(20),   // max 20km/h per 150ms
+		rpm:      newOBDFilter(2000), // max 2000 per 150ms
+		load:     newOBDFilter(40),   // max 40% per 150ms
+		throttle: newOBDFilter(60),   // max 60% per 150ms
+		coolant:  newOBDFilter(5),    // max 5°C per 750ms
+		mapKPa:   newOBDFilter(30),   // max 30kPa per 750ms
+	}
+}
+
+// ResetAll は全フィルターをリセットする
+func (f *obdFilters) ResetAll() {
+	f.speed.Reset()
+	f.rpm.Reset()
+	f.load.Reset()
+	f.throttle.Reset()
+	f.coolant.Reset()
+	f.mapKPa.Reset()
+}

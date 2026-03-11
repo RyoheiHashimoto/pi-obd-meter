@@ -33,6 +33,53 @@ func checkWiFi() bool {
 	return len(addrs) > 0
 }
 
+// obdState はOBD接続とメインループの状態を管理する
+type obdState struct {
+	elm           *obd.ELM327
+	reader        *obd.Reader
+	connected     bool
+	hasMAF        bool
+	hasMAP        bool
+	errCount      int
+	sampleCount   int
+	statusCount   int
+	filters       obdFilters
+	lastCoolant   float64
+	lastMAP       float64
+	lastFuelEco   float64
+	lastFuelRate  float64
+	wifiConnected bool
+}
+
+// tryConnect はELM327への接続を試みる
+func (s *obdState) tryConnect() bool {
+	if err := s.elm.Connect(); err != nil {
+		slog.Warn("ELM327接続失敗", "error", err)
+		return false
+	}
+	r := obd.NewReader(s.elm)
+	if err := r.DetectCapabilities(); err != nil {
+		slog.Warn("OBDケイパビリティ検出失敗", "error", err)
+		_ = s.elm.Close()
+		return false
+	}
+	s.reader = r
+	s.hasMAF = r.HasMAF()
+	s.hasMAP = r.HasMAP()
+	s.connected = true
+	slog.Info("ELM327接続完了")
+	return true
+}
+
+// resetForReconnect は再接続時に状態をリセットする
+func (s *obdState) resetForReconnect() {
+	s.sampleCount = 0
+	s.errCount = 0
+	s.filters.ResetAll()
+}
+
+const maxConsecutiveErrors = 10
+
 func main() {
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
 	flag.Parse()
@@ -42,7 +89,6 @@ func main() {
 	fmt.Println("=================================")
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
-	fmt.Printf("シリアルポート: %s\n", cfg.SerialPort)
 	slog.Info("設定読み込み完了",
 		"serial_port", cfg.SerialPort,
 		"engine_displacement_l", cfg.EngineDisplacementL,
@@ -71,53 +117,18 @@ func main() {
 
 	// --- ローカルAPI + Web UI（OBD接続前に起動） ---
 	go app.startLocalAPI(ctx)
-	fmt.Printf("✓ LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
+	slog.Info("ローカルAPI起動", "meter_url", fmt.Sprintf("http://localhost:%d/meter.html", cfg.LocalAPIPort))
 
 	// --- WiFi接続後: GASから状態復元 + メンテナンス初回送信 ---
-	go func() {
-		for i := 0; i < 30; i++ {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-			if checkWiFi() {
-				app.restoreFromGAS(ctx)
-				app.sendMaintenanceStatus(ctx)
-				return
-			}
-			time.Sleep(2 * time.Second)
-		}
-		slog.Warn("WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
-	}()
+	go app.initializeFromGAS(ctx)
 
 	// --- ELM327接続（失敗してもクラッシュしない） ---
-	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
-	var reader *obd.Reader
-	obdConnected := false
-	var hasMAF, hasMAP bool
-
-	tryConnectOBD := func() bool {
-		if err := elm.Connect(); err != nil {
-			slog.Warn("ELM327接続失敗", "error", err)
-			return false
-		}
-		r := obd.NewReader(elm)
-		if err := r.DetectCapabilities(); err != nil {
-			slog.Warn("OBDケイパビリティ検出失敗", "error", err)
-			elm.Close()
-			return false
-		}
-		reader = r
-		hasMAF = reader.HasMAF()
-		hasMAP = reader.HasMAP()
-		fmt.Println("✓ ELM327接続完了")
-		return true
+	obs := &obdState{
+		elm:     obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol),
+		filters: newOBDFilters(),
 	}
-
-	obdConnected = tryConnectOBD()
-	if !obdConnected {
-		fmt.Println("⚠ OBD未接続 → メーター表示のみで起動、バックグラウンドでリトライ")
+	if !obs.tryConnect() {
+		slog.Warn("OBD未接続、メーター表示のみで起動（バックグラウンドでリトライ）")
 	}
 
 	// --- メインループ ---
@@ -144,39 +155,21 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	fmt.Println("\n▶ データ収集開始...")
-	fmt.Printf("  LCD メーター: http://localhost:%d/meter.html\n", cfg.LocalAPIPort)
+	slog.Info("データ収集開始")
 
-	sampleCount := 0
-	statusCount := 0
-	var lastCoolantTemp float64
-	var lastIntakeMAP float64
-	var lastFuelEconomy float64
-	var lastFuelRateLH float64
-	var errCount int
-	var wifiConnected bool
-
-	// OBD値フィルター（スパイク除去のみ）
-	speedFilter := newOBDFilter(20)    // 速度: max 20km/h per 150ms
-	rpmFilter := newOBDFilter(2000)    // RPM: max 2000 per 150ms
-	loadFilter := newOBDFilter(40)     // 負荷: max 40% per 150ms
-	throttleFilter := newOBDFilter(60) // スロットル: max 60% per 150ms
-	coolantFilter := newOBDFilter(5)   // 水温: max 5°C per 750ms
-	mapFilter := newOBDFilter(30)      // MAP: max 30kPa per 750ms
-	const maxConsecutiveErrors = 10
 	for {
 		select {
 		case <-ticker.C:
-			if !obdConnected {
+			if !obs.connected {
 				// OBD未接続: 1秒ごとにステータスだけ更新
-				statusCount++
-				if statusCount%7 == 0 {
-					wifiConnected = checkWiFi()
+				obs.statusCount++
+				if obs.statusCount%7 == 0 {
+					obs.wifiConnected = checkWiFi()
 					app.updateRealtimeData(RealtimeData{
 						Alerts:        app.maintMgr.GetAlerts(),
 						Notification:  app.getNotification(),
 						OBDConnected:  false,
-						WiFiConnected: wifiConnected,
+						WiFiConnected: obs.wifiConnected,
 						PendingCount:  app.client.QueueSize(),
 						SendSending:   app.client.IsSending(),
 					})
@@ -184,37 +177,37 @@ func main() {
 				continue
 			}
 
-			sampleCount++
-			isFull := sampleCount%fullEveryN == 0
+			obs.sampleCount++
+			isFull := obs.sampleCount%fullEveryN == 0
 
 			var data *obd.OBDData
 			var err error
 			if isFull {
-				data, err = reader.ReadAll()
+				data, err = obs.reader.ReadAll()
 			} else {
-				data, err = reader.ReadFast()
+				data, err = obs.reader.ReadFast()
 			}
 			if err != nil {
-				errCount++
-				if errCount >= maxConsecutiveErrors {
-					slog.Warn("OBD接続ロスト、リトライ待ち", "consecutive_errors", errCount)
-					obdConnected = false
-					elm.Close()
-					errCount = 0
+				obs.errCount++
+				if obs.errCount >= maxConsecutiveErrors {
+					slog.Warn("OBD接続ロスト、リトライ待ち", "consecutive_errors", obs.errCount)
+					obs.connected = false
+					_ = obs.elm.Close()
+					obs.errCount = 0
 				}
 				continue
 			}
-			errCount = 0
+			obs.errCount = 0
 
 			// OBD値フィルタリング（ノイズ・スパイク除去）
-			data.SpeedKmh = speedFilter.Update(data.SpeedKmh)
-			data.RPM = rpmFilter.Update(data.RPM)
-			data.EngineLoad = loadFilter.Update(data.EngineLoad)
-			data.ThrottlePos = throttleFilter.Update(data.ThrottlePos)
+			data.SpeedKmh = obs.filters.speed.Update(data.SpeedKmh)
+			data.RPM = obs.filters.rpm.Update(data.RPM)
+			data.EngineLoad = obs.filters.load.Update(data.EngineLoad)
+			data.ThrottlePos = obs.filters.throttle.Update(data.ThrottlePos)
 			if isFull {
-				data.CoolantTemp = coolantFilter.Update(data.CoolantTemp)
-				if hasMAP {
-					data.IntakeMAP = mapFilter.Update(data.IntakeMAP)
+				data.CoolantTemp = obs.filters.coolant.Update(data.CoolantTemp)
+				if obs.hasMAP {
+					data.IntakeMAP = obs.filters.mapKPa.Update(data.IntakeMAP)
 				}
 			}
 
@@ -222,15 +215,15 @@ func main() {
 			dtSec := float64(fastIntervalMs) / 1000.0
 
 			if isFull {
-				lastCoolantTemp = data.CoolantTemp
-				lastIntakeMAP = data.IntakeMAP
-				wifiConnected = checkWiFi()
-				lastFuelEconomy, lastFuelRateLH = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, hasMAF, data.IntakeMAP, hasMAP, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
+				obs.lastCoolant = data.CoolantTemp
+				obs.lastMAP = data.IntakeMAP
+				obs.wifiConnected = checkWiFi()
+				obs.lastFuelEco, obs.lastFuelRate = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, obs.hasMAF, data.IntakeMAP, obs.hasMAP, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
 			}
 
 			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
-			trackerFuelRate := lastFuelRateLH
-			if lastFuelEconomy < 0 {
+			trackerFuelRate := obs.lastFuelRate
+			if obs.lastFuelEco < 0 {
 				trackerFuelRate = 0
 			}
 			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
@@ -241,36 +234,28 @@ func main() {
 				RPM:            data.RPM,
 				EngineLoad:     data.EngineLoad,
 				ThrottlePos:    data.ThrottlePos,
-				FuelEconomy:    lastFuelEconomy,
-				FuelRateLH:     lastFuelRateLH,
+				FuelEconomy:    obs.lastFuelEco,
+				FuelRateLH:     obs.lastFuelRate,
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
 				TripKm:         app.tracker.DistanceKm(),
-				CoolantTemp:    lastCoolantTemp,
-				IntakeMAP:      lastIntakeMAP,
+				CoolantTemp:    obs.lastCoolant,
+				IntakeMAP:      obs.lastMAP,
 				Alerts:         app.maintMgr.GetAlerts(),
 				Notification:   app.getNotification(),
 				OBDConnected:   true,
-				WiFiConnected:  wifiConnected,
+				WiFiConnected:  obs.wifiConnected,
 				PendingCount:   app.client.QueueSize(),
 			})
 
-			if sampleCount%30 == 0 {
+			if obs.sampleCount%30 == 0 {
 				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm",
 					data.SpeedKmh, data.RPM)
 			}
 
 		case <-obdRetryTicker.C:
-			if !obdConnected {
-				obdConnected = tryConnectOBD()
-				if obdConnected {
-					sampleCount = 0
-					errCount = 0
-					speedFilter.Reset()
-					rpmFilter.Reset()
-					loadFilter.Reset()
-					throttleFilter.Reset()
-					coolantFilter.Reset()
-					mapFilter.Reset()
+			if !obs.connected {
+				if obs.tryConnect() {
+					obs.resetForReconnect()
 				}
 			}
 
@@ -281,7 +266,7 @@ func main() {
 			app.sendMaintenanceStatus(ctx)
 
 		case sig := <-sigCh:
-			fmt.Printf("\n\nシグナル受信 (%v)、シャットダウン...\n", sig)
+			slog.Info("シグナル受信、シャットダウン開始", "signal", sig)
 			cancel() // HTTP サーバーと goroutine にキャンセルを通知
 			done := make(chan struct{})
 			go func() {
@@ -295,8 +280,8 @@ func main() {
 			case <-time.After(5 * time.Second):
 				slog.Warn("状態保存タイムアウト（5秒）")
 			}
-			if obdConnected {
-				elm.Close()
+			if obs.connected {
+				_ = obs.elm.Close()
 			}
 			return
 		}

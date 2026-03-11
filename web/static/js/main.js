@@ -3,7 +3,7 @@
 // ============================================================
 
 import { buildSpeedGauge, updateThrottle, updateMAP, updateFuelRate, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
-import { createIndicators, updateIndicators, setDot } from './indicators.js';
+import { createIndicators, updateIndicators } from './indicators.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,

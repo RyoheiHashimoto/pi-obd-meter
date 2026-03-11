@@ -84,7 +84,7 @@ func (c *Client) doPost(ctx context.Context, payload GASPayload) ([]byte, error)
 	if err != nil {
 		return nil, fmt.Errorf("送信失敗 [%s]: %w", payload.Type, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("Webhook エラー [%s]: status %d", payload.Type, resp.StatusCode)

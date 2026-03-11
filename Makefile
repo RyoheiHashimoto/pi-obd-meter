@@ -1,6 +1,6 @@
 # pi-obd-meter Makefile
 
-.PHONY: test test-cover lint build build-arm64 clean check deploy deploy-gas logs ssh status restart release
+.PHONY: test test-cover lint fmt vet build build-arm64 clean check deploy deploy-gas logs ssh status restart release
 
 # --- 開発 ---
 
@@ -16,7 +16,13 @@ test-cover:
 lint:
 	golangci-lint run ./...
 
-check: lint test
+fmt:
+	gofmt -w .
+
+vet:
+	go vet ./...
+
+check: lint vet test
 
 # --- ビルド ---
 
