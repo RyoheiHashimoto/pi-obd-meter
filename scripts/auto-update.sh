@@ -61,6 +61,9 @@ check_stable() {
 
     tar xzf "${tmpdir}/release.tar.gz" -C "$tmpdir"
 
+    # バックアップ（ロールバック用）
+    cp "${DEST}/pi-obd-meter" "${DEST}/pi-obd-meter.bak" 2>/dev/null || true
+
     # インストール
     systemctl stop "$SERVICE" 2>/dev/null || true
     cp "${tmpdir}/pi-obd-meter" "${DEST}/pi-obd-meter"
@@ -70,6 +73,17 @@ check_stable() {
         chmod +x "${DEST}/pi-obd-scanner"
     fi
     systemctl start "$SERVICE"
+
+    # ヘルスチェック（10秒以内にプロセスが生存しているか）
+    sleep 10
+    if ! systemctl is-active --quiet "$SERVICE"; then
+        log_warn "リリース $tag 起動失敗、ロールバック"
+        cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
+        systemctl start "$SERVICE"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
     systemctl restart kiosk 2>/dev/null || true
 
     rm -rf "$tmpdir"
@@ -112,6 +126,9 @@ check_dev() {
 
     tar xzf "${tmpdir}/dev.tar.gz" -C "$tmpdir"
 
+    # バックアップ（ロールバック用）
+    cp "${DEST}/pi-obd-meter" "${DEST}/pi-obd-meter.bak" 2>/dev/null || true
+
     # インストール
     systemctl stop "$SERVICE" 2>/dev/null || true
     cp "${tmpdir}/pi-obd-meter" "${DEST}/pi-obd-meter"
@@ -126,6 +143,17 @@ check_dev() {
         cp -r "${tmpdir}/web/static/"* "${DEST}/web/static/"
     fi
     systemctl start "$SERVICE"
+
+    # ヘルスチェック（10秒以内にプロセスが生存しているか）
+    sleep 10
+    if ! systemctl is-active --quiet "$SERVICE"; then
+        log_warn "dev ビルド起動失敗、ロールバック"
+        cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
+        systemctl start "$SERVICE"
+        rm -rf "$tmpdir"
+        return 1
+    fi
+
     systemctl restart kiosk 2>/dev/null || true
 
     rm -rf "$tmpdir"
