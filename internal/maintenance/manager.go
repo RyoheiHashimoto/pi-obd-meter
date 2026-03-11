@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -140,7 +141,7 @@ func (m *Manager) CheckAll() []Status {
 	return statuses
 }
 
-// GetAlerts は通知が必要なリマインダーを返す
+// GetAlerts は通知が必要なリマインダーを進捗の高い順（緊急度順）に返す
 func (m *Manager) GetAlerts() []Status {
 	all := m.CheckAll()
 	alerts := []Status{}
@@ -149,6 +150,9 @@ func (m *Manager) GetAlerts() []Status {
 			alerts = append(alerts, s)
 		}
 	}
+	sort.Slice(alerts, func(i, j int) bool {
+		return alerts[i].Progress > alerts[j].Progress
+	})
 	return alerts
 }
 

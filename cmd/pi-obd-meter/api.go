@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/web"
@@ -30,12 +31,23 @@ type configResponse struct {
 
 // healthResponse は /api/health のレスポンス
 type healthResponse struct {
-	Status        string `json:"status"`
-	Version       string `json:"version"`
-	UptimeSec     int    `json:"uptime_sec"`
-	OBDConnected  bool   `json:"obd_connected"`
-	WiFiConnected bool   `json:"wifi_connected"`
-	PendingCount  int    `json:"pending_count"`
+	Status        string  `json:"status"`
+	Version       string  `json:"version"`
+	UptimeSec     int     `json:"uptime_sec"`
+	OBDConnected  bool    `json:"obd_connected"`
+	WiFiConnected bool    `json:"wifi_connected"`
+	PendingCount  int     `json:"pending_count"`
+	MemAllocMB    float64 `json:"mem_alloc_mb"`
+	MemSysMB      float64 `json:"mem_sys_mb"`
+	NumGoroutine  int     `json:"num_goroutine"`
+}
+
+// writeJSON はJSONレスポンスを書き込む。エンコードエラー時はログに記録する。
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Warn("JSONレスポンス書き込みエラー", "error", err)
+	}
 }
 
 // corsMiddleware はCORSヘッダーを付与する（meter.htmlからのfetchリクエスト許可用）
@@ -63,7 +75,7 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		webFS = http.Dir(app.cfg.WebStaticDir)
 		slog.Info("Web UI: ファイルシステムから配信", "dir", app.cfg.WebStaticDir)
 	} else {
-		subFS, _ := fs.Sub(web.StaticFS, "static")
+		subFS, _ := fs.Sub(web.StaticFS, "static") //nolint:errcheck // 埋め込みFSなので失敗しない
 		webFS = http.FS(subFS)
 		slog.Info("Web UI: 埋め込みファイルから配信")
 	}
@@ -71,12 +83,11 @@ func (app *App) startLocalAPI(ctx context.Context) {
 
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		d := app.cfg.EngineDisplacementL
 		ecoKmplGreen := math.Round(20/d*10) / 10
 		ecoKmplOrange := math.Round(13/d*10) / 10
 		estRange := app.cfg.FuelTankL * ecoKmplGreen
-		json.NewEncoder(w).Encode(configResponse{
+		writeJSON(w, configResponse{
 			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,
 			Version:         version,
 			EcoLHGreen:      1.5 * d,
@@ -92,35 +103,36 @@ func (app *App) startLocalAPI(ctx context.Context) {
 
 	// --- リアルタイムAPI（LCD用、200ms間隔でポーリングされる） ---
 	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(app.getRealtimeData())
+		writeJSON(w, app.getRealtimeData())
 	})
 
 	// --- ヘルスチェックAPI ---
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		d := app.getRealtimeData()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(healthResponse{
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+		writeJSON(w, healthResponse{
 			Status:        "ok",
 			Version:       version,
 			UptimeSec:     int(time.Since(app.startedAt).Seconds()),
 			OBDConnected:  d.OBDConnected,
 			WiFiConnected: d.WiFiConnected,
 			PendingCount:  d.PendingCount,
+			MemAllocMB:    float64(mem.Alloc) / 1024 / 1024,
+			MemSysMB:      float64(mem.Sys) / 1024 / 1024,
+			NumGoroutine:  runtime.NumGoroutine(),
 		})
 	})
 
 	// --- メンテナンスAPI（メーター画面のアラートバー用） ---
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(app.maintMgr.CheckAll())
+		writeJSON(w, app.maintMgr.CheckAll())
 	})
 
 	// --- キオスク停止API（タッチパネルから Chromium を終了する） ---
 	mux.HandleFunc("POST /api/kiosk/stop", func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("キオスク停止リクエスト受信")
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "closing"})
+		writeJSON(w, map[string]string{"status": "closing"})
 		go func() {
 			time.Sleep(500 * time.Millisecond)
 			if err := exec.Command("pkill", "chromium").Run(); err != nil {

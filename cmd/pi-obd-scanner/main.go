@@ -49,7 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "接続エラー: %v\n", err)
 		os.Exit(1)
 	}
-	defer elm.Close()
+	defer func() { _ = elm.Close() }()
 	fmt.Println("✓ ELM327接続完了")
 
 	fmt.Println("対応PIDをスキャン中...")

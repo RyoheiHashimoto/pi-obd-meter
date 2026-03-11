@@ -5,11 +5,11 @@
 const ECO_LOW_SPEED_THRESHOLD = 30;
 
 const INDICATOR_DEFS = [
+  { id: 'rpm',   label: 'RPM',   defaultVal: '--' },
   { id: 'eco',   label: 'ECO' },
   { id: 'trip',  label: 'TRIP',  defaultVal: '--' },
   { id: 'temp',  label: 'TEMP',  defaultVal: '--' },
   { id: 'maint', label: 'MAINT' },
-  { id: 'send',  label: 'SEND' },
   { id: 'wifi',  label: 'WiFi' },
   { id: 'obd',   label: 'OBD' },
 ];
@@ -51,18 +51,16 @@ export function updateIndicators(dom, d, conf) {
   setDot(dom.wifi, wifiOk ? 'green' : 'red');
   dom.wifi.val.textContent = wifiOk ? 'OK' : 'NG';
 
-  // SEND
-  const pending = d.pending_count || 0;
-  const sending = d.send_sending || false;
-  if (pending > 0) {
-    setDot(dom.send, 'red');
-    dom.send.val.textContent = String(pending);
-  } else if (sending) {
-    setDot(dom.send, 'orange');
-    dom.send.val.textContent = '...';
+  // RPM
+  const rpm = d.rpm || 0;
+  if (rpm > 0) {
+    dom.rpm.val.textContent = String(Math.round(rpm));
+    if (rpm >= 4500)      setDot(dom.rpm, 'red');
+    else if (rpm >= 3000) setDot(dom.rpm, 'orange');
+    else                  setDot(dom.rpm, 'green');
   } else {
-    setDot(dom.send, 'green');
-    dom.send.val.textContent = 'OK';
+    dom.rpm.val.textContent = '--';
+    setDot(dom.rpm, null);
   }
 
   // MAINT

@@ -8,6 +8,7 @@ const (
 	PIDVehicleSpeed     byte = 0x0D // 車速 (km/h)
 	PIDEngineLoad       byte = 0x04 // エンジン負荷 (%)
 	PIDCoolantTemp      byte = 0x05 // 冷却水温度
+	PIDIntakeMAP        byte = 0x0B // インマニ圧 (kPa)
 	PIDMAFAirFlow       byte = 0x10 // MAFエアフローレート (g/s)
 	PIDThrottlePosition byte = 0x11 // スロットル開度 (%)
 )
@@ -26,6 +27,7 @@ type OBDData struct {
 	SpeedKmh    float64 // km/h
 	EngineLoad  float64 // 0-100%
 	CoolantTemp float64 // ℃
+	IntakeMAP   float64 // kPa (0=非対応)
 	MAFAirFlow  float64 // g/s (0=非対応)
 	ThrottlePos float64 // 0-100%
 	HasMAF      bool    // MAFセンサー対応か
@@ -37,6 +39,7 @@ type Reader struct {
 	supportsMulti bool // マルチPIDリクエスト対応フラグ
 	multiTested   bool // マルチPID対応テスト済みフラグ
 	hasMAF        bool // MAF (PID 0x10) 対応
+	hasMAP        bool // MAP (PID 0x0B) 対応
 }
 
 // NewReader は新しいReaderを作成する
@@ -63,6 +66,10 @@ func (r *Reader) DetectCapabilities() error {
 	} else {
 		fmt.Println("✗ MAF非対応 → 負荷×RPMで燃費推定")
 	}
+	r.hasMAP = pidSet[PIDIntakeMAP]
+	if r.hasMAP {
+		fmt.Println("✓ MAPセンサー対応 → インマニ圧取得")
+	}
 
 	r.testMultiPID()
 	return nil
@@ -70,6 +77,9 @@ func (r *Reader) DetectCapabilities() error {
 
 // HasMAF はMAFセンサー対応かどうかを返す
 func (r *Reader) HasMAF() bool { return r.hasMAF }
+
+// HasMAP はMAPセンサー対応かどうかを返す
+func (r *Reader) HasMAP() bool { return r.hasMAP }
 
 // testMultiPID はマルチPIDリクエストの対応をテストする
 func (r *Reader) testMultiPID() {
@@ -141,6 +151,10 @@ func parsePID(data *OBDData, pid byte, raw []byte) {
 		if len(raw) >= 1 {
 			data.CoolantTemp = float64(raw[0]) - 40.0
 		}
+	case PIDIntakeMAP:
+		if len(raw) >= 1 {
+			data.IntakeMAP = float64(raw[0]) // kPa (0-255)
+		}
 	case PIDMAFAirFlow:
 		if len(raw) >= 2 {
 			data.MAFAirFlow = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
@@ -179,6 +193,13 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, PIDCoolantTemp, raw)
 	}
 
+	// インマニ圧（MAP）
+	if r.hasMAP {
+		if raw, err := r.dev.QueryPID(PIDIntakeMAP); err == nil {
+			parsePID(data, PIDIntakeMAP, raw)
+		}
+	}
+
 	// MAFエアフロー（燃費計算用）
 	if r.hasMAF {
 		if raw, err := r.dev.QueryPID(PIDMAFAirFlow); err == nil {
@@ -193,6 +214,9 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 func (r *Reader) readAllSingle() (*OBDData, error) {
 	data := &OBDData{}
 	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition, PIDCoolantTemp}
+	if r.hasMAP {
+		pids = append(pids, PIDIntakeMAP)
+	}
 	if r.hasMAF {
 		pids = append(pids, PIDMAFAirFlow)
 	}

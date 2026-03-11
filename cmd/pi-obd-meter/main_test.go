@@ -18,7 +18,7 @@ import (
 
 func TestCalcFuelEconomy_EngineStopped(t *testing.T) {
 	// エンジン停止 (speed<0.5, rpm<100) → 0
-	got, rateLH := calcFuelEconomy(0, 0, 0, 0, false, 1.3, 1.0)
+	got, rateLH := calcFuelEconomy(0, 0, 0, 0, false, 0, false, 1.3, 1.0)
 	if got != 0 {
 		t.Errorf("engine stopped: got %.1f, want 0", got)
 	}
@@ -29,7 +29,7 @@ func TestCalcFuelEconomy_EngineStopped(t *testing.T) {
 
 func TestCalcFuelEconomy_LowSpeed(t *testing.T) {
 	// 低速域 (<10 km/h) → kmL=0 だが fuelRateLH は返る
-	got, rateLH := calcFuelEconomy(5, 800, 30, 0, false, 1.3, 1.0)
+	got, rateLH := calcFuelEconomy(5, 800, 30, 0, false, 0, false, 1.3, 1.0)
 	if got != 0 {
 		t.Errorf("low speed: got %.1f, want 0", got)
 	}
@@ -40,7 +40,7 @@ func TestCalcFuelEconomy_LowSpeed(t *testing.T) {
 
 func TestCalcFuelEconomy_NormalDriving_LoadRPM(t *testing.T) {
 	// 60km/h, 2000rpm, 30%負荷, MAFなし, 1.3L
-	got, rateLH := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.0)
+	got, rateLH := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.0)
 	if got <= 0 || got > maxDisplayKmL {
 		t.Errorf("normal driving (load×RPM): got %.1f, expected positive value", got)
 	}
@@ -55,7 +55,7 @@ func TestCalcFuelEconomy_NormalDriving_LoadRPM(t *testing.T) {
 
 func TestCalcFuelEconomy_NormalDriving_MAF(t *testing.T) {
 	// 60km/h, MAF=5g/s(一般的な巡航値)
-	got, _ := calcFuelEconomy(60, 2000, 30, 5.0, true, 1.3, 1.0)
+	got, _ := calcFuelEconomy(60, 2000, 30, 5.0, true, 0, false, 1.3, 1.0)
 	if got <= 0 || got > maxDisplayKmL {
 		t.Errorf("normal driving (MAF): got %.1f, expected positive value", got)
 	}
@@ -66,12 +66,12 @@ func TestCalcFuelEconomy_NormalDriving_MAF(t *testing.T) {
 
 func TestCalcFuelEconomy_HighLoad(t *testing.T) {
 	// 高負荷: 120km/h, 4000rpm, 80%負荷 → 燃費が悪い
-	got, _ := calcFuelEconomy(120, 4000, 80, 0, false, 1.3, 1.0)
+	got, _ := calcFuelEconomy(120, 4000, 80, 0, false, 0, false, 1.3, 1.0)
 	if got <= 0 {
 		t.Errorf("high load: got %.1f, expected positive", got)
 	}
 	// 高負荷時は低めの燃費
-	normalGot, _ := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.0)
+	normalGot, _ := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.0)
 	if got >= normalGot {
 		t.Errorf("high load (%.1f) should be worse than normal (%.1f)", got, normalGot)
 	}
@@ -79,7 +79,7 @@ func TestCalcFuelEconomy_HighLoad(t *testing.T) {
 
 func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 	// エンブレ: 速度あり + 極低負荷 → -1（燃料カット判定）
-	got, rateLH := calcFuelEconomy(60, 2000, 0, 0, false, 1.3, 1.0)
+	got, rateLH := calcFuelEconomy(60, 2000, 0, 0, false, 0, false, 1.3, 1.0)
 	if got != -1 {
 		t.Errorf("engine braking (load=0): got %.1f, want -1", got)
 	}
@@ -88,12 +88,12 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 		t.Errorf("engine braking: rateLH got %.2f, want %.2f", rateLH, expectedIdleRate)
 	}
 	// 負荷3%でもエンブレ判定（<5%）
-	got3, _ := calcFuelEconomy(60, 2000, 3, 0, false, 1.3, 1.0)
+	got3, _ := calcFuelEconomy(60, 2000, 3, 0, false, 0, false, 1.3, 1.0)
 	if got3 != -1 {
 		t.Errorf("engine braking (load=3): got %.1f, want -1", got3)
 	}
 	// 負荷10%は通常走行
-	got10, _ := calcFuelEconomy(60, 2000, 10, 0, false, 1.3, 1.0)
+	got10, _ := calcFuelEconomy(60, 2000, 10, 0, false, 0, false, 1.3, 1.0)
 	if got10 <= 0 {
 		t.Errorf("light driving (load=10): got %.1f, expected positive", got10)
 	}
@@ -101,7 +101,7 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 
 func TestCalcFuelEconomy_FuelCut(t *testing.T) {
 	// 燃料カット（MAF=ほぼ0）→ -1 (特別表示)
-	got, _ := calcFuelEconomy(60, 2000, 30, 0.001, true, 1.3, 1.0)
+	got, _ := calcFuelEconomy(60, 2000, 30, 0.001, true, 0, false, 1.3, 1.0)
 	if got != -1 {
 		t.Errorf("fuel cut: got %.1f, want -1", got)
 	}
@@ -109,8 +109,8 @@ func TestCalcFuelEconomy_FuelCut(t *testing.T) {
 
 func TestCalcFuelEconomy_ZeroMAF_Fallback(t *testing.T) {
 	// hasMAF=true でも MAF=0 → load×RPM にフォールバック
-	mafZero, _ := calcFuelEconomy(60, 2000, 30, 0, true, 1.3, 1.0)
-	noMAF, _ := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.0)
+	mafZero, _ := calcFuelEconomy(60, 2000, 30, 0, true, 0, false, 1.3, 1.0)
+	noMAF, _ := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.0)
 	if mafZero != noMAF {
 		t.Errorf("MAF=0 should fall back to load×RPM: MAF0=%.1f, noMAF=%.1f", mafZero, noMAF)
 	}
@@ -118,7 +118,7 @@ func TestCalcFuelEconomy_ZeroMAF_Fallback(t *testing.T) {
 
 func TestCalcFuelEconomy_Idle(t *testing.T) {
 	// アイドリング: 速度0, RPM 800 → 0 (低速域で非表示)
-	got, _ := calcFuelEconomy(0, 800, 20, 0, false, 1.3, 1.0)
+	got, _ := calcFuelEconomy(0, 800, 20, 0, false, 0, false, 1.3, 1.0)
 	if got != 0 {
 		t.Errorf("idle: got %.1f, want 0 (below min display speed)", got)
 	}
@@ -126,7 +126,7 @@ func TestCalcFuelEconomy_Idle(t *testing.T) {
 
 func TestCalcFuelEconomy_CappedAtMax(t *testing.T) {
 	// 高速 + 低燃料消費 → maxDisplayKmL でキャップ
-	got, _ := calcFuelEconomy(100, 1000, 5, 0, false, 1.3, 1.0)
+	got, _ := calcFuelEconomy(100, 1000, 5, 0, false, 0, false, 1.3, 1.0)
 	if got > maxDisplayKmL {
 		t.Errorf("cap: got %.1f, should not exceed %.1f", got, maxDisplayKmL)
 	}
@@ -137,8 +137,8 @@ func TestCalcFuelEconomy_CappedAtMax(t *testing.T) {
 
 func TestCalcFuelEconomy_MAFPriority(t *testing.T) {
 	// MAFがある場合、load×RPMより優先される
-	mafResult, _ := calcFuelEconomy(60, 2000, 30, 5.0, true, 1.3, 1.0)
-	noMafResult, _ := calcFuelEconomy(60, 2000, 30, 5.0, false, 1.3, 1.0)
+	mafResult, _ := calcFuelEconomy(60, 2000, 30, 5.0, true, 0, false, 1.3, 1.0)
+	noMafResult, _ := calcFuelEconomy(60, 2000, 30, 5.0, false, 0, false, 1.3, 1.0)
 	// 両方とも有効な値を返すが、異なる計算パス
 	if mafResult <= 0 || noMafResult <= 0 {
 		t.Errorf("both paths should return positive: MAF=%.1f, noMAF=%.1f", mafResult, noMafResult)
@@ -151,8 +151,8 @@ func TestCalcFuelEconomy_MAFPriority(t *testing.T) {
 
 func TestCalcFuelEconomy_LargerDisplacement(t *testing.T) {
 	// 排気量が大きいほど燃費が悪い (load×RPMベース)
-	small, smallRate := calcFuelEconomy(60, 2000, 30, 0, false, 1.3, 1.0)
-	large, largeRate := calcFuelEconomy(60, 2000, 30, 0, false, 2.0, 1.0)
+	small, smallRate := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.0)
+	large, largeRate := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 2.0, 1.0)
 	if large >= small {
 		t.Errorf("larger displacement should use more fuel: 1.3L=%.1f, 2.0L=%.1f", small, large)
 	}
@@ -163,8 +163,8 @@ func TestCalcFuelEconomy_LargerDisplacement(t *testing.T) {
 
 func TestCalcFuelEconomy_LowSpeedFuelRate(t *testing.T) {
 	// 低速域でも fuelRateLH が排気量に比例することを確認
-	_, rate13 := calcFuelEconomy(15, 1000, 20, 0, false, 1.3, 1.0)
-	_, rate20 := calcFuelEconomy(15, 1000, 20, 0, false, 2.0, 1.0)
+	_, rate13 := calcFuelEconomy(15, 1000, 20, 0, false, 0, false, 1.3, 1.0)
+	_, rate20 := calcFuelEconomy(15, 1000, 20, 0, false, 0, false, 2.0, 1.0)
 	if rate13 <= 0 {
 		t.Errorf("1.3L at low speed: rateLH should be positive, got %.2f", rate13)
 	}
@@ -478,6 +478,79 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestValidateConfig_InvalidValues(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: -1,
+		FuelRateCorrection:  -5,
+		FuelTankL:           0,
+		MaxSpeedKmh:         0,
+		LocalAPIPort:        -1,
+		ThrottleIdlePct:     -10,
+		ThrottleMaxPct:      0,
+	}
+	validateConfig(&cfg)
+
+	if cfg.EngineDisplacementL != 1.3 {
+		t.Errorf("EngineDisplacementL: got %.1f, want 1.3", cfg.EngineDisplacementL)
+	}
+	if cfg.FuelRateCorrection != 1.3 {
+		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
+	}
+	if cfg.FuelTankL != 40 {
+		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	}
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh: got %d, want 180", cfg.MaxSpeedKmh)
+	}
+	if cfg.LocalAPIPort != 9090 {
+		t.Errorf("LocalAPIPort: got %d, want 9090", cfg.LocalAPIPort)
+	}
+	if cfg.ThrottleIdlePct != 11.5 {
+		t.Errorf("ThrottleIdlePct: got %.1f, want 11.5", cfg.ThrottleIdlePct)
+	}
+	if cfg.ThrottleMaxPct != 78 {
+		t.Errorf("ThrottleMaxPct: got %.1f, want 78", cfg.ThrottleMaxPct)
+	}
+}
+
+func TestValidateConfig_ValidValues(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: 2.0,
+		FuelRateCorrection:  1.5,
+		FuelTankL:           50,
+		MaxSpeedKmh:         260,
+		LocalAPIPort:        8080,
+		ThrottleIdlePct:     15,
+		ThrottleMaxPct:      85,
+	}
+	validateConfig(&cfg)
+
+	// 有効な値は変更されない
+	if cfg.EngineDisplacementL != 2.0 {
+		t.Errorf("EngineDisplacementL should not change: got %.1f", cfg.EngineDisplacementL)
+	}
+	if cfg.FuelRateCorrection != 1.5 {
+		t.Errorf("FuelRateCorrection should not change: got %.1f", cfg.FuelRateCorrection)
+	}
+	if cfg.MaxSpeedKmh != 260 {
+		t.Errorf("MaxSpeedKmh should not change: got %d", cfg.MaxSpeedKmh)
+	}
+}
+
+func TestValidateConfig_MaxSpeedTooHigh(t *testing.T) {
+	cfg := Config{
+		EngineDisplacementL: 1.3,
+		FuelTankL:           40,
+		MaxSpeedKmh:         500,
+		LocalAPIPort:        9090,
+		ThrottleMaxPct:      78,
+	}
+	validateConfig(&cfg)
+	if cfg.MaxSpeedKmh != 180 {
+		t.Errorf("MaxSpeedKmh >400 should reset: got %d, want 180", cfg.MaxSpeedKmh)
+	}
+}
+
 func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
@@ -500,6 +573,97 @@ func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
 }
 
 // --- getNotification テスト ---
+
+func TestCalcFuelEconomy_CorrectionFactor(t *testing.T) {
+	// correction=1.0 と correction=1.3 で燃費が変わることを確認
+	eco10, rate10 := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.0)
+	eco13, rate13 := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 1.3)
+
+	// 補正係数が大きい → 燃料レートが高い → 燃費が悪い
+	if rate13 <= rate10 {
+		t.Errorf("correction 1.3 should increase fuel rate: 1.0=%.2f, 1.3=%.2f", rate10, rate13)
+	}
+	if eco13 >= eco10 {
+		t.Errorf("correction 1.3 should decrease economy: 1.0=%.1f, 1.3=%.1f", eco10, eco13)
+	}
+
+	// correction=0 は補正なし（1.0と同じ挙動）
+	eco0, rate0 := calcFuelEconomy(60, 2000, 30, 0, false, 0, false, 1.3, 0)
+	if rate0 != rate10 {
+		t.Errorf("correction=0 should equal correction=1.0: 0=%.2f, 1.0=%.2f", rate0, rate10)
+	}
+	if eco0 != eco10 {
+		t.Errorf("correction=0 should equal correction=1.0: 0=%.1f, 1.0=%.1f", eco0, eco10)
+	}
+}
+
+func TestCalcFuelEconomy_MAFWithCorrection(t *testing.T) {
+	// MAFパスでも補正係数が効くことを確認
+	_, rate10 := calcFuelEconomy(60, 2000, 30, 5.0, true, 0, false, 1.3, 1.0)
+	_, rate15 := calcFuelEconomy(60, 2000, 30, 5.0, true, 0, false, 1.3, 1.5)
+	if rate15 <= rate10 {
+		t.Errorf("MAF path: correction should increase rate: 1.0=%.2f, 1.5=%.2f", rate10, rate15)
+	}
+}
+
+func TestCalcFuelEconomy_IdleFuelRate(t *testing.T) {
+	// アイドル時（RPM<100 or load<0.1）の燃料レートは排気量に比例
+	_, rate := calcFuelEconomy(5, 50, 0, 0, false, 0, false, 1.3, 1.0)
+	expected := idleFuelRateCoeff * 1.3
+	if math.Abs(rate-expected) > 0.001 {
+		t.Errorf("idle fuel rate: got %.3f, want %.3f", rate, expected)
+	}
+
+	// 2.0Lのアイドル燃料レート
+	_, rate20 := calcFuelEconomy(5, 50, 0, 0, false, 0, false, 2.0, 1.0)
+	expected20 := idleFuelRateCoeff * 2.0
+	if math.Abs(rate20-expected20) > 0.001 {
+		t.Errorf("idle fuel rate 2.0L: got %.3f, want %.3f", rate20, expected20)
+	}
+}
+
+func TestCalcFuelEconomy_SpeedDensity(t *testing.T) {
+	// MAP=60kPa（巡航時の一般的な値）でSpeed-Density法が使われる
+	eco, rate := calcFuelEconomy(60, 2000, 30, 0, false, 60, true, 1.3, 1.0)
+	if eco <= 0 || eco > maxDisplayKmL {
+		t.Errorf("Speed-Density: got eco=%.1f, expected positive", eco)
+	}
+	if rate <= 0 {
+		t.Errorf("Speed-Density: got rate=%.2f, expected positive", rate)
+	}
+
+	// MAP=40kPa（低MAP、エンブレ閾値35kPa超）→ 少ない吸気 → 燃費がいい
+	ecoLow, _ := calcFuelEconomy(60, 2000, 30, 0, false, 40, true, 1.3, 1.0)
+	// MAP=80kPa（高MAP）→ 多い吸気 → 燃費が悪い
+	ecoHigh, _ := calcFuelEconomy(60, 2000, 30, 0, false, 80, true, 1.3, 1.0)
+	if ecoHigh >= ecoLow {
+		t.Errorf("higher MAP should mean worse economy: MAP40=%.1f, MAP80=%.1f", ecoLow, ecoHigh)
+	}
+}
+
+func TestCalcFuelEconomy_MAPEngineBraking(t *testing.T) {
+	// MAP < 35kPa（強い負圧）= エンブレ判定
+	got, _ := calcFuelEconomy(60, 2000, 30, 0, false, 25, true, 1.3, 1.0)
+	if got != -1 {
+		t.Errorf("MAP engine braking (25kPa): got %.1f, want -1", got)
+	}
+
+	// MAP >= 35kPa = 通常走行
+	got2, _ := calcFuelEconomy(60, 2000, 30, 0, false, 50, true, 1.3, 1.0)
+	if got2 <= 0 {
+		t.Errorf("MAP normal driving (50kPa): got %.1f, expected positive", got2)
+	}
+}
+
+func TestCalcFuelEconomy_MAFOverMAP(t *testing.T) {
+	// MAFがある場合、MAPよりMAFが優先される
+	mafResult, _ := calcFuelEconomy(60, 2000, 30, 5.0, true, 60, true, 1.3, 1.0)
+	mapResult, _ := calcFuelEconomy(60, 2000, 30, 0, false, 60, true, 1.3, 1.0)
+	// MAFとMAPは異なる計算パスなので結果が異なる
+	if mafResult <= 0 || mapResult <= 0 {
+		t.Errorf("both should be positive: MAF=%.1f, MAP=%.1f", mafResult, mapResult)
+	}
+}
 
 func TestGetNotification_Empty(t *testing.T) {
 	app := &App{}

@@ -65,7 +65,7 @@ func waitForInternet(ctx context.Context, timeout time.Duration) bool {
 
 	// 初回即チェック
 	if resp, err := httpClient.Get("https://api.github.com/zen"); err == nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return true
 	}
 
@@ -77,7 +77,7 @@ func waitForInternet(ctx context.Context, timeout time.Duration) bool {
 			return false
 		case <-ticker.C:
 			if resp, err := httpClient.Get("https://api.github.com/zen"); err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				return true
 			}
 		}

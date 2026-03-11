@@ -2,12 +2,11 @@ package main
 
 import "math"
 
-// obdFilter はOBD値のスパイク除去 + EMA平滑化フィルター。
+// obdFilter はOBD値のスパイク除去フィルター。
 // 通信ノイズで値が飛ぶのを防ぐ。
 type obdFilter struct {
-	alpha       float64 // EMA係数（0-1、大きいほど追従が速い）
 	maxDelta    float64 // 1サイクルの最大許容変動量
-	value       float64 // 現在のスムーズ値
+	value       float64 // 現在の値
 	valid       bool    // 初期化済みか
 	rejectCount int     // 連続リジェクト回数
 }
@@ -15,8 +14,8 @@ type obdFilter struct {
 // 連続リジェクト上限。超えたら値が本当に変わったとみなして受入
 const maxRejects = 3
 
-func newOBDFilter(alpha, maxDelta float64) *obdFilter {
-	return &obdFilter{alpha: alpha, maxDelta: maxDelta}
+func newOBDFilter(maxDelta float64) *obdFilter {
+	return &obdFilter{maxDelta: maxDelta}
 }
 
 // Update は新しい値をフィルタリングして返す
@@ -36,9 +35,9 @@ func (f *obdFilter) Update(raw float64) float64 {
 		return f.value
 	}
 
-	// EMA平滑化
+	// スパイク通過 → 値を更新
 	f.rejectCount = 0
-	f.value = f.alpha*raw + (1-f.alpha)*f.value
+	f.value = raw
 	return f.value
 }
 
@@ -46,4 +45,36 @@ func (f *obdFilter) Update(raw float64) float64 {
 func (f *obdFilter) Reset() {
 	f.valid = false
 	f.rejectCount = 0
+}
+
+// obdFilters はOBD値フィルターをまとめて管理する
+type obdFilters struct {
+	speed    *obdFilter
+	rpm      *obdFilter
+	load     *obdFilter
+	throttle *obdFilter
+	coolant  *obdFilter
+	mapKPa   *obdFilter
+}
+
+// newOBDFilters はデフォルト設定でフィルター群を作成する
+func newOBDFilters() obdFilters {
+	return obdFilters{
+		speed:    newOBDFilter(20),   // max 20km/h per 150ms
+		rpm:      newOBDFilter(2000), // max 2000 per 150ms
+		load:     newOBDFilter(40),   // max 40% per 150ms
+		throttle: newOBDFilter(60),   // max 60% per 150ms
+		coolant:  newOBDFilter(5),    // max 5°C per 750ms
+		mapKPa:   newOBDFilter(30),   // max 30kPa per 750ms
+	}
+}
+
+// ResetAll は全フィルターをリセットする
+func (f *obdFilters) ResetAll() {
+	f.speed.Reset()
+	f.rpm.Reset()
+	f.load.Reset()
+	f.throttle.Reset()
+	f.coolant.Reset()
+	f.mapKPa.Reset()
 }

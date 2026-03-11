@@ -6,12 +6,16 @@ run:
 linters:
   default: none
   enable:
+    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
     - misspell
   settings:
+    errcheck:
+      exclude-functions:
+        - (net/http.ResponseWriter).Write
     staticcheck:
       checks:
         - "all"
