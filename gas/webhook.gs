@@ -138,8 +138,7 @@ function handleRestore() {
 // === 手動給油記録 (ダッシュボードから呼ばれる) ===
 function recordManualRefuel({ amount: rawAmount }) {
   const sheet = getOrCreateSheet('給油記録', [
-    '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
-    'タンク%(前)', 'タンク%(後)', '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)'
+    '日時', '距離(km)', '燃費(km/L)', '給油量(L)'
   ]);
 
   const amount = parseFloat(rawAmount) || 0;
@@ -155,11 +154,8 @@ function recordManualRefuel({ amount: rawAmount }) {
   sheet.appendRow([
     new Date(),
     round(distance, 1),
-    '',
     fuelEconomy,
-    round(amount, 1),
-    '', '',
-    '', '', ''
+    round(amount, 1)
   ]);
 
   if (currentKm > 0) {
@@ -512,8 +508,8 @@ function renderFuelRow(r) {
   let dateStr = '-';
   try { dateStr = Utilities.formatDate(new Date(r[0]), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { /* skip */ }
   return `<tr><td>${dateStr}</td><td>${round(r[1] || 0, 0)}km</td>`
-    + `<td style="color:#69f0ae;font-weight:600">${round(r[3] || 0, 1)}</td>`
-    + `<td>${round(r[4] || 0, 1)}L</td></tr>`;
+    + `<td style="color:#69f0ae;font-weight:600">${round(r[2] || 0, 1)}</td>`
+    + `<td>${round(r[3] || 0, 1)}L</td></tr>`;
 }
 
 // === Render helper: アラート項目 ===
@@ -554,8 +550,7 @@ function getSheetData(sheetName) {
 // === 初期セットアップ ===
 function setup() {
   getOrCreateSheet('給油記録', [
-    '日時', '距離(km)', '消費燃料(L)', '燃費(km/L)', '給油量(L)',
-    'タンク%(前)', 'タンク%(後)', '最高速度(km/h)', '平均速度(km/h)', '走行時間(分)'
+    '日時', '距離(km)', '燃費(km/L)', '給油量(L)'
   ]);
   getOrCreateSheet('メンテ状態', [
     '項目ID', '項目名', 'タイプ', '進捗(%)', '残り', '要アラート', '超過', '更新日時'
