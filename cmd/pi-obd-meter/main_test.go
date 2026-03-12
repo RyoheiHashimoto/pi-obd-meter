@@ -289,6 +289,59 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	}
 }
 
+func TestSendMaintenanceStatus_TripCorrection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"trip_correction_km":250.5}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.tracker.Update(60, 0)
+	time.Sleep(20 * time.Millisecond)
+	app.tracker.Update(60, 0) // 走行データを蓄積
+	app.totalKmAccum = 100.0
+
+	app.sendMaintenanceStatus(context.Background())
+
+	// トリップが250.5kmに補正されている
+	diff := app.tracker.DistanceKm() - 250.5
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.01 {
+		t.Errorf("trip should be corrected to 250.5, got %.1f km", app.tracker.DistanceKm())
+	}
+}
+
+func TestSendMaintenanceStatus_TripCorrectionOverridesReset(t *testing.T) {
+	// trip_correction_km と trip_reset の両方がある場合、correction が優先
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"trip_correction_km":100,"trip_reset":true}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.tracker.Update(60, 0)
+	time.Sleep(20 * time.Millisecond)
+	app.tracker.Update(60, 0)
+	app.totalKmAccum = 100.0
+
+	app.sendMaintenanceStatus(context.Background())
+
+	// correction が優先されるのでリセット(0)ではなく100km
+	diff := app.tracker.DistanceKm() - 100
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.01 {
+		t.Errorf("trip_correction_km should take priority: got %.1f km", app.tracker.DistanceKm())
+	}
+}
+
 func TestSendMaintenanceStatus_Empty(t *testing.T) {
 	// リマインダー0件 → 送信しない
 	app := newTestApp(t, "http://127.0.0.1:1")

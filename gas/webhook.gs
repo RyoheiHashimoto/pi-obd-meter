@@ -103,11 +103,11 @@ function handleMaintenance(data) {
 
   // 設定シートからPi向けの指示を取得
   const odoCorrection = getSettingValue('odometer_correction');
-  const tripReset = getSettingValue('trip_reset');
+  const tripCorrectionKm = getSettingValue('trip_correction_km');
 
-  // trip_resetは読んだら即クリア（1回だけ実行すればよい）
-  if (tripReset) {
-    clearSetting('trip_reset');
+  // trip_correction_kmは読んだら即クリア（1回だけ実行すればよい）
+  if (tripCorrectionKm) {
+    clearSetting('trip_correction_km');
   }
 
   return jsonResponse({
@@ -116,7 +116,7 @@ function handleMaintenance(data) {
     count: statuses.length,
     pending_resets: pendingIds,
     odometer_correction: odoCorrection ? parseFloat(odoCorrection) : null,
-    trip_reset: !!tripReset
+    trip_correction_km: tripCorrectionKm ? parseFloat(tripCorrectionKm) : null,
   });
 }
 
@@ -162,7 +162,7 @@ function recordManualRefuel({ amount: rawAmount }) {
     upsertSetting('last_refuel_km', currentKm);
   }
 
-  upsertSetting('trip_reset', 'true');
+  upsertSetting('trip_correction_km', '0');
 
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1) };
 }
@@ -176,15 +176,20 @@ function updateOdometer(km) {
   return { status: 'ok', odometer: val };
 }
 
-// === トリップリセット (ダッシュボードから呼ばれる) ===
-// last_refuel_km を現在の total_km に設定し、trip_reset を Pi に通知
-function resetTrip() {
+// === トリップ補正 (ダッシュボードから呼ばれる) ===
+// last_refuel_km を指定値に設定し、trip_correction_km を Pi に通知
+function correctTrip(lastRefuelKm) {
+  const val = parseFloat(lastRefuelKm);
+  if (!val || val <= 0) throw new Error('前回給油時のODO値を入力してください');
+
   const currentKm = parseFloat(getSettingValue('total_km')) || 0;
   if (currentKm <= 0) throw new Error('ODOデータがありません');
+  if (val >= currentKm) throw new Error('現在のODO(' + Math.round(currentKm) + ' km)より小さい値を入力してください');
 
-  upsertSetting('last_refuel_km', currentKm);
-  upsertSetting('trip_reset', 'true');
-  return { status: 'ok', reset_km: currentKm };
+  const tripKm = currentKm - val;
+  upsertSetting('last_refuel_km', val);
+  upsertSetting('trip_correction_km', tripKm);
+  return { status: 'ok', last_refuel_km: val, trip_km: round(tripKm, 1) };
 }
 
 // === 設定値取得 (設定シートからキーで検索) ===
@@ -376,14 +381,16 @@ function buildDashboardHtml() {
   html += '<div class="form-result" id="odo-result"></div>';
   html += '</div>';
 
-  // トリップ修正フォーム
+  // トリップ補正フォーム
   html += '<div class="card">';
-  html += '<h2>🔄 トリップ修正</h2>';
+  html += '<h2>🔄 トリップ補正</h2>';
   if (tripStats.tripKm > 0) {
     html += `<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在のトリップ: <b style="color:#fff">${round(tripStats.tripKm, 0)} km</b></div>`;
   }
-  html += '<button class="form-submit" style="background:#ff9800" id="trip-reset-btn" onclick="submitTripReset()">トリップをリセット</button>';
-  html += '<div class="form-hint">給油後の走行距離をゼロに戻します。給油記録の距離計算に影響します。</div>';
+  const tripPlaceholder = lastRefuelKm > 0 ? Math.round(lastRefuelKm) : '97300';
+  html += `<div class="form-group"><label>前回給油時のODO (km)</label><input type="number" id="trip-val" class="form-input" inputmode="numeric" placeholder="${tripPlaceholder}"></div>`;
+  html += '<div class="form-hint">前回給油時のODOメーター値を入力すると、トリップ距離と次回の燃費計算が補正されます。</div>';
+  html += '<button class="form-submit" style="background:#ff9800" id="trip-btn" onclick="submitTripCorrection()">トリップを補正</button>';
   html += '<div class="form-result" id="trip-result"></div>';
   html += '</div>';
 
@@ -534,29 +541,32 @@ function submitOdo() {
     .updateOdometer(km);
 }
 
-function submitTripReset() {
-  if (!confirm('トリップをリセットしますか？')) return;
+function submitTripCorrection() {
+  var km = document.getElementById('trip-val').value;
+  if (!km) { alert('前回給油時のODO値を入力してください'); return; }
+  if (!confirm('前回給油時のODOを ' + km + ' km に補正しますか？')) return;
 
-  var btn = document.getElementById('trip-reset-btn');
+  var btn = document.getElementById('trip-btn');
   var res = document.getElementById('trip-result');
   btn.disabled = true;
   btn.textContent = '送信中...';
   res.className = 'form-result';
 
   google.script.run
-    .withSuccessHandler(function() {
+    .withSuccessHandler(function(r) {
       res.className = 'form-result success';
-      res.textContent = 'トリップをリセットしました';
+      res.textContent = 'トリップを補正しました（' + r.trip_km + ' km）';
       btn.disabled = false;
-      btn.textContent = 'トリップをリセット';
+      btn.textContent = 'トリップを補正';
+      document.getElementById('trip-val').value = '';
     })
     .withFailureHandler(function(e) {
       res.className = 'form-result error';
       res.textContent = 'エラー: ' + e.message;
       btn.disabled = false;
-      btn.textContent = 'トリップをリセット';
+      btn.textContent = 'トリップを補正';
     })
-    .resetTrip();
+    .correctTrip(km);
 }
 `.trim();
 }

@@ -38,7 +38,8 @@ type maintenancePayload struct {
 type gasMaintenanceResponse struct {
 	PendingResets      []string `json:"pending_resets"`
 	OdometerCorrection *float64 `json:"odometer_correction"`
-	TripReset          bool     `json:"trip_reset"`
+	TripCorrectionKm   *float64 `json:"trip_correction_km"`
+	TripReset          bool     `json:"trip_reset"` // 後方互換（将来削除）
 }
 
 // App はアプリケーション全体の状態を管理する
@@ -206,8 +207,13 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		}
 		app.totalKmMu.Unlock()
 
-		// トリップリセット処理
-		if gasResp.TripReset {
+		// トリップ補正処理（新方式: 距離を直接指定）
+		if gasResp.TripCorrectionKm != nil {
+			km := *gasResp.TripCorrectionKm
+			app.tracker.SetDistance(km)
+			slog.Info("トリップ補正", "km", km)
+		} else if gasResp.TripReset {
+			// 後方互換: 旧GASからのリセット指示
 			app.tracker.ManualReset()
 			slog.Info("トリップリセット", "reason", "給油記録")
 		}

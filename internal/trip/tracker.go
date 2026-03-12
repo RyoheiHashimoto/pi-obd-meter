@@ -124,6 +124,27 @@ func (t *Tracker) ManualReset() *TripData {
 	return t.finalize()
 }
 
+// SetDistance はトリップ走行距離を指定値に補正する（GASダッシュボードからの補正用）
+// 燃料消費量も距離の比率に応じて補正する。
+func (t *Tracker) SetDistance(km float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if km < 0 {
+		km = 0
+	}
+
+	// 燃料消費量を距離の比率で補正
+	if t.current.DistanceKm > 0 {
+		ratio := km / t.current.DistanceKm
+		t.current.FuelConsumptionL *= ratio
+	}
+
+	t.current.DistanceKm = km
+	t.lastSavedKm = km
+	t.saveState()
+}
+
 // finalize は現在のトリップを完了させて新しいトリップを開始する
 func (t *Tracker) finalize() *TripData {
 	if t.current.Samples == 0 {
