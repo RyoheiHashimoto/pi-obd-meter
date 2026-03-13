@@ -2,13 +2,13 @@
 // Main — エントリポイント + API ポーリング + Toast
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, updateMAP, updateFuelRate, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators } from './indicators.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,
   throttle_idle_pct: 11.5, throttle_max_pct: 78,
-  eco_kmpl_green: 15, eco_kmpl_orange: 10,
+  eco_kmpl_green: 20, eco_kmpl_orange: 10,
   trip_warn_km: 300, trip_danger_km: 500,
 };
 const POLL_INTERVAL_MS = 200;
@@ -49,8 +49,6 @@ function applyData(d) {
   const spd = d.speed_kmh || 0;
   gs.update(spd, speedColor(spd));
   updateThrottle(d.throttle_pos || 0);
-  updateMAP(d.intake_map || 0);
-  updateFuelRate(d.fuel_rate_lh || 0);
   updateIndicators(dom, d, conf);
 
   // Maintenance toast（全件を順番に表示）

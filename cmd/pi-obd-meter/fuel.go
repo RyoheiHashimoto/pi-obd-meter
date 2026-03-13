@@ -78,3 +78,26 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 	}
 	return kmL, fuelRateLH
 }
+
+// calcDisplayFuelEco は ReadFast 時の表示用瞬間燃費を計算する。
+// スロットルとlastFuelRateから推定し、tracker には影響しない（表示専用）。
+func calcDisplayFuelEco(speed, throttle, lastRate, idlePct float64) float64 {
+	const idleMargin = 3.0 // スロットルアイドル判定マージン (%)
+
+	if speed < minDisplaySpeedKm {
+		return 0 // 低速・停車
+	}
+	// スロットル≈アイドル → エンブレ
+	if throttle <= idlePct+idleMargin {
+		return -1
+	}
+	// 燃費再計算（最新の速度 + 直近の燃料レート）
+	if lastRate > 0.01 {
+		kmL := speed / lastRate
+		if kmL > maxDisplayKmL {
+			kmL = maxDisplayKmL
+		}
+		return kmL
+	}
+	return 0
+}
