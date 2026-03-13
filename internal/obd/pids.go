@@ -99,7 +99,7 @@ func (r *Reader) testMultiPID() {
 // 4 PIDでもCAN 1フレームに収まるため、2 PIDと通信回数は同じ
 func (r *Reader) ReadFast() (*OBDData, error) {
 	data := &OBDData{}
-	pids := []byte{PIDEngineRPM, PIDVehicleSpeed, PIDEngineLoad, PIDThrottlePosition}
+	pids := []byte{PIDVehicleSpeed, PIDThrottlePosition}
 
 	if r.supportsMulti {
 		result, err := r.dev.QueryMultiPID(pids)

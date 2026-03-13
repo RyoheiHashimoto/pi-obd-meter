@@ -34,8 +34,37 @@ func NewELM327(portName string, obdProtocol string) *ELM327 {
 	}
 }
 
-// Connect はELM327アダプタに接続し初期化する
+// connectTimeout は Connect 全体のタイムアウト
+const connectTimeout = 15 * time.Second
+
+// Connect はELM327アダプタに接続し初期化する。
+// シリアルポートのオープンからAT初期化まで connectTimeout 以内に完了しなければエラーを返す。
 func (e *ELM327) Connect() error {
+	type result struct{ err error }
+	ch := make(chan result, 1)
+
+	go func() {
+		ch <- result{err: e.connectInternal()}
+	}()
+
+	timer := time.NewTimer(connectTimeout)
+	defer timer.Stop()
+
+	select {
+	case r := <-ch:
+		return r.err
+	case <-timer.C:
+		// タイムアウト: ポートが開いていたら閉じる
+		if e.port != nil {
+			_ = e.port.Close()
+			e.port = nil
+		}
+		return fmt.Errorf("ELM327接続タイムアウト (%v)", connectTimeout)
+	}
+}
+
+// connectInternal は実際の接続・初期化処理
+func (e *ELM327) connectInternal() error {
 	mode := &serial.Mode{
 		BaudRate: 38400,
 		DataBits: 8,
@@ -49,6 +78,7 @@ func (e *ELM327) Connect() error {
 	}
 
 	if err := port.SetReadTimeout(2 * time.Second); err != nil {
+		_ = port.Close()
 		return fmt.Errorf("read timeout設定失敗: %w", err)
 	}
 	e.port = port
@@ -68,6 +98,7 @@ func (e *ELM327) Connect() error {
 		resp, err := e.sendCommand(cmd)
 		if err != nil {
 			_ = e.port.Close()
+			e.port = nil
 			return fmt.Errorf("初期化コマンド %s 失敗: %w", cmd, err)
 		}
 		_ = resp

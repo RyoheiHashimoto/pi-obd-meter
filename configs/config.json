@@ -1,7 +1,7 @@
 {
   "serial_port": "/dev/rfcomm0",
   "webhook_url": "https://script.google.com/macros/s/AKfycbwYszp7P8kYlZabnLgUTCLUHqOZ-cBS1nv9umJp6NGXcyArT83PMJq_AfmEH3Pk_SshFg/exec",
-  "poll_interval_ms": 500,
+  "poll_interval_ms": 200,
   "local_api_port": 9090,
   "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
   "web_static_dir": "/opt/pi-obd-meter/web/static",
