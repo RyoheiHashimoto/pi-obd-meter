@@ -240,7 +240,7 @@ func (app *App) initializeFromGAS(ctx context.Context) {
 	slog.Warn("WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
 }
 
-// restoreFromGAS はGASから累計走行距離を復元する（起動時用）
+// restoreFromGAS はGASから累計走行距離とトリップ距離を復元する（起動時用）
 func (app *App) restoreFromGAS(ctx context.Context) {
 	restored, err := app.client.RestoreState(ctx)
 	if err != nil || restored.TotalKm <= 0 {
@@ -253,7 +253,18 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 		app.totalKmMu.Unlock()
 		app.maintMgr.UpdateTotalKm(restored.TotalKm)
 		slog.Info("GASからODO復元", "total_km", restored.TotalKm)
-		return
+	} else {
+		app.totalKmMu.Unlock()
 	}
-	app.totalKmMu.Unlock()
+
+	// トリップ距離をGASの給油記録と同期
+	if restored.LastRefuelKm > 0 && restored.TotalKm > restored.LastRefuelKm {
+		tripKm := restored.TotalKm - restored.LastRefuelKm
+		localTrip := app.tracker.DistanceKm()
+		// GAS側のほうが大きい場合のみ補正（ローカルが進んでいる場合は上書きしない）
+		if tripKm > localTrip {
+			app.tracker.SetDistance(tripKm)
+			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		}
+	}
 }
