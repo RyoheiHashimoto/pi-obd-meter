@@ -31,6 +31,7 @@ type maintenancePayload struct {
 	Statuses        []maintenanceStatusItem `json:"statuses"`
 	SentAt          time.Time               `json:"sent_at"`
 	TotalKm         float64                 `json:"total_km"`
+	TripKm          float64                 `json:"trip_km"`
 	OdometerApplied bool                    `json:"odometer_applied,omitempty"`
 }
 
@@ -161,6 +162,7 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			Statuses:        items,
 			SentAt:          time.Now(),
 			TotalKm:         app.maintMgr.TotalKm(),
+			TripKm:          app.tracker.DistanceKm(),
 			OdometerApplied: odoApplied,
 		}
 

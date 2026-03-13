@@ -80,9 +80,12 @@ function handleMaintenance(data) {
     ]);
   }
 
-  // PiのtotalKmを設定シートに保存（給油記録時に使用）
+  // PiのtotalKm・tripKmを設定シートに保存
   if (data.total_km > 0) {
     upsertSetting('total_km', data.total_km);
+  }
+  if (data.trip_km >= 0) {
+    upsertSetting('trip_km', data.trip_km);
   }
 
   // ODO補正適用確認: Piが補正を適用したら設定をクリア
@@ -163,6 +166,7 @@ function recordManualRefuel({ amount: rawAmount }) {
   }
 
   upsertSetting('trip_correction_km', '0');
+  upsertSetting('trip_km', 0);
 
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1) };
 }
@@ -189,6 +193,7 @@ function correctTrip(lastRefuelKm) {
   const tripKm = currentKm - val;
   upsertSetting('last_refuel_km', val);
   upsertSetting('trip_correction_km', tripKm);
+  upsertSetting('trip_km', tripKm);
   return { status: 'ok', last_refuel_km: val, trip_km: round(tripKm, 1) };
 }
 
@@ -286,11 +291,12 @@ function buildDashboardHtml() {
   const completedIds = getCompletedIds();
   const currentOdo = parseFloat(getSettingValue('total_km')) || 0;
   const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
+  const piTripKm = parseFloat(getSettingValue('trip_km')) || 0;
 
   const recentFuel = fuelData.length > 0 ? fuelData.slice(-10).reverse() : [];
 
-  // 走行統計の算出
-  const tripStats = computeTripStats(fuelData, currentOdo, lastRefuelKm);
+  // 走行統計の算出（Pi の trip_km を優先）
+  const tripStats = computeTripStats(fuelData, currentOdo, lastRefuelKm, piTripKm);
 
   // メンテ分割
   const alertItems = maintData.filter(r => {
@@ -573,10 +579,12 @@ function submitTripCorrection() {
 
 // === 走行統計の算出 ===
 // 給油記録: [0]=日時, [1]=距離(km), [2]=燃費(km/L), [3]=給油量(L)
-function computeTripStats(fuelData, currentOdo, lastRefuelKm) {
+function computeTripStats(fuelData, currentOdo, lastRefuelKm, piTripKm) {
+  // Pi の trip_km を優先（Pi が source of truth）、なければ従来計算にフォールバック
+  const fallbackTrip = (currentOdo > 0 && lastRefuelKm > 0) ? currentOdo - lastRefuelKm : 0;
   const stats = {
     currentOdo: currentOdo,
-    tripKm: (currentOdo > 0 && lastRefuelKm > 0) ? currentOdo - lastRefuelKm : 0,
+    tripKm: piTripKm > 0 ? piTripKm : fallbackTrip,
     totalFuelL: 0,
     totalDistKm: 0,
     avgEconomy: 0,
