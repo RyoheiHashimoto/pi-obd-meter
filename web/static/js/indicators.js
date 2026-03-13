@@ -65,8 +65,8 @@ export function updateIndicators(dom, d, conf) {
   }
   // ドット: 瞬間燃費で色判定
   if (eco < 0) {
-    // エンブレ（燃料カット）= 消灯
-    setDot(dom.eco, null);
+    // エンブレ（燃料カット）= 緑
+    setDot(dom.eco, 'green');
   } else if (eco < 0.1) {
     // 停車・アイドル = 判定なし
     setDot(dom.eco, null);
