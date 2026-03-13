@@ -352,6 +352,19 @@ function buildDashboardHtml() {
     html += '</div>';
   }
 
+  // トリップ補正フォーム
+  html += '<div class="card">';
+  html += '<h2>🔄 トリップ補正</h2>';
+  if (tripStats.tripKm > 0) {
+    html += `<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在のトリップ: <b style="color:#fff">${round(tripStats.tripKm, 0)} km</b></div>`;
+  }
+  const tripPlaceholder = lastRefuelKm > 0 ? Math.round(lastRefuelKm) : '97300';
+  html += `<div class="form-group"><label>前回給油時のODO (km)</label><input type="number" id="trip-val" class="form-input" inputmode="numeric" placeholder="${tripPlaceholder}"></div>`;
+  html += '<div class="form-hint">前回給油時のODOメーター値を入力すると、トリップ距離と次回の燃費計算が補正されます。</div>';
+  html += '<button class="form-submit" id="trip-btn" onclick="submitTripCorrection()">トリップを補正</button>';
+  html += '<div class="form-result" id="trip-result"></div>';
+  html += '</div>';
+
   // メンテナンス必要
   if (alertItems.length > 0) {
     html += '<div class="card">';
@@ -377,21 +390,8 @@ function buildDashboardHtml() {
   const odoPlaceholder = currentOdo > 0 ? Math.round(currentOdo) : '98500';
   html += `<div class="form-group"><label>現在のODOメーター (km)</label><input type="number" id="odo-val" class="form-input" inputmode="numeric" placeholder="${odoPlaceholder}"></div>`;
   html += '<div class="form-hint">車のメーターと合わせて補正します。次回メンテナンス送信時にPiに反映されます。</div>';
-  html += '<button class="form-submit" id="odo-btn" onclick="submitOdo()">ODOを補正</button>';
+  html += '<button class="form-submit" style="background:#ff9800" id="odo-btn" onclick="submitOdo()">ODOを補正</button>';
   html += '<div class="form-result" id="odo-result"></div>';
-  html += '</div>';
-
-  // トリップ補正フォーム
-  html += '<div class="card">';
-  html += '<h2>🔄 トリップ補正</h2>';
-  if (tripStats.tripKm > 0) {
-    html += `<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在のトリップ: <b style="color:#fff">${round(tripStats.tripKm, 0)} km</b></div>`;
-  }
-  const tripPlaceholder = lastRefuelKm > 0 ? Math.round(lastRefuelKm) : '97300';
-  html += `<div class="form-group"><label>前回給油時のODO (km)</label><input type="number" id="trip-val" class="form-input" inputmode="numeric" placeholder="${tripPlaceholder}"></div>`;
-  html += '<div class="form-hint">前回給油時のODOメーター値を入力すると、トリップ距離と次回の燃費計算が補正されます。</div>';
-  html += '<button class="form-submit" style="background:#ff9800" id="trip-btn" onclick="submitTripCorrection()">トリップを補正</button>';
-  html += '<div class="form-result" id="trip-result"></div>';
   html += '</div>';
 
   html += `<script>${getDashboardJS()}</script>`;
