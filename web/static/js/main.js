@@ -12,6 +12,7 @@ const DEFAULTS = {
   trip_warn_km: 300, trip_danger_km: 500,
 };
 const POLL_INTERVAL_MS = 200;
+const FETCH_TIMEOUT_MS = 3000;
 const TOAST_DURATION_MS = 5000;
 const ALERT_INTERVAL_MS = 5500;
 
@@ -74,7 +75,10 @@ function applyData(d) {
 // --- APIポーリング ---
 async function fetchRealtime() {
   try {
-    const resp = await fetch('/api/realtime');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    const resp = await fetch('/api/realtime', { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!resp.ok) throw new Error(resp.status);
     connected = true;
     applyData(await resp.json());

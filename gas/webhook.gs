@@ -181,20 +181,20 @@ function updateOdometer(km) {
 }
 
 // === トリップ補正 (ダッシュボードから呼ばれる) ===
-// last_refuel_km を指定値に設定し、trip_correction_km を Pi に通知
-function correctTrip(lastRefuelKm) {
-  const val = parseFloat(lastRefuelKm);
-  if (!val || val <= 0) throw new Error('前回給油時のODO値を入力してください');
+// トリップ距離を直接指定し、last_refuel_km を逆算して Pi に通知
+function correctTrip(tripDistance) {
+  const tripKm = parseFloat(tripDistance);
+  if (!tripKm || tripKm <= 0) throw new Error('トリップ距離を入力してください');
 
   const currentKm = parseFloat(getSettingValue('total_km')) || 0;
   if (currentKm <= 0) throw new Error('ODOデータがありません');
-  if (val >= currentKm) throw new Error('現在のODO(' + Math.round(currentKm) + ' km)より小さい値を入力してください');
+  if (tripKm >= currentKm) throw new Error('現在のODO(' + Math.round(currentKm) + ' km)より小さい値を入力してください');
 
-  const tripKm = currentKm - val;
-  upsertSetting('last_refuel_km', val);
+  const lastRefuelKm = currentKm - tripKm;
+  upsertSetting('last_refuel_km', lastRefuelKm);
   upsertSetting('trip_correction_km', tripKm);
   upsertSetting('trip_km', tripKm);
-  return { status: 'ok', last_refuel_km: val, trip_km: round(tripKm, 1) };
+  return { status: 'ok', last_refuel_km: round(lastRefuelKm, 1), trip_km: round(tripKm, 1) };
 }
 
 // === 設定値取得 (設定シートからキーで検索) ===
@@ -364,9 +364,9 @@ function buildDashboardHtml() {
   if (tripStats.tripKm > 0) {
     html += `<div class="form-hint" style="font-size:26px;color:#aaa;margin-bottom:14px">現在のトリップ: <b style="color:#fff">${round(tripStats.tripKm, 0)} km</b></div>`;
   }
-  const tripPlaceholder = lastRefuelKm > 0 ? Math.round(lastRefuelKm) : '97300';
-  html += `<div class="form-group"><label>前回給油時のODO (km)</label><input type="number" id="trip-val" class="form-input" inputmode="numeric" placeholder="${tripPlaceholder}"></div>`;
-  html += '<div class="form-hint">前回給油時のODOメーター値を入力すると、トリップ距離と次回の燃費計算が補正されます。</div>';
+  const tripPlaceholder = tripStats.tripKm > 0 ? Math.round(tripStats.tripKm) : '150';
+  html += `<div class="form-group"><label>トリップ距離 (km)</label><input type="number" id="trip-val" class="form-input" inputmode="numeric" placeholder="${tripPlaceholder}"></div>`;
+  html += '<div class="form-hint">純正メーターのトリップ値を入力してください。次回の燃費計算にも反映されます。</div>';
   html += '<button class="form-submit" id="trip-btn" onclick="submitTripCorrection()">トリップを補正</button>';
   html += '<div class="form-result" id="trip-result"></div>';
   html += '</div>';
@@ -549,8 +549,8 @@ function submitOdo() {
 
 function submitTripCorrection() {
   var km = document.getElementById('trip-val').value;
-  if (!km) { alert('前回給油時のODO値を入力してください'); return; }
-  if (!confirm('前回給油時のODOを ' + km + ' km に補正しますか？')) return;
+  if (!km) { alert('トリップ距離を入力してください'); return; }
+  if (!confirm('トリップを ' + km + ' km に補正しますか？')) return;
 
   var btn = document.getElementById('trip-btn');
   var res = document.getElementById('trip-result');
