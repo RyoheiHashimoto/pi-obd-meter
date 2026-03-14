@@ -99,14 +99,6 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 	}
 }
 
-func TestCalcFuelEconomy_FuelCut(t *testing.T) {
-	// 燃料カット（MAF=ほぼ0）→ -1 (特別表示)
-	got, _ := calcFuelEconomy(60, 2000, 30, 0.001, true, 0, false, 1.3, 1.0)
-	if got != -1 {
-		t.Errorf("fuel cut: got %.1f, want -1", got)
-	}
-}
-
 func TestCalcFuelEconomy_ZeroMAF_Fallback(t *testing.T) {
 	// hasMAF=true でも MAF=0 → load×RPM にフォールバック
 	mafZero, _ := calcFuelEconomy(60, 2000, 30, 0, true, 0, false, 1.3, 1.0)

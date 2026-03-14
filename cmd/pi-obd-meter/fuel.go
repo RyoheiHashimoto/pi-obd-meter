@@ -55,10 +55,6 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 		fuelRateLH *= correction
 	}
 
-	if fuelRateLH < 0.01 {
-		return -1, fuelRateLH // エンブレ・燃料カット（-1 = 特別表示）
-	}
-
 	// エンブレ検出: MAP対応時は負圧で判定（より正確）、非対応時は負荷で判定
 	if speed >= minDisplaySpeedKm {
 		if hasMAP && intakeMAP > 0 && intakeMAP < engineBrakeMAPKPa {
