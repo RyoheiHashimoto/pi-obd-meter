@@ -8,7 +8,7 @@ import { createIndicators, updateIndicators } from './indicators.js';
 const DEFAULTS = {
   max_speed_kmh: 180, eco_lh_green: 2.0, eco_lh_red: 3.9,
   throttle_idle_pct: 11.5, throttle_max_pct: 78,
-  eco_kmpl_green: 15, eco_kmpl_orange: 5,
+  eco_kmpl_green: 15.4, eco_kmpl_orange: 6.2,
   trip_warn_km: 300, trip_danger_km: 500,
 };
 const POLL_INTERVAL_MS = 200;

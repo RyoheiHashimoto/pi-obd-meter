@@ -85,7 +85,7 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		d := app.cfg.EngineDisplacementL
 		ecoKmplGreen := math.Round(20/d*10) / 10
-		ecoKmplOrange := math.Round(13/d*10) / 10
+		ecoKmplOrange := math.Round(8/d*10) / 10
 		estRange := app.cfg.FuelTankL * ecoKmplGreen
 		writeJSON(w, configResponse{
 			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,
