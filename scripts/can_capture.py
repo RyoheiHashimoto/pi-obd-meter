@@ -17,7 +17,7 @@ import signal
 
 SERIAL_PORT = "/dev/rfcomm0"
 BAUD_RATE = 38400
-DEFAULT_OUTPUT_DIR = "/tmp/can_capture"
+DEFAULT_OUTPUT_DIR = "/opt/pi-obd-meter/can_capture"
 
 
 def send_cmd(ser, cmd, wait=0.5):
