@@ -125,7 +125,6 @@ func main() {
 				lastMAP = 0
 				lastFuelEco = 0
 				lastFuelRate = 0
-				displayFuelEco = 0
 			}
 			wasConnected = ev.Connected
 
