@@ -32,31 +32,36 @@ def send_cmd(ser, cmd, wait=0.5):
 def init_elm(ser):
     """ELM327 初期化"""
     print("ELM327 初期化中...")
-    commands = [
-        ("ATZ", 2.0),
-        ("ATE0", 0.5),
-        ("ATH1", 0.5),
-        ("ATSP6", 0.5),
-    ]
-    for cmd, wait in commands:
-        resp = send_cmd(ser, cmd, wait)
-        # ATZ のレスポンスから ELM バージョン表示
-        if cmd == "ATZ" and "ELM" in resp:
-            ver = [l for l in resp.splitlines() if "ELM" in l]
-            if ver:
-                print(f"  接続: {ver[0].strip()}")
+    # ATZ リセット — 応答が遅いので十分待つ
+    ser.reset_input_buffer()
+    ser.write(b"ATZ\r")
+    time.sleep(3)
+    resp = ser.read(ser.in_waiting).decode(errors="replace")
+    if "ELM" in resp:
+        ver = [l.strip() for l in resp.splitlines() if "ELM" in l]
+        if ver:
+            print(f"  接続: {ver[0]}")
+
+    # バッファ完全クリア後にコマンド送信
+    ser.reset_input_buffer()
+    for cmd in ["ATE0", "ATE0", "ATL0", "ATH1", "ATSP6"]:
+        ser.reset_input_buffer()
+        ser.write((cmd + "\r").encode())
+        time.sleep(0.5)
+        ser.read(ser.in_waiting)
     print("  初期化完了")
 
 
 def capture(ser, can_id, duration_sec, output_file):
     """指定 CAN ID をモニターしてCSVに保存"""
     # フィルタ設定
-    send_cmd(ser, f"AT CRA {can_id}", 0.5)
+    resp = send_cmd(ser, f"AT CRA {can_id}", 0.5)
+    print(f"  フィルタ設定: AT CRA {can_id} → {resp}")
     ser.reset_input_buffer()
 
     # モニター開始
     ser.write(b"ATMA\r")
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     print(f"  キャプチャ中: CAN ID 0x{can_id} ({duration_sec}秒)")
     print(f"  Ctrl+C で早期終了可")
@@ -71,9 +76,16 @@ def capture(ser, can_id, duration_sec, output_file):
                 line = ser.readline().decode(errors="replace").strip()
                 if not line or line.startswith(">") or "SEARCHING" in line:
                     continue
-                if "DATA ERROR" in line or "BUFFER FULL" in line:
+                if "BUFFER FULL" in line:
                     errors += 1
                     continue
+                # ATコマンドエコーやOKを除外
+                if line.startswith("AT") or line == "OK":
+                    continue
+                # DATA ERROR はカウントしつつデータ部分は保存
+                if "DATA ERROR" in line:
+                    errors += 1
+                    line = line.replace("DATA ERROR", "").strip().rstrip("<").strip()
                 ts = time.time() - start
                 frames.append(f"{ts:.3f},{line}")
             else:
