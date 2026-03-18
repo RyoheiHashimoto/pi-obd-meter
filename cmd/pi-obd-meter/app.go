@@ -263,8 +263,12 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 	if restored.LastRefuelKm > 0 && restored.TotalKm > restored.LastRefuelKm {
 		tripKm := restored.TotalKm - restored.LastRefuelKm
 		localTrip := app.tracker.DistanceKm()
-		// GAS側のほうが大きい場合のみ補正（ローカルが進んでいる場合は上書きしない）
-		if tripKm > localTrip {
+		if localTrip == 0 {
+			// ローカルが0 = 給油リセット済み。GASからの復元をスキップ。
+			// 次回メンテナンス送信で last_refuel_km が同期される。
+			slog.Info("ローカルトリップ0、GAS復元スキップ", "gas_trip_km", tripKm)
+		} else if tripKm > localTrip {
+			// GAS側のほうが大きい場合のみ補正（ローカルが進んでいる場合は上書きしない）
 			app.tracker.SetDistance(tripKm)
 			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
 		}

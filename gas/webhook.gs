@@ -86,6 +86,10 @@ function handleMaintenance(data) {
   }
   if (data.trip_km >= 0) {
     upsertSetting('trip_km', data.trip_km);
+    // last_refuel_km を常に同期（Pi再起動時のトリップ復元ズレ防止）
+    if (data.total_km > 0) {
+      upsertSetting('last_refuel_km', data.total_km - data.trip_km);
+    }
   }
 
   // ODO補正適用確認: Piが補正を適用したら設定をクリア
