@@ -6,17 +6,12 @@ const DEG_TO_RAD = Math.PI / 180;
 const ARC_START = -135;
 const ARC_END = 135;
 const ARC_SWEEP = 270;
-const MAP_R_OFFSET = 80;
-const FUEL_R_OFFSET = 18;
-const THROTTLE_R_OFFSET = 18;
+const THROTTLE_R_OFFSET = 80;
 
 const LERP_SPEED = 0.35;
 const LERP_THRESHOLD = 0.05;
 const LERP_STOP = 0.01;
 const HUE_MAX = 210;
-
-const MAP_MAX_KPA = 101.3;  // NA車の最大（大気圧）
-const FUEL_MAX_LH = 20;     // 燃料レートアーク最大値
 
 let thrIdleBaseline = 11.5;
 let thrMaxPct = 78;
@@ -59,9 +54,8 @@ export function speedColor(v) {
   return '#78909c';
 }
 
-// --- ArcAnimator: アーク LERP アニメーションの共通クラス ---
-// スロットル・MAP・燃料レートの3アークで共通のパターンを集約。
-// 各アークは value → percentage → angle → arcPath → HSL色 → glow の流れで描画する。
+// --- ArcAnimator: アーク LERP アニメーション ---
+// value → percentage → angle → arcPath → HSL色 → glow の流れで描画する。
 class ArcAnimator {
   constructor({ cx, cy, r, maxVal, lerpSpeed, arcEl, offColor, activeThreshold, labelEl, readoutVal, readoutUnit, formatVal }) {
     this.cx = cx;
@@ -109,8 +103,8 @@ class ArcAnimator {
   }
 }
 
-// --- スロットル / MAP / FuelRate アニメーター ---
-let thrAnimator, mapAnimator, fuelAnimator;
+// --- スロットル アニメーター ---
+let thrAnimator;
 
 export function setThrottleIdleBaseline(val) { thrIdleBaseline = val; }
 export function setThrottleMaxPct(val) { thrMaxPct = val; }
@@ -121,21 +115,11 @@ export function updateThrottle(pct) {
   thrAnimator.update(normalized);
 }
 
-export function updateMAP(kPa) {
-  mapAnimator.update(kPa);
-}
-
-export function updateFuelRate(lh) {
-  fuelAnimator.update(lh);
-}
-
 // --- スピードゲージ構築 ---
 export function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
   const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
-  const mapArcR = r - MAP_R_OFFSET;
-  const fuelArcR = mapArcR - FUEL_R_OFFSET;
-  const throttleR = fuelArcR - THROTTLE_R_OFFSET;
+  const throttleR = r - THROTTLE_R_OFFSET;
 
   // Track (thick bezel)
   svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -158,15 +142,7 @@ export function buildSpeedGauge(svgId, cfg) {
     }
   }
 
-  // MAP arc (track)
-  svgEl(svg, 'path', { d: arcPath(cx, cy, mapArcR, ARC_START, ARC_END), fill: 'none', stroke: '#111', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  const mapArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
-
-  // Fuel rate arc (track)
-  svgEl(svg, 'path', { d: arcPath(cx, cy, fuelArcR, ARC_START, ARC_END), fill: 'none', stroke: '#0e0e14', 'stroke-width': 10, 'stroke-linecap': 'round' });
-  const fuelArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#222', 'stroke-width': 10, 'stroke-linecap': 'round' });
-
-  // Throttle arc (track) — innermost
+  // Throttle arc (track)
   svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
   const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
@@ -197,32 +173,10 @@ export function buildSpeedGauge(svgId, cfg) {
   const ut = svgEl(svg, 'text', { x: cx, y: numY + numSz * 0.55, class: 'g-unit', fill: '#fff', 'font-size': 28 });
   ut.textContent = unit;
 
-  // MAP / Fuel readouts (km/h の下) — 値と単位を分離して単位位置を固定
-  const rdY = numY + numSz * 0.55 + 58;
-  const rdFs = 24;
-  const mapValEl  = svgEl(svg, 'text', { x: cx - 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
-  mapValEl.textContent = '--';
-  const mapUnitEl = svgEl(svg, 'text', { x: cx - 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
-  mapUnitEl.textContent = 'kPa';
-  const fuelValEl  = svgEl(svg, 'text', { x: cx + 82, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:end' });
-  fuelValEl.textContent = '--';
-  const fuelUnitEl = svgEl(svg, 'text', { x: cx + 88, y: rdY, class: 'g-num', fill: '#333', 'font-size': rdFs, style: 'text-anchor:start' });
-  fuelUnitEl.textContent = 'L/h';
-
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({
     cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
     arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel,
-  });
-  mapAnimator = new ArcAnimator({
-    cx, cy, r: mapArcR, maxVal: MAP_MAX_KPA, lerpSpeed: 0.3,
-    arcEl: mapArcEl, offColor: '#222', activeThreshold: 0.5,
-    readoutVal: mapValEl, readoutUnit: mapUnitEl, formatVal: v => String(Math.round(v)),
-  });
-  fuelAnimator = new ArcAnimator({
-    cx, cy, r: fuelArcR, maxVal: FUEL_MAX_LH, lerpSpeed: 0.35,
-    arcEl: fuelArcEl, offColor: '#222', activeThreshold: 0.01,
-    readoutVal: fuelValEl, readoutUnit: fuelUnitEl, formatVal: v => v.toFixed(1),
   });
 
   // Speed Lerp animation

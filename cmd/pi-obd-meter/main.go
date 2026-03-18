@@ -98,15 +98,16 @@ func main() {
 
 	// OBDメインループ状態（フィルタリング・燃費計算はメイン側で管理）
 	var (
-		filters       = newOBDFilters()
-		lastCoolant   float64
-		lastMAP       float64
-		lastFuelEco   float64
-		lastFuelRate  float64
-		wifiConnected bool
-		wasConnected  bool
-		lastReadAt    time.Time
-		sampleCount   int
+		filters        = newOBDFilters()
+		lastCoolant    float64
+		lastMAP        float64
+		lastFuelEco    float64
+		lastFuelRate   float64
+		displayFuelEco float64 // 表示用瞬間燃費（ReadFastで毎サイクル更新）
+		wifiConnected  bool
+		wasConnected   bool
+		lastReadAt     time.Time
+		sampleCount    int
 	)
 
 	for {
@@ -145,11 +146,12 @@ func main() {
 			sampleCount++
 
 			// OBD値フィルタリング（ノイズ・スパイク除去）
+			// ReadFast は速度+スロットルのみ返すため、RPM/load は IsFull 時のみフィルタリング
 			data.SpeedKmh = filters.speed.Update(data.SpeedKmh)
-			data.RPM = filters.rpm.Update(data.RPM)
-			data.EngineLoad = filters.load.Update(data.EngineLoad)
 			data.ThrottlePos = filters.throttle.Update(data.ThrottlePos)
 			if ev.IsFull {
+				data.RPM = filters.rpm.Update(data.RPM)
+				data.EngineLoad = filters.load.Update(data.EngineLoad)
 				data.CoolantTemp = filters.coolant.Update(data.CoolantTemp)
 				if ev.HasMAP {
 					data.IntakeMAP = filters.mapKPa.Update(data.IntakeMAP)
@@ -168,6 +170,10 @@ func main() {
 				lastMAP = data.IntakeMAP
 				wifiConnected = checkWiFi()
 				lastFuelEco, lastFuelRate = calcFuelEconomy(data.SpeedKmh, data.RPM, data.EngineLoad, data.MAFAirFlow, ev.HasMAF, data.IntakeMAP, ev.HasMAP, cfg.EngineDisplacementL, cfg.FuelRateCorrection)
+				displayFuelEco = lastFuelEco
+			} else {
+				// ReadFast: 表示用瞬間燃費を速度+スロットル+直近燃料レートから更新
+				displayFuelEco = calcDisplayFuelEco(data.SpeedKmh, data.ThrottlePos, lastFuelRate, cfg.ThrottleIdlePct)
 			}
 
 			// エンブレ(燃料カット)時は燃料消費ゼロとしてトラッカーに渡す
@@ -183,7 +189,7 @@ func main() {
 				RPM:            data.RPM,
 				EngineLoad:     data.EngineLoad,
 				ThrottlePos:    data.ThrottlePos,
-				FuelEconomy:    lastFuelEco,
+				FuelEconomy:    displayFuelEco,
 				FuelRateLH:     lastFuelRate,
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
 				TripKm:         app.tracker.DistanceKm(),

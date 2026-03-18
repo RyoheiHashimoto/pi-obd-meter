@@ -5,15 +5,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	selfupdate "github.com/creativeprojects/go-selfupdate"
 )
 
+// isValidSemver は version が semver 形式（v0.3.4 等）かを簡易判定する。
+// dev ビルド（"dev-abc1234"）や空文字列は false。
+func isValidSemver(v string) bool {
+	return strings.HasPrefix(v, "v") && strings.Count(v, ".") >= 2
+}
+
 // tryAutoUpdate は起動時にGitHub Releasesから最新版をチェックし、
 // 新しいバージョンがあればアトミックに差し替えて再起動する。
 func tryAutoUpdate(ctx context.Context) {
-	if version == "dev" {
+	if version == "dev" || !isValidSemver(version) {
 		return
 	}
 

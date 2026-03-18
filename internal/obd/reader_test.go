@@ -2,7 +2,6 @@ package obd
 
 import (
 	"fmt"
-	"math"
 	"testing"
 )
 
@@ -150,10 +149,8 @@ func TestDetectCapabilities_NoMultiPIDSupport(t *testing.T) {
 
 func TestReadFast_MultiPID(t *testing.T) {
 	dev := newMockDevice()
-	dev.pidResponses[PIDEngineRPM] = []byte{0x1A, 0x20} // 1672 rpm
-	dev.pidResponses[PIDVehicleSpeed] = []byte{60}      // 60 km/h
-	dev.pidResponses[PIDEngineLoad] = []byte{128}       // ~50.2%
-	dev.pidResponses[PIDThrottlePosition] = []byte{64}  // ~25.1%
+	dev.pidResponses[PIDVehicleSpeed] = []byte{60}     // 60 km/h
+	dev.pidResponses[PIDThrottlePosition] = []byte{64} // ~25.1%
 
 	r := &Reader{dev: dev, supportsMulti: true, multiTested: true}
 	data, err := r.ReadFast()
@@ -161,15 +158,8 @@ func TestReadFast_MultiPID(t *testing.T) {
 		t.Fatalf("ReadFast failed: %v", err)
 	}
 
-	wantRPM := float64(0x1A20) / 4.0
-	if data.RPM != wantRPM {
-		t.Errorf("RPM: got %.1f, want %.1f", data.RPM, wantRPM)
-	}
 	if data.SpeedKmh != 60 {
 		t.Errorf("Speed: got %.0f, want 60", data.SpeedKmh)
-	}
-	if math.Abs(data.EngineLoad-50.2) > 0.1 {
-		t.Errorf("Load: got %.1f, want ~50.2", data.EngineLoad)
 	}
 	if data.ThrottlePos < 25 || data.ThrottlePos > 26 {
 		t.Errorf("Throttle: got %.1f, want ~25.1", data.ThrottlePos)

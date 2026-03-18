@@ -31,6 +31,7 @@ type maintenancePayload struct {
 	Statuses        []maintenanceStatusItem `json:"statuses"`
 	SentAt          time.Time               `json:"sent_at"`
 	TotalKm         float64                 `json:"total_km"`
+	TripKm          float64                 `json:"trip_km"`
 	OdometerApplied bool                    `json:"odometer_applied,omitempty"`
 }
 
@@ -38,7 +39,8 @@ type maintenancePayload struct {
 type gasMaintenanceResponse struct {
 	PendingResets      []string `json:"pending_resets"`
 	OdometerCorrection *float64 `json:"odometer_correction"`
-	TripReset          bool     `json:"trip_reset"`
+	TripCorrectionKm   *float64 `json:"trip_correction_km"`
+	TripReset          bool     `json:"trip_reset"` // 後方互換（将来削除）
 }
 
 // App はアプリケーション全体の状態を管理する
@@ -160,6 +162,7 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			Statuses:        items,
 			SentAt:          time.Now(),
 			TotalKm:         app.maintMgr.TotalKm(),
+			TripKm:          app.tracker.DistanceKm(),
 			OdometerApplied: odoApplied,
 		}
 
@@ -206,8 +209,13 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		}
 		app.totalKmMu.Unlock()
 
-		// トリップリセット処理
-		if gasResp.TripReset {
+		// トリップ補正処理（新方式: 距離を直接指定）
+		if gasResp.TripCorrectionKm != nil {
+			km := *gasResp.TripCorrectionKm
+			app.tracker.SetDistance(km)
+			slog.Info("トリップ補正", "km", km)
+		} else if gasResp.TripReset {
+			// 後方互換: 旧GASからのリセット指示
 			app.tracker.ManualReset()
 			slog.Info("トリップリセット", "reason", "給油記録")
 		}
@@ -234,7 +242,7 @@ func (app *App) initializeFromGAS(ctx context.Context) {
 	slog.Warn("WiFi接続待ちタイムアウト、メンテナンス初回送信スキップ")
 }
 
-// restoreFromGAS はGASから累計走行距離を復元する（起動時用）
+// restoreFromGAS はGASから累計走行距離とトリップ距離を復元する（起動時用）
 func (app *App) restoreFromGAS(ctx context.Context) {
 	restored, err := app.client.RestoreState(ctx)
 	if err != nil || restored.TotalKm <= 0 {
@@ -247,7 +255,18 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 		app.totalKmMu.Unlock()
 		app.maintMgr.UpdateTotalKm(restored.TotalKm)
 		slog.Info("GASからODO復元", "total_km", restored.TotalKm)
-		return
+	} else {
+		app.totalKmMu.Unlock()
 	}
-	app.totalKmMu.Unlock()
+
+	// トリップ距離をGASの給油記録と同期
+	if restored.LastRefuelKm > 0 && restored.TotalKm > restored.LastRefuelKm {
+		tripKm := restored.TotalKm - restored.LastRefuelKm
+		localTrip := app.tracker.DistanceKm()
+		// GAS側のほうが大きい場合のみ補正（ローカルが進んでいる場合は上書きしない）
+		if tripKm > localTrip {
+			app.tracker.SetDistance(tripKm)
+			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		}
+	}
 }

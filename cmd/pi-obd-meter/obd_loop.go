@@ -46,6 +46,7 @@ func obdReaderLoop(ctx context.Context, elm *obd.ELM327, intervalMs int, ch chan
 
 	// tryConnect はELM327への接続を試みる
 	tryConnect := func() bool {
+		slog.Info("ELM327接続試行中...")
 		if err := elm.Connect(); err != nil {
 			slog.Warn("ELM327接続失敗", "error", err)
 			return false

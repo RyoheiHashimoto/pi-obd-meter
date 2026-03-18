@@ -55,10 +55,6 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 		fuelRateLH *= correction
 	}
 
-	if fuelRateLH < 0.01 {
-		return -1, fuelRateLH // エンブレ・燃料カット（-1 = 特別表示）
-	}
-
 	// エンブレ検出: MAP対応時は負圧で判定（より正確）、非対応時は負荷で判定
 	if speed >= minDisplaySpeedKm {
 		if hasMAP && intakeMAP > 0 && intakeMAP < engineBrakeMAPKPa {
@@ -77,4 +73,27 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 		kmL = maxDisplayKmL
 	}
 	return kmL, fuelRateLH
+}
+
+// calcDisplayFuelEco は ReadFast 時の表示用瞬間燃費を計算する。
+// スロットルとlastFuelRateから推定し、tracker には影響しない（表示専用）。
+func calcDisplayFuelEco(speed, throttle, lastRate, idlePct float64) float64 {
+	const idleMargin = 3.0 // スロットルアイドル判定マージン (%)
+
+	if speed < minDisplaySpeedKm {
+		return 0 // 低速・停車
+	}
+	// スロットル≈アイドル → エンブレ
+	if throttle <= idlePct+idleMargin {
+		return -1
+	}
+	// 燃費再計算（最新の速度 + 直近の燃料レート）
+	if lastRate > 0.01 {
+		kmL := speed / lastRate
+		if kmL > maxDisplayKmL {
+			kmL = maxDisplayKmL
+		}
+		return kmL
+	}
+	return 0
 }

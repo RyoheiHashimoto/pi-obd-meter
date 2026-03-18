@@ -2,10 +2,7 @@
 // Indicators — 右パネルのインジケーター生成と更新
 // ============================================================
 
-const ECO_LOW_SPEED_THRESHOLD = 30;
-
 const INDICATOR_DEFS = [
-  { id: 'rpm',   label: 'RPM',   defaultVal: '--' },
   { id: 'eco',   label: 'ECO' },
   { id: 'trip',  label: 'TRIP',  defaultVal: '--' },
   { id: 'temp',  label: 'TEMP',  defaultVal: '--' },
@@ -51,68 +48,32 @@ export function updateIndicators(dom, d, conf) {
   setDot(dom.wifi, wifiOk ? 'green' : 'red');
   dom.wifi.val.textContent = wifiOk ? 'OK' : 'NG';
 
-  // RPM
-  const rpm = d.rpm || 0;
-  if (rpm > 0) {
-    dom.rpm.val.textContent = String(Math.round(rpm));
-    if (rpm >= 4500)      setDot(dom.rpm, 'red');
-    else if (rpm >= 3000) setDot(dom.rpm, 'orange');
-    else                  setDot(dom.rpm, 'green');
-  } else {
-    dom.rpm.val.textContent = '--';
-    setDot(dom.rpm, null);
-  }
-
   // MAINT
   const alerts = d.alerts || [];
   const hasOverdue = alerts.some(a => a.is_overdue);
   setDot(dom.maint, hasOverdue ? 'red' : alerts.length > 0 ? 'orange' : 'green');
   dom.maint.val.textContent = String(alerts.length);
 
-  // ECO — エンブレ/停車/クリープ時は平均燃費(▸付き)、走行中は瞬間燃費
+  // ECO — 数値: 常に平均燃費、ドット: 瞬間燃費で色判定
   const eco = d.fuel_economy || 0;
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
-  const fuelRate = d.fuel_rate_lh || 0;
-  const speed = d.speed_kmh || 0;
+  // 数値: 平均燃費を常時表示
+  if (avgEco > 0.1) {
+    dom.eco.val.textContent = avgEco.toFixed(1);
+  } else {
+    dom.eco.val.textContent = '--';
+  }
+  // ドット: 瞬間燃費で色判定
   if (eco < 0) {
-    // エンブレ・燃料カット: 平均燃費を表示
-    if (avgEco > 0.1) {
-      setDot(dom.eco, 'green');
-      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
-    } else {
-      setDot(dom.eco, 'green');
-      dom.eco.val.textContent = '--';
-    }
+    // エンブレ（燃料カット）= 緑
+    setDot(dom.eco, 'green');
   } else if (eco < 0.1) {
-    // 停車・クリープ: 平均燃費を表示
-    if (avgEco > 0.1) {
-      if (avgEco >= conf.eco_kmpl_green)      setDot(dom.eco, 'green');
-      else if (avgEco >= conf.eco_kmpl_orange) setDot(dom.eco, 'orange');
-      else                                     setDot(dom.eco, 'red');
-      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
-    } else {
-      setDot(dom.eco, null);
-      dom.eco.val.textContent = '0';
-    }
-  } else if (eco > 30) {
-    // 高燃費（エンブレ等の検出漏れ）: 平均燃費を表示
-    if (avgEco > 0.1) {
-      setDot(dom.eco, 'green');
-      dom.eco.val.textContent = avgEco.toFixed(1) + '\u25B8';
-    } else {
-      setDot(dom.eco, 'green');
-      dom.eco.val.textContent = '--';
-    }
-  } else if (speed < ECO_LOW_SPEED_THRESHOLD && fuelRate > 0) {
-    if (fuelRate < conf.eco_lh_green)      setDot(dom.eco, 'green');
-    else if (fuelRate < conf.eco_lh_red)   setDot(dom.eco, 'orange');
-    else                                   setDot(dom.eco, 'red');
-    dom.eco.val.textContent = eco.toFixed(1);
+    // 停車・アイドル = 判定なし
+    setDot(dom.eco, null);
   } else {
     if (eco >= conf.eco_kmpl_green)      setDot(dom.eco, 'green');
     else if (eco >= conf.eco_kmpl_orange) setDot(dom.eco, 'orange');
     else                                  setDot(dom.eco, 'red');
-    dom.eco.val.textContent = eco.toFixed(1);
   }
 
   // TRIP
@@ -129,7 +90,7 @@ export function updateIndicators(dom, d, conf) {
   const ct = d.coolant_temp || 0;
   if (ct > 0) {
     dom.temp.val.textContent = Math.round(ct) + '\u00B0';
-    setDot(dom.temp, ct < 70 ? 'orange' : ct < 105 ? 'green' : 'red');
+    setDot(dom.temp, ct < 60 ? 'orange' : ct < 100 ? 'green' : 'red');
   } else {
     dom.temp.val.textContent = '--';
     setDot(dom.temp, null);

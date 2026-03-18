@@ -99,14 +99,6 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 	}
 }
 
-func TestCalcFuelEconomy_FuelCut(t *testing.T) {
-	// 燃料カット（MAF=ほぼ0）→ -1 (特別表示)
-	got, _ := calcFuelEconomy(60, 2000, 30, 0.001, true, 0, false, 1.3, 1.0)
-	if got != -1 {
-		t.Errorf("fuel cut: got %.1f, want -1", got)
-	}
-}
-
 func TestCalcFuelEconomy_ZeroMAF_Fallback(t *testing.T) {
 	// hasMAF=true でも MAF=0 → load×RPM にフォールバック
 	mafZero, _ := calcFuelEconomy(60, 2000, 30, 0, true, 0, false, 1.3, 1.0)
@@ -286,6 +278,59 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	// トリップがリセットされている
 	if app.tracker.DistanceKm() > 0.001 {
 		t.Errorf("trip should be reset, got %.4f km", app.tracker.DistanceKm())
+	}
+}
+
+func TestSendMaintenanceStatus_TripCorrection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"trip_correction_km":250.5}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.tracker.Update(60, 0)
+	time.Sleep(20 * time.Millisecond)
+	app.tracker.Update(60, 0) // 走行データを蓄積
+	app.totalKmAccum = 100.0
+
+	app.sendMaintenanceStatus(context.Background())
+
+	// トリップが250.5kmに補正されている
+	diff := app.tracker.DistanceKm() - 250.5
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.01 {
+		t.Errorf("trip should be corrected to 250.5, got %.1f km", app.tracker.DistanceKm())
+	}
+}
+
+func TestSendMaintenanceStatus_TripCorrectionOverridesReset(t *testing.T) {
+	// trip_correction_km と trip_reset の両方がある場合、correction が優先
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"trip_correction_km":100,"trip_reset":true}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.maintMgr.InitDefaults(nil)
+	app.tracker.Update(60, 0)
+	time.Sleep(20 * time.Millisecond)
+	app.tracker.Update(60, 0)
+	app.totalKmAccum = 100.0
+
+	app.sendMaintenanceStatus(context.Background())
+
+	// correction が優先されるのでリセット(0)ではなく100km
+	diff := app.tracker.DistanceKm() - 100
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.01 {
+		t.Errorf("trip_correction_km should take priority: got %.1f km", app.tracker.DistanceKm())
 	}
 }
 
@@ -692,5 +737,197 @@ func TestGetNotification_Expired(t *testing.T) {
 	got := app.getNotification()
 	if got != "" {
 		t.Errorf("expired notification: got %q, want empty", got)
+	}
+}
+
+// --- addDistance テスト ---
+
+func TestAddDistance(t *testing.T) {
+	app := newTestApp(t, "http://example.com")
+	app.totalKmAccum = 1000.0
+
+	app.addDistance(1.5)
+	if app.totalKmAccum != 1001.5 {
+		t.Errorf("totalKmAccum: got %.1f, want 1001.5", app.totalKmAccum)
+	}
+
+	app.addDistance(0.3)
+	if app.totalKmAccum != 1001.8 {
+		t.Errorf("totalKmAccum: got %.1f, want 1001.8", app.totalKmAccum)
+	}
+
+	// メンテナンスマネージャーにも反映
+	if app.maintMgr.TotalKm() != 1001.8 {
+		t.Errorf("maintMgr.TotalKm: got %.1f, want 1001.8", app.maintMgr.TotalKm())
+	}
+}
+
+func TestAddDistance_Zero(t *testing.T) {
+	app := newTestApp(t, "http://example.com")
+	app.totalKmAccum = 500.0
+
+	app.addDistance(0)
+	if app.totalKmAccum != 500.0 {
+		t.Errorf("totalKmAccum: got %.1f, want 500.0", app.totalKmAccum)
+	}
+}
+
+// --- updateRealtimeData / getRealtimeData テスト ---
+
+func TestUpdateAndGetRealtimeData(t *testing.T) {
+	app := newTestApp(t, "http://example.com")
+
+	data := RealtimeData{
+		SpeedKmh:     60,
+		RPM:          2000,
+		EngineLoad:   30,
+		OBDConnected: true,
+	}
+	app.updateRealtimeData(data)
+
+	got := app.getRealtimeData()
+	if got.SpeedKmh != 60 {
+		t.Errorf("SpeedKmh: got %.0f, want 60", got.SpeedKmh)
+	}
+	if got.RPM != 2000 {
+		t.Errorf("RPM: got %.0f, want 2000", got.RPM)
+	}
+	if !got.OBDConnected {
+		t.Error("OBDConnected should be true")
+	}
+}
+
+func TestGetRealtimeData_Initial(t *testing.T) {
+	app := newTestApp(t, "http://example.com")
+	got := app.getRealtimeData()
+	if got.SpeedKmh != 0 || got.RPM != 0 {
+		t.Errorf("initial data should be zero: speed=%.0f, rpm=%.0f", got.SpeedKmh, got.RPM)
+	}
+}
+
+// --- restoreFromGAS テスト ---
+
+func TestRestoreFromGAS_HigherODO(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok","total_km":50000}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.totalKmAccum = 10000.0
+
+	app.restoreFromGAS(context.Background())
+
+	// GASの値が大きいので復元される
+	if app.totalKmAccum != 50000 {
+		t.Errorf("totalKmAccum: got %.0f, want 50000", app.totalKmAccum)
+	}
+}
+
+func TestRestoreFromGAS_LocalHigher(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok","total_km":5000}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.totalKmAccum = 50000.0
+
+	app.restoreFromGAS(context.Background())
+
+	// ローカルの値が大きいので変更されない
+	if app.totalKmAccum != 50000 {
+		t.Errorf("totalKmAccum should stay 50000, got %.0f", app.totalKmAccum)
+	}
+}
+
+func TestRestoreFromGAS_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.totalKmAccum = 10000.0
+
+	app.restoreFromGAS(context.Background())
+
+	// エラー時は変更されない
+	if app.totalKmAccum != 10000 {
+		t.Errorf("totalKmAccum should stay 10000, got %.0f", app.totalKmAccum)
+	}
+}
+
+func TestRestoreFromGAS_ZeroTotalKm(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{"status":"ok","total_km":0}`))
+	}))
+	defer srv.Close()
+
+	app := newTestApp(t, srv.URL)
+	app.totalKmAccum = 10000.0
+
+	app.restoreFromGAS(context.Background())
+
+	// total_km=0 は無視される
+	if app.totalKmAccum != 10000 {
+		t.Errorf("totalKmAccum should stay 10000, got %.0f", app.totalKmAccum)
+	}
+}
+
+// --- newApp テスト ---
+
+func TestNewApp_Defaults(t *testing.T) {
+	cfg := Config{
+		MaintenancePath: filepath.Join(t.TempDir(), "maint.json"),
+	}
+	app := newApp(cfg)
+
+	if app.client == nil {
+		t.Error("client should not be nil")
+	}
+	if app.maintMgr == nil {
+		t.Error("maintMgr should not be nil")
+	}
+	if app.tracker == nil {
+		t.Error("tracker should not be nil")
+	}
+	if app.startedAt.IsZero() {
+		t.Error("startedAt should be set")
+	}
+}
+
+func TestNewApp_InitialOdometer(t *testing.T) {
+	cfg := Config{
+		MaintenancePath:   filepath.Join(t.TempDir(), "maint.json"),
+		InitialOdometerKm: 80000,
+	}
+	app := newApp(cfg)
+
+	if app.totalKmAccum != 80000 {
+		t.Errorf("totalKmAccum: got %.0f, want 80000", app.totalKmAccum)
+	}
+}
+
+// --- writeJSON テスト ---
+
+func TestWriteJSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+	data := map[string]string{"key": "value"}
+	writeJSON(rec, data)
+
+	if rec.Header().Get("Content-Type") != "application/json" {
+		t.Error("Content-Type should be application/json")
+	}
+
+	var result map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if result["key"] != "value" {
+		t.Errorf("key: got %q, want value", result["key"])
 	}
 }

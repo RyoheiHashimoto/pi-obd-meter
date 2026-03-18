@@ -124,6 +124,105 @@ func TestTrackerManualReset(t *testing.T) {
 	}
 }
 
+// --- SetDistance ---
+
+func TestTrackerSetDistance(t *testing.T) {
+	tr := newTestTracker(t)
+	feedWithFuel(tr, 60, 6.0, 20)
+
+	origDist := tr.DistanceKm()
+	origFuel := tr.GetCurrent().FuelConsumptionL
+	if origDist <= 0 {
+		t.Fatal("expected positive distance before SetDistance")
+	}
+
+	// 距離を半分に補正
+	tr.SetDistance(origDist / 2)
+
+	if tr.DistanceKm() != origDist/2 {
+		t.Errorf("DistanceKm: got %.6f, want %.6f", tr.DistanceKm(), origDist/2)
+	}
+
+	// 燃料消費量も半分に補正される
+	newFuel := tr.GetCurrent().FuelConsumptionL
+	expectedFuel := origFuel / 2
+	diff := newFuel - expectedFuel
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > expectedFuel*0.01 {
+		t.Errorf("FuelConsumptionL: got %.6f, want ~%.6f", newFuel, expectedFuel)
+	}
+}
+
+func TestTrackerSetDistance_Zero(t *testing.T) {
+	tr := newTestTracker(t)
+	feed(tr, 60, 20)
+
+	tr.SetDistance(0)
+	if tr.DistanceKm() != 0 {
+		t.Errorf("DistanceKm: got %.6f, want 0", tr.DistanceKm())
+	}
+}
+
+func TestTrackerSetDistance_Negative(t *testing.T) {
+	tr := newTestTracker(t)
+	feed(tr, 60, 20)
+
+	tr.SetDistance(-100)
+	if tr.DistanceKm() != 0 {
+		t.Errorf("negative should clamp to 0: got %.6f", tr.DistanceKm())
+	}
+}
+
+func TestTrackerSetDistance_Increase(t *testing.T) {
+	tr := newTestTracker(t)
+	feed(tr, 60, 10)
+
+	tr.SetDistance(500)
+	if tr.DistanceKm() != 500 {
+		t.Errorf("DistanceKm: got %.6f, want 500", tr.DistanceKm())
+	}
+}
+
+func TestTrackerSetDistance_Persistence(t *testing.T) {
+	dir := t.TempDir()
+	statePath := dir + "/trip_state.json"
+
+	tr1 := NewTracker(TrackerConfig{StatePath: statePath})
+	feed(tr1, 60, 20)
+	tr1.SetDistance(123.4)
+
+	// 新しいトラッカーで復元
+	tr2 := NewTracker(TrackerConfig{StatePath: statePath})
+	diff := tr2.DistanceKm() - 123.4
+	if diff < 0 {
+		diff = -diff
+	}
+	if diff > 0.01 {
+		t.Errorf("restored DistanceKm: got %.1f, want 123.4", tr2.DistanceKm())
+	}
+}
+
+func TestTrackerDistanceKm(t *testing.T) {
+	tr := newTestTracker(t)
+	if tr.DistanceKm() != 0 {
+		t.Errorf("initial DistanceKm: got %.6f, want 0", tr.DistanceKm())
+	}
+
+	feed(tr, 60, 20)
+	if tr.DistanceKm() <= 0 {
+		t.Error("expected positive DistanceKm after driving")
+	}
+
+	// GetCurrent と一致する
+	cur := tr.GetCurrent()
+	if tr.DistanceKm() != cur.DistanceKm {
+		t.Errorf("DistanceKm() and GetCurrent().DistanceKm differ: %.6f vs %.6f",
+			tr.DistanceKm(), cur.DistanceKm)
+	}
+}
+
 func TestTrackerManualReset_NoData(t *testing.T) {
 	tr := newTestTracker(t)
 	completed := tr.ManualReset()
