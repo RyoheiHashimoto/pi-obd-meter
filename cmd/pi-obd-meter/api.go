@@ -86,6 +86,12 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		d := app.cfg.EngineDisplacementL
 		ecoKmplGreen := math.Round(20/d*10) / 10
 		ecoKmplOrange := math.Round(8/d*10) / 10
+		if app.cfg.EcoGreenKmpl > 0 {
+			ecoKmplGreen = app.cfg.EcoGreenKmpl
+		}
+		if app.cfg.EcoOrangeKmpl > 0 {
+			ecoKmplOrange = app.cfg.EcoOrangeKmpl
+		}
 		estRange := app.cfg.FuelTankL * ecoKmplGreen
 		writeJSON(w, configResponse{
 			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,

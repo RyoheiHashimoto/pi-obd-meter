@@ -25,6 +25,8 @@ type Config struct {
 	ThrottleMaxPct       float64                  `json:"throttle_max_pct"`
 	FuelTankL            float64                  `json:"fuel_tank_l"`
 	FuelRateCorrection   float64                  `json:"fuel_rate_correction"`
+	EcoGreenKmpl         float64                  `json:"eco_green_kmpl"`
+	EcoOrangeKmpl        float64                  `json:"eco_orange_kmpl"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }

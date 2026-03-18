@@ -90,7 +90,7 @@ export function updateIndicators(dom, d, conf) {
   const ct = d.coolant_temp || 0;
   if (ct > 0) {
     dom.temp.val.textContent = Math.round(ct) + '\u00B0';
-    setDot(dom.temp, ct < 70 ? 'orange' : ct < 105 ? 'green' : 'red');
+    setDot(dom.temp, ct < 60 ? 'orange' : ct < 100 ? 'green' : 'red');
   } else {
     dom.temp.val.textContent = '--';
     setDot(dom.temp, null);
