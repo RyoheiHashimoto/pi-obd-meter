@@ -8,7 +8,7 @@ Type=simple
 User=laurel
 Environment=DISPLAY=:0
 ExecStart=/bin/bash /opt/pi-obd-meter/configs/kiosk.sh
-Restart=on-failure
+Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
