@@ -63,17 +63,17 @@ export function updateIndicators(dom, d, conf) {
   } else {
     dom.eco.val.textContent = '--';
   }
-  // ドット: 瞬間燃費で色判定
+  // ドット: 瞬間燃費で色判定（緑=エンブレのみ、黄>=6、赤<6）
   if (eco < 0) {
     // エンブレ（燃料カット）= 緑
     setDot(dom.eco, 'green');
   } else if (eco < 0.1) {
     // 停車・アイドル = 判定なし
     setDot(dom.eco, null);
+  } else if (eco >= conf.eco_kmpl_orange) {
+    setDot(dom.eco, 'orange');
   } else {
-    if (eco >= conf.eco_kmpl_green)      setDot(dom.eco, 'green');
-    else if (eco >= conf.eco_kmpl_orange) setDot(dom.eco, 'orange');
-    else                                  setDot(dom.eco, 'red');
+    setDot(dom.eco, 'red');
   }
 
   // TRIP
