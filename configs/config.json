@@ -15,6 +15,8 @@
   "fuel_rate_correction": 1.3,
   "eco_green_kmpl": 6,
   "eco_orange_kmpl": 6,
+  "trip_warn_km": 300,
+  "trip_danger_km": 400,
   "maintenance_reminders": [
     { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8, "last_reset_km": 97000 },
     { "id": "air_filter", "name": "エアフィルター交換", "type": "distance", "interval_km": 20000, "warning_pct": 0.85, "last_reset_km": 80000 },

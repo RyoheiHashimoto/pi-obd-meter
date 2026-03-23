@@ -93,6 +93,14 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			ecoKmplOrange = app.cfg.EcoOrangeKmpl
 		}
 		estRange := app.cfg.FuelTankL * ecoKmplGreen
+		tripWarnKm := math.Round(estRange * 0.5)
+		tripDangerKm := math.Round(estRange * 0.85)
+		if app.cfg.TripWarnKm > 0 {
+			tripWarnKm = app.cfg.TripWarnKm
+		}
+		if app.cfg.TripDangerKm > 0 {
+			tripDangerKm = app.cfg.TripDangerKm
+		}
 		writeJSON(w, configResponse{
 			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,
 			Version:         version,
@@ -102,8 +110,8 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			ThrottleMaxPct:  app.cfg.ThrottleMaxPct,
 			EcoKmplGreen:    ecoKmplGreen,
 			EcoKmplOrange:   ecoKmplOrange,
-			TripWarnKm:      math.Round(estRange * 0.5),
-			TripDangerKm:    math.Round(estRange * 0.85),
+			TripWarnKm:      tripWarnKm,
+			TripDangerKm:    tripDangerKm,
 		})
 	})
 
