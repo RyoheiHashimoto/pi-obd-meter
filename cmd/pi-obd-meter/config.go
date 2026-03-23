@@ -27,6 +27,8 @@ type Config struct {
 	FuelRateCorrection   float64                  `json:"fuel_rate_correction"`
 	EcoGreenKmpl         float64                  `json:"eco_green_kmpl"`
 	EcoOrangeKmpl        float64                  `json:"eco_orange_kmpl"`
+	TripWarnKm           float64                  `json:"trip_warn_km"`
+	TripDangerKm         float64                  `json:"trip_danger_km"`
 	MaintenanceReminders []maintenance.Reminder   `json:"maintenance_reminders"`
 	Brightness           display.BrightnessConfig `json:"brightness"`
 }
