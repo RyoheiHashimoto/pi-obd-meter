@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+ExecStartPre=-/sbin/ip link set can0 down
+ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100
+ExecStartPre=-/sbin/ip link set can0 up
 ExecStart=/opt/pi-obd-meter/pi-obd-meter -config /opt/pi-obd-meter/configs/config.json
 Restart=always
 RestartSec=5

@@ -11,6 +11,7 @@ import (
 
 // Config はアプリケーション設定
 type Config struct {
+	CANInterface         string                   `json:"can_interface"`
 	SerialPort           string                   `json:"serial_port"`
 	WebhookURL           string                   `json:"webhook_url"`
 	PollIntervalMs       int                      `json:"poll_interval_ms"`
@@ -45,6 +46,10 @@ type RealtimeData struct {
 	TripKm         float64              `json:"trip_km"`
 	CoolantTemp    float64              `json:"coolant_temp"`
 	IntakeMAP      float64              `json:"intake_map"`
+	Voltage        float64              `json:"voltage"`
+	FuelLevel      float64              `json:"fuel_level"`
+	AmbientTemp    float64              `json:"ambient_temp"`
+	EngineLoadPct  float64              `json:"engine_load_pct"`
 	Alerts         []maintenance.Status `json:"alerts"`
 	Notification   string               `json:"notification,omitempty"`
 	OBDConnected   bool                 `json:"obd_connected"`

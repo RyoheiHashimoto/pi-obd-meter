@@ -43,6 +43,7 @@ func main() {
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
 	slog.Info("設定読み込み完了",
+		"can_interface", cfg.CANInterface,
 		"serial_port", cfg.SerialPort,
 		"engine_displacement_l", cfg.EngineDisplacementL,
 		"fuel_tank_l", cfg.FuelTankL,
@@ -80,9 +81,17 @@ func main() {
 	if fastIntervalMs <= 0 {
 		fastIntervalMs = 150
 	}
-	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	obdCh := make(chan OBDEvent, 1)
-	go obdReaderLoop(ctx, elm, fastIntervalMs, obdCh)
+	if cfg.CANInterface != "" {
+		// CAN直結モード（SocketCAN パッシブモニタリング）
+		slog.Info("CAN直結モードで起動", "interface", cfg.CANInterface)
+		go canReaderLoop(ctx, cfg.CANInterface, fastIntervalMs, obdCh)
+	} else {
+		// ELM327モード（従来のBluetooth OBD）
+		slog.Info("ELM327モードで起動", "port", cfg.SerialPort)
+		elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
+		go obdReaderLoop(ctx, elm, fastIntervalMs, obdCh)
+	}
 
 	// --- メインループ ---
 	retryTicker := time.NewTicker(5 * time.Minute) // 送信失敗キューのリトライ間隔
@@ -195,6 +204,10 @@ func main() {
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
+				Voltage:        data.Voltage,
+				FuelLevel:      data.FuelLevel,
+				AmbientTemp:    data.AmbientTemp,
+				EngineLoadPct:  data.EngineLoad,
 				Alerts:         app.maintMgr.GetAlerts(),
 				Notification:   app.getNotification(),
 				OBDConnected:   true,

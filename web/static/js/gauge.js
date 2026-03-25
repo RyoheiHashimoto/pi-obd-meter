@@ -7,6 +7,7 @@ const ARC_START = -135;
 const ARC_END = 135;
 const ARC_SWEEP = 270;
 const THROTTLE_R_OFFSET = 80;
+const RPM_R_OFFSET = 24; // 速度アークの外側
 
 const LERP_SPEED = 0.35;
 const LERP_THRESHOLD = 0.05;
@@ -103,6 +104,25 @@ class ArcAnimator {
   }
 }
 
+// --- RPM色: 回転数に応じた色 ---
+function rpmColor(rpm) {
+  if (rpm >= 6000) return '#f44336';  // レッドゾーン
+  if (rpm >= 5000) return '#ff5722';  // 高回転
+  if (rpm >= 4000) return '#ff9800';  // やや高め
+  if (rpm >= 3000) return '#ffc107';  // 中回転
+  if (rpm >= 2000) return '#69f0ae';  // 通常
+  if (rpm >= 1000) return '#42a5f5';  // 低回転
+  return '#78909c';                    // アイドル
+}
+
+// --- RPM アニメーター ---
+let rpmAnimator;
+const RPM_MAX = 7000;
+
+export function updateRPM(rpm) {
+  if (rpmAnimator) rpmAnimator.update(rpm);
+}
+
 // --- スロットル アニメーター ---
 let thrAnimator;
 
@@ -120,6 +140,11 @@ export function buildSpeedGauge(svgId, cfg) {
   const svg = document.getElementById(svgId);
   const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
   const throttleR = r - THROTTLE_R_OFFSET;
+
+  // RPM arc (outermost)
+  const rpmR = r + RPM_R_OFFSET;
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // Track (thick bezel)
   svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -146,9 +171,15 @@ export function buildSpeedGauge(svgId, cfg) {
   svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
   const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
-  // THROTTLE label
-  const thrLabel = svgEl(svg, 'text', { x: cx, y: cy - Math.round(throttleR / 2), class: 'g-unit', fill: '#333', 'font-size': 20 });
-  thrLabel.textContent = 'THROTTLE';
+  // RPM readout (upper area inside gauge, centered)
+  const rpmReadY = cy - Math.round(throttleR / 2) - 10;
+  const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
+  rpmValEl.textContent = '--';
+  const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 30, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
+  rpmUnitEl.textContent = 'r/min';
+
+  // THROTTLE label — buildSpeedGauge内で後から配置（km/hの下）
+  let thrLabel;
 
   // Value arc
   const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round' });
@@ -170,14 +201,42 @@ export function buildSpeedGauge(svgId, cfg) {
   nm.textContent = '0';
 
   // Unit label
-  const ut = svgEl(svg, 'text', { x: cx, y: numY + numSz * 0.55, class: 'g-unit', fill: '#fff', 'font-size': 28 });
+  const unitY = numY + numSz * 0.55;
+  const ut = svgEl(svg, 'text', { x: cx, y: unitY, class: 'g-unit', fill: '#fff', 'font-size': 28 });
   ut.textContent = unit;
+
+  // THROTTLE label (below km/h)
+  thrLabel = svgEl(svg, 'text', { x: cx, y: unitY + 48, class: 'g-unit', fill: '#333', 'font-size': 20 });
+  thrLabel.textContent = 'THROTTLE';
 
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({
     cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
     arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel,
   });
+
+  // RPM ArcAnimator（色をRPMに応じて動的に変える + 数値リードアウト）
+  rpmAnimator = new ArcAnimator({
+    cx, cy, r: rpmR, maxVal: RPM_MAX, lerpSpeed: 0.4,
+    arcEl: rpmArcEl, offColor: '#333', activeThreshold: 100,
+  });
+  // RPM色の動的更新 + リードアウト: _lerp をオーバーライド
+  rpmAnimator._lerp = function() {
+    const delta = rpmAnimator.tgt - rpmAnimator.cur;
+    rpmAnimator.cur = Math.abs(delta) > LERP_THRESHOLD ? rpmAnimator.cur + delta * rpmAnimator.lerpSpeed : rpmAnimator.tgt;
+    const pct = Math.max(0, Math.min(100, rpmAnimator.cur / rpmAnimator.maxVal * 100));
+    const angle = ARC_START + (pct / 100) * ARC_SWEEP;
+    rpmArcEl.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, rpmR, ARC_START, angle) : '');
+    const active = rpmAnimator.cur > rpmAnimator.activeThreshold;
+    const col = active ? rpmColor(rpmAnimator.cur) : rpmAnimator.offColor;
+    rpmArcEl.setAttribute('stroke', col);
+    applyGlow(rpmArcEl, col);
+    // リードアウト更新（数値はアーク色、r/minは常に白）
+    rpmValEl.textContent = active ? Math.round(rpmAnimator.cur).toLocaleString() : '--';
+    rpmValEl.setAttribute('fill', col);
+    rpmUnitEl.setAttribute('fill', '#fff');
+    rpmAnimator.rafId = Math.abs(rpmAnimator.cur - rpmAnimator.tgt) > LERP_STOP ? requestAnimationFrame(rpmAnimator._lerp) : 0;
+  };
 
   // Speed Lerp animation
   let curVal = min, tgtVal = min, rafId = 0;

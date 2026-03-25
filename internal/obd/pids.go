@@ -11,6 +11,8 @@ const (
 	PIDIntakeMAP        byte = 0x0B // インマニ圧 (kPa)
 	PIDMAFAirFlow       byte = 0x10 // MAFエアフローレート (g/s)
 	PIDThrottlePosition byte = 0x11 // スロットル開度 (%)
+	PIDFuelLevel        byte = 0x2F // 燃料レベル (%)
+	PIDAmbientTemp      byte = 0x46 // 外気温 (°C)
 )
 
 // Device はOBD-2アダプタの通信インタフェース。
@@ -30,6 +32,9 @@ type OBDData struct {
 	IntakeMAP   float64 // kPa (0=非対応)
 	MAFAirFlow  float64 // g/s (0=非対応)
 	ThrottlePos float64 // 0-100%
+	Voltage     float64 // バッテリー電圧 (V) — CAN経由
+	FuelLevel   float64 // 燃料レベル (%) — OBD PID 0x2F
+	AmbientTemp float64 // 外気温 (°C) — OBD PID 0x46
 	HasMAF      bool    // MAFセンサー対応か
 }
 
@@ -159,6 +164,14 @@ func parsePID(data *OBDData, pid byte, raw []byte) {
 		if len(raw) >= 2 {
 			data.MAFAirFlow = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
 			data.HasMAF = true
+		}
+	case PIDFuelLevel:
+		if len(raw) >= 1 {
+			data.FuelLevel = float64(raw[0]) * 100.0 / 255.0
+		}
+	case PIDAmbientTemp:
+		if len(raw) >= 1 {
+			data.AmbientTemp = float64(raw[0]) - 40.0
 		}
 	}
 }

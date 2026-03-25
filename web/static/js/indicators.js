@@ -6,9 +6,8 @@ const INDICATOR_DEFS = [
   { id: 'eco',   label: 'ECO' },
   { id: 'trip',  label: 'TRIP',  defaultVal: '--' },
   { id: 'temp',  label: 'TEMP',  defaultVal: '--' },
-  { id: 'maint', label: 'MAINT' },
-  { id: 'wifi',  label: 'WiFi' },
-  { id: 'obd',   label: 'OBD' },
+  { id: 'map',   label: 'MAP',   defaultVal: '--' },
+  { id: 'load',  label: 'LOAD',  defaultVal: '--' },
 ];
 
 // インジケーター行を生成してパネルに追加し、DOM参照を返す
@@ -38,22 +37,6 @@ export function setDot(indicator, colorClass) {
 
 // 全インジケーターを更新
 export function updateIndicators(dom, d, conf) {
-  // OBD
-  const obdOk = d.obd_connected;
-  setDot(dom.obd, obdOk ? 'green' : 'red');
-  dom.obd.val.textContent = obdOk ? 'OK' : 'NG';
-
-  // WiFi
-  const wifiOk = d.wifi_connected;
-  setDot(dom.wifi, wifiOk ? 'green' : 'red');
-  dom.wifi.val.textContent = wifiOk ? 'OK' : 'NG';
-
-  // MAINT
-  const alerts = d.alerts || [];
-  const hasOverdue = alerts.some(a => a.is_overdue);
-  setDot(dom.maint, hasOverdue ? 'red' : alerts.length > 0 ? 'orange' : 'green');
-  dom.maint.val.textContent = String(alerts.length);
-
   // ECO — 数値: 常に平均燃費、ドット: 瞬間燃費で色判定
   const eco = d.fuel_economy || 0;
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
@@ -90,9 +73,30 @@ export function updateIndicators(dom, d, conf) {
   const ct = d.coolant_temp || 0;
   if (ct > 0) {
     dom.temp.val.textContent = Math.round(ct) + '\u00B0';
-    setDot(dom.temp, ct < 60 ? 'orange' : ct < 100 ? 'green' : 'red');
+    setDot(dom.temp, ct < 60 ? 'orange' : ct < 105 ? 'green' : 'red');
   } else {
     dom.temp.val.textContent = '--';
     setDot(dom.temp, null);
   }
+
+  // MAP
+  const mapVal = d.intake_map || 0;
+  if (mapVal > 0) {
+    dom.map.val.textContent = Math.round(mapVal);
+    setDot(dom.map, mapVal < 35 ? 'green' : mapVal < 80 ? 'orange' : 'red');
+  } else {
+    dom.map.val.textContent = '--';
+    setDot(dom.map, null);
+  }
+
+  // LOAD
+  const loadVal = d.engine_load_pct || 0;
+  if (d.obd_connected) {
+    dom.load.val.textContent = Math.round(loadVal) + '%';
+    setDot(dom.load, loadVal < 60 ? 'green' : loadVal < 85 ? 'orange' : 'red');
+  } else {
+    dom.load.val.textContent = '--';
+    setDot(dom.load, null);
+  }
+
 }
