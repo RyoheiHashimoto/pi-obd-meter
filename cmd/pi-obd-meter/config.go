@@ -50,6 +50,19 @@ type RealtimeData struct {
 	FuelLevel      float64              `json:"fuel_level"`
 	AmbientTemp    float64              `json:"ambient_temp"`
 	EngineLoadPct  float64              `json:"engine_load_pct"`
+	MAFAirFlow     float64              `json:"maf_airflow"`
+	ShortFuelTrim  float64              `json:"short_fuel_trim"`
+	TimingAdvance  float64              `json:"timing_advance"`
+	IntakeAirTemp  float64              `json:"intake_air_temp"`
+	O2Voltage      float64              `json:"o2_voltage"`
+	RuntimeSec     int                  `json:"runtime_sec"`
+	Gear           int                  `json:"gear"`
+	ATRange        int                  `json:"at_range"`
+	ATRangeStr     string               `json:"at_range_str"`
+	Hold           bool                 `json:"hold"`
+	TCLocked       bool                 `json:"tc_locked"`
+	Shifting       bool                 `json:"shifting"`
+	Kickdown       bool                 `json:"kickdown"`
 	Alerts         []maintenance.Status `json:"alerts"`
 	Notification   string               `json:"notification,omitempty"`
 	OBDConnected   bool                 `json:"obd_connected"`

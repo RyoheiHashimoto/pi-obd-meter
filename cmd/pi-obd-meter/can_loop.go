@@ -38,12 +38,18 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 
 	// OBD-2クエリ対象PID（ラウンドロビンで1 tickに1 PIDずつ送信）
 	obdPIDs := []byte{
-		obd.PIDThrottlePosition, // 0x11 — 毎回
-		obd.PIDCoolantTemp,      // 0x05
-		obd.PIDThrottlePosition, // 0x11 — 頻度2倍
+		obd.PIDThrottlePosition, // 0x11
+		obd.PIDMAFAirFlow,       // 0x10
+		obd.PIDThrottlePosition, // 0x11
 		obd.PIDIntakeMAP,        // 0x0B
-		obd.PIDThrottlePosition, // 0x11 — 頻度3倍
-		obd.PIDAmbientTemp,      // 0x46 — 外気温
+		obd.PIDThrottlePosition, // 0x11
+		obd.PIDO2SensorB1S1,     // 0x14
+		obd.PIDThrottlePosition, // 0x11
+		obd.PIDShortFuelTrim,    // 0x06
+		obd.PIDThrottlePosition, // 0x11
+		obd.PIDTimingAdvance,    // 0x0E
+		obd.PIDThrottlePosition, // 0x11
+		obd.PIDIntakeAirTemp,    // 0x0F
 	}
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
@@ -80,6 +86,20 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		voltage       float64
 		fuelLevel     float64
 		ambientTemp   float64
+		mafAirFlow    float64
+		shortFuelTrim float64
+		longFuelTrim  float64
+		timingAdvance float64
+		intakeAirTemp float64
+		o2Voltage     float64
+		runtimeSec    int
+		gear          int
+		atRange       can.ATRange
+		hold          bool
+		tcLocked      bool
+		shifting      bool
+		kickdown      bool
+		hasMAF        bool
 		hasMAP        bool
 		hasData       bool
 		lastFrameTime time.Time
@@ -121,6 +141,16 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 					rpm, speedKmh, engineLoad = can.DecodeEngine(frame.Data)
 					hasData = true
 					lastFrameTime = time.Now()
+				case can.IDATCtrl:
+					gear, tcLocked, _ = can.DecodeATCtrl(frame.Data)
+					lastFrameTime = time.Now()
+				case can.IDATStatus:
+					_, atRange, hold, shifting, kickdown = can.DecodeATStatus(frame.Data)
+					lastFrameTime = time.Now()
+				case can.IDCoolant:
+					ct, _ := can.DecodeCoolant(frame.Data)
+					coolantTemp = ct
+					lastFrameTime = time.Now()
 				case can.IDElectric:
 					_, voltage, baroKPa = can.DecodeElectric(frame.Data)
 					lastFrameTime = time.Now()
@@ -142,6 +172,35 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 							if len(data) >= 1 {
 								intakeMAP = float64(data[0])
 								hasMAP = true
+							}
+						case obd.PIDMAFAirFlow:
+							if len(data) >= 2 {
+								mafAirFlow = float64(uint16(data[0])<<8|uint16(data[1])) / 100.0
+								hasMAF = true
+							}
+						case obd.PIDShortFuelTrim:
+							if len(data) >= 1 {
+								shortFuelTrim = (float64(data[0]) - 128) * 100 / 128
+							}
+						case obd.PIDLongFuelTrim:
+							if len(data) >= 1 {
+								longFuelTrim = (float64(data[0]) - 128) * 100 / 128
+							}
+						case obd.PIDTimingAdvance:
+							if len(data) >= 1 {
+								timingAdvance = float64(data[0])/2 - 64
+							}
+						case obd.PIDIntakeAirTemp:
+							if len(data) >= 1 {
+								intakeAirTemp = float64(data[0]) - 40.0
+							}
+						case obd.PIDO2SensorB1S1:
+							if len(data) >= 1 {
+								o2Voltage = float64(data[0]) * 0.005
+							}
+						case obd.PIDRuntime:
+							if len(data) >= 2 {
+								runtimeSec = int(uint16(data[0])<<8 | uint16(data[1]))
 							}
 						case obd.PIDFuelLevel:
 							if len(data) >= 1 {
@@ -229,18 +288,33 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
 			data := &obd.OBDData{
-				RPM:         rpm,
-				SpeedKmh:    speedKmh,
-				EngineLoad:  engineLoad,
-				ThrottlePos: throttlePos,
-				CoolantTemp: coolantTemp,
-				IntakeMAP:   intakeMAP,
-				Voltage:     voltage,
-				FuelLevel:   fuelLevel,
-				AmbientTemp: ambientTemp,
+				RPM:           rpm,
+				SpeedKmh:      speedKmh,
+				EngineLoad:    engineLoad,
+				ThrottlePos:   throttlePos,
+				CoolantTemp:   coolantTemp,
+				IntakeMAP:     intakeMAP,
+				MAFAirFlow:    mafAirFlow,
+				Voltage:       voltage,
+				FuelLevel:     fuelLevel,
+				AmbientTemp:   ambientTemp,
+				ShortFuelTrim: shortFuelTrim,
+				LongFuelTrim:  longFuelTrim,
+				TimingAdvance: timingAdvance,
+				IntakeAirTemp: intakeAirTemp,
+				O2Voltage:     o2Voltage,
+				RuntimeSec:    runtimeSec,
+				Gear:          gear,
+				ATRange:       int(atRange),
+				Hold:          hold,
+				TCLocked:      tcLocked,
+				Shifting:      shifting,
+				Kickdown:      kickdown,
+				HasMAF:        hasMAF,
 			}
 			currentHasMAP := hasMAP
-			_ = baroKPa // 将来使用（燃費補正等）
+			_ = baroKPa     // 将来使用（燃費補正等）
+			_ = longFuelTrim // 将来使用（燃費補正等）
 			mu.Unlock()
 
 			select {

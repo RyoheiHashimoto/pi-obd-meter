@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 )
@@ -208,6 +209,19 @@ func main() {
 				FuelLevel:      data.FuelLevel,
 				AmbientTemp:    data.AmbientTemp,
 				EngineLoadPct:  data.EngineLoad,
+				MAFAirFlow:     data.MAFAirFlow,
+				ShortFuelTrim:  data.ShortFuelTrim,
+				TimingAdvance:  data.TimingAdvance,
+				IntakeAirTemp:  data.IntakeAirTemp,
+				O2Voltage:      data.O2Voltage,
+				RuntimeSec:     data.RuntimeSec,
+				Gear:           data.Gear,
+				ATRange:        data.ATRange,
+				ATRangeStr:     can.ATRange(data.ATRange).String(),
+				Hold:           data.Hold,
+				TCLocked:       data.TCLocked,
+				Shifting:       data.Shifting,
+				Kickdown:       data.Kickdown,
 				Alerts:         app.maintMgr.GetAlerts(),
 				Notification:   app.getNotification(),
 				OBDConnected:   true,

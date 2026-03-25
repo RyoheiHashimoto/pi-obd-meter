@@ -3,11 +3,14 @@
 // ============================================================
 
 const INDICATOR_DEFS = [
+  { id: 'gear',  label: 'GEAR',  defaultVal: '--' },
   { id: 'eco',   label: 'ECO' },
   { id: 'trip',  label: 'TRIP',  defaultVal: '--' },
   { id: 'temp',  label: 'TEMP',  defaultVal: '--' },
   { id: 'map',   label: 'MAP',   defaultVal: '--' },
-  { id: 'load',  label: 'LOAD',  defaultVal: '--' },
+  { id: 'maf',   label: 'MAF',   defaultVal: '--' },
+  { id: 'o2',    label: 'O2',    defaultVal: '--' },
+  { id: 'trim',  label: 'TRIM',  defaultVal: '--' },
 ];
 
 // インジケーター行を生成してパネルに追加し、DOM参照を返す
@@ -37,21 +40,38 @@ export function setDot(indicator, colorClass) {
 
 // 全インジケーターを更新
 export function updateIndicators(dom, d, conf) {
+  // GEAR — ギア + レンジ + HOLD + ロックアップ
+  const gear = d.gear || 0;
+  const range = d.at_range_str || '?';
+  const hold = d.hold || false;
+  const tcLocked = d.tc_locked || false;
+  if (range === 'P' || range === 'N') {
+    dom.gear.val.textContent = range;
+    setDot(dom.gear, null);
+  } else if (range === 'R') {
+    dom.gear.val.textContent = 'R';
+    setDot(dom.gear, 'orange');
+  } else if (gear >= 1 && gear <= 4) {
+    let gearText = String(gear) + range;
+    if (hold) gearText += 'H';
+    dom.gear.val.textContent = gearText;
+    setDot(dom.gear, hold ? 'orange' : 'green');
+  } else {
+    dom.gear.val.textContent = '--';
+    setDot(dom.gear, null);
+  }
+
   // ECO — 数値: 常に平均燃費、ドット: 瞬間燃費で色判定
   const eco = d.fuel_economy || 0;
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
-  // 数値: 平均燃費を常時表示
   if (avgEco > 0.1) {
     dom.eco.val.textContent = avgEco.toFixed(1);
   } else {
     dom.eco.val.textContent = '--';
   }
-  // ドット: 瞬間燃費で色判定（緑=エンブレのみ、黄>=6、赤<6）
   if (eco < 0) {
-    // エンブレ（燃料カット）= 緑
     setDot(dom.eco, 'green');
   } else if (eco < 0.1) {
-    // 停車・アイドル = 判定なし
     setDot(dom.eco, null);
   } else if (eco >= conf.eco_kmpl_orange) {
     setDot(dom.eco, 'orange');
@@ -83,20 +103,40 @@ export function updateIndicators(dom, d, conf) {
   const mapVal = d.intake_map || 0;
   if (mapVal > 0) {
     dom.map.val.textContent = Math.round(mapVal);
-    setDot(dom.map, mapVal < 35 ? 'green' : mapVal < 80 ? 'orange' : 'red');
+    setDot(dom.map, mapVal < 35 ? 'green' : null);
   } else {
     dom.map.val.textContent = '--';
     setDot(dom.map, null);
   }
 
-  // LOAD
-  const loadVal = d.engine_load_pct || 0;
-  if (d.obd_connected) {
-    dom.load.val.textContent = Math.round(loadVal) + '%';
-    setDot(dom.load, loadVal < 60 ? 'green' : loadVal < 85 ? 'orange' : 'red');
+  // MAF
+  const maf = d.maf_airflow || 0;
+  if (maf > 0) {
+    dom.maf.val.textContent = maf.toFixed(1);
+    setDot(dom.maf, 'green');
   } else {
-    dom.load.val.textContent = '--';
-    setDot(dom.load, null);
+    dom.maf.val.textContent = '--';
+    setDot(dom.maf, null);
   }
 
+  // O2
+  const o2 = d.o2_voltage;
+  if (o2 != null && o2 > 0) {
+    dom.o2.val.textContent = o2.toFixed(2) + 'V';
+    // 0.45V が理論空燃比の境目。<0.45=リーン、>0.45=リッチ
+    setDot(dom.o2, o2 < 0.3 ? 'orange' : o2 > 0.7 ? 'red' : 'green');
+  } else {
+    dom.o2.val.textContent = '--';
+    setDot(dom.o2, null);
+  }
+
+  // TRIM (短期燃料トリム)
+  const trim = d.short_fuel_trim;
+  if (trim != null) {
+    dom.trim.val.textContent = (trim >= 0 ? '+' : '') + trim.toFixed(0) + '%';
+    setDot(dom.trim, Math.abs(trim) < 10 ? 'green' : Math.abs(trim) < 20 ? 'orange' : 'red');
+  } else {
+    dom.trim.val.textContent = '--';
+    setDot(dom.trim, null);
+  }
 }

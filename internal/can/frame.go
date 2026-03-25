@@ -12,8 +12,11 @@ type Frame struct {
 // DY デミオ CAN ID 定義
 const (
 	IDEngine   uint32 = 0x201 // RPM + 車速 + 負荷
-	IDWheels   uint32 = 0x4B0 // 4輪速度
+	IDATCtrl   uint32 = 0x230 // AT制御: ギア + TCロックアップ + ギア比
+	IDATStatus uint32 = 0x231 // ATステータス: ギア + HOLD + シフトフラグ
+	IDCoolant  uint32 = 0x420 // 水温 + 距離パルス
 	IDElectric uint32 = 0x430 // オルタ負荷 + 電圧 + 大気圧
+	IDWheels   uint32 = 0x4B0 // 4輪速度
 )
 
 // DecodeEngine は 0x201 フレームをデコードする
@@ -42,6 +45,88 @@ func DecodeElectric(data [8]byte) (altLoadPct, voltageV, baroKPa float64) {
 	voltageV = float64(data[1]) * 0.08
 	rawBaro := uint16(data[4])<<8 | uint16(data[5])
 	baroKPa = float64(rawBaro) / 100.0
+	return
+}
+
+// DecodeATCtrl は 0x230 フレームをデコードする
+//
+//	B0: ギア (0xF0=N/P, 0x01-0x04=1-4速, 0x10=遷移)
+//	B1: TCロックアップ (0x00=ロック, 0x01=アンロック)
+//	B2: ギア比 (×0.01)
+func DecodeATCtrl(data [8]byte) (gear int, tcLocked bool, gearRatio float64) {
+	raw := data[0]
+	switch raw {
+	case 0x01:
+		gear = 1
+	case 0x02:
+		gear = 2
+	case 0x03:
+		gear = 3
+	case 0x04:
+		gear = 4
+	default:
+		gear = 0 // N/P or transition
+	}
+	tcLocked = data[1] == 0x00
+	gearRatio = float64(data[2]) / 100.0
+	return
+}
+
+// ATRange はシフトレバー位置を表す
+type ATRange int
+
+const (
+	ATRangeUnknown ATRange = 0
+	ATRangeP       ATRange = 1
+	ATRangeR       ATRange = 2
+	ATRangeN       ATRange = 3
+	ATRangeD       ATRange = 4
+	ATRangeS       ATRange = 5
+	ATRangeL       ATRange = 6
+)
+
+// String はレンジの文字列表現を返す
+func (r ATRange) String() string {
+	switch r {
+	case ATRangeP:
+		return "P"
+	case ATRangeR:
+		return "R"
+	case ATRangeN:
+		return "N"
+	case ATRangeD:
+		return "D"
+	case ATRangeS:
+		return "S"
+	case ATRangeL:
+		return "L"
+	default:
+		return "?"
+	}
+}
+
+// DecodeATStatus は 0x231 フレームをデコードする
+//
+//	B0 上位ニブル: ギア (0=N/P, 1-4)
+//	B0 下位ニブル: レンジ (1=P, 2=R, 3=N, 4=D, 5=S, 6=L)
+//	B1: bit7=HOLD, bit4=TCロックアップ, bit3=キックダウン
+func DecodeATStatus(data [8]byte) (gear int, atRange ATRange, hold bool, shifting bool, kickdown bool) {
+	gear = int(data[0] >> 4)
+	sub := data[0] & 0x0F
+	atRange = ATRange(sub)
+	hold = data[1]&0x80 != 0
+	shifting = data[1]&0x10 != 0 // TODO: 走行中に要確認
+	kickdown = data[1]&0x08 != 0 // TODO: 走行中に要確認
+	return
+}
+
+// DecodeCoolant は 0x420 フレームをデコードする
+//
+//	B0: 水温 = raw - 40 (°C)
+//	B1: 距離パルス (8bit rolling counter)
+func DecodeCoolant(data [8]byte) (tempC float64, distPulse uint8) {
+	tempC = float64(data[0]) - 40.0
+	distPulse = data[1]
 	return
 }
 
