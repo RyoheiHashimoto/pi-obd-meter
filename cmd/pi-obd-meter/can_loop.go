@@ -181,11 +181,19 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			return
 
 		case <-ticker.C:
+			tickCount++
+
 			if sock == nil {
+				// ソケット未接続でも1秒ごとに切断状態を通知（UI更新用）
+				if tickCount%(1000/intervalMs) == 0 {
+					select {
+					case ch <- OBDEvent{Connected: false, ReadAt: time.Now()}:
+					case <-ctx.Done():
+						return
+					}
+				}
 				continue
 			}
-
-			tickCount++
 
 			// OBD-2クエリ送信（1 tick に 1 PID、ラウンドロビン）
 			pidIdx := tickCount % len(obdPIDs)
