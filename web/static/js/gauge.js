@@ -104,6 +104,41 @@ class ArcAnimator {
   }
 }
 
+// --- ギアポジション表示 ---
+let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
+
+export function updateGear(gear, range, hold, tcLocked) {
+  if (!gearEl) return;
+  const color = range === 'P' ? '#f44336' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
+
+  // 右上: ギア番号
+  if (range === 'P' || range === 'N' || range === 'R') {
+    gearEl.textContent = '--';
+  } else if (gear >= 1 && gear <= 4) {
+    gearEl.textContent = String(gear);
+  } else {
+    gearEl.textContent = '-';
+  }
+  gearEl.setAttribute('fill', color);
+  applyGlow(gearEl, color);
+  gearEl._box.setAttribute('stroke', color);
+
+  // 左上: レンジ
+  gearSubEl.textContent = range || '';
+  gearSubEl.setAttribute('fill', color);
+  applyGlow(gearSubEl, color);
+  gearSubEl._box.setAttribute('stroke', color);
+
+  // HOLD label
+  if (holdLabelEl) {
+    holdLabelEl.setAttribute('fill', hold ? '#fdd835' : '#333');
+  }
+  // LOCK label
+  if (lockLabelEl) {
+    lockLabelEl.setAttribute('fill', tcLocked ? '#69f0ae' : '#333');
+  }
+}
+
 // --- RPM色: 回転数に応じた色 ---
 function rpmColor(rpm) {
   if (rpm >= 6000) return '#f44336';  // レッドゾーン
@@ -178,6 +213,29 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 30, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
+  // Shift position (左上、アークの外) — 枠付き
+  const rangeX = cx - r - 10;
+  const rangeY = 78;
+  const boxW = 64, boxH = 62, boxR = 8;
+  const rangeBox = svgEl(svg, 'rect', { x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: 'none', stroke: '#444', 'stroke-width': 3 });
+  gearSubEl = svgEl(svg, 'text', { x: rangeX, y: rangeY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
+  gearSubEl.textContent = '';
+  gearSubEl._box = rangeBox;
+  // Gear number (右上、アークの外) — 枠付き
+  const gearNumX = cx + r + 10;
+  const gearNumY = 78;
+  const gearBox = svgEl(svg, 'rect', { x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: 'none', stroke: '#444', 'stroke-width': 3 });
+  gearEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
+  gearEl._box = gearBox;
+
+  // HOLD label (レンジ枠の下)
+  holdLabelEl = svgEl(svg, 'text', { x: rangeX, y: rangeY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
+  holdLabelEl.textContent = 'HOLD';
+  // LOCK label (ギア枠の下)
+  lockLabelEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
+  lockLabelEl.textContent = 'LOCK';
+  gearEl.textContent = '-';
+
   // THROTTLE label — buildSpeedGauge内で後から配置（km/hの下）
   let thrLabel;
 
@@ -215,12 +273,11 @@ export function buildSpeedGauge(svgId, cfg) {
     arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel,
   });
 
-  // RPM ArcAnimator（色をRPMに応じて動的に変える + 数値リードアウト）
+  // RPM ArcAnimator（目盛り数字の上を通過、色はRPMに応じて動的変化）
   rpmAnimator = new ArcAnimator({
     cx, cy, r: rpmR, maxVal: RPM_MAX, lerpSpeed: 0.4,
-    arcEl: rpmArcEl, offColor: '#333', activeThreshold: 100,
+    arcEl: rpmArcEl, offColor: '#222', activeThreshold: 100,
   });
-  // RPM色の動的更新 + リードアウト: _lerp をオーバーライド
   rpmAnimator._lerp = function() {
     const delta = rpmAnimator.tgt - rpmAnimator.cur;
     rpmAnimator.cur = Math.abs(delta) > LERP_THRESHOLD ? rpmAnimator.cur + delta * rpmAnimator.lerpSpeed : rpmAnimator.tgt;
@@ -231,7 +288,6 @@ export function buildSpeedGauge(svgId, cfg) {
     const col = active ? rpmColor(rpmAnimator.cur) : rpmAnimator.offColor;
     rpmArcEl.setAttribute('stroke', col);
     applyGlow(rpmArcEl, col);
-    // リードアウト更新（数値はアーク色、r/minは常に白）
     rpmValEl.textContent = active ? Math.round(rpmAnimator.cur).toLocaleString() : '--';
     rpmValEl.setAttribute('fill', col);
     rpmUnitEl.setAttribute('fill', '#fff');
