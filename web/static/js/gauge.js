@@ -104,6 +104,69 @@ class ArcAnimator {
   }
 }
 
+// --- 下部インジケーター ---
+let tempValEl, tempUnitEl, tempBox, tempIconEl;
+let tripValEl, tripUnitEl, tripBox, tripIconEl;
+let ecoValEl, ecoUnitEl, ecoBox, ecoIconEl;
+
+// SVGアイコン生成ヘルパー
+function createIcon(parent, x, y, pathD, size, rotate) {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  let tf = `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`;
+  if (rotate) tf = `translate(${x}, ${y}) rotate(${rotate}) translate(${-size/2}, ${-size/2}) scale(${size/24})`;
+  g.setAttribute('transform', tf);
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', pathD);
+  p.setAttribute('fill', '#444');
+  g.appendChild(p);
+  parent.appendChild(g);
+  return p;
+}
+
+// アイコンパス定義 (24x24 viewbox)
+const ICON_THERMOMETER = 'M12 2C10.34 2 9 3.34 9 5v8.59c-1.22.73-2 2.05-2 3.41 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.36-.78-2.68-2-3.41V5c0-1.66-1.34-3-3-3zm0 2c.55 0 1 .45 1 1v9.13l.5.29C14.46 15 15 15.96 15 17c0 1.65-1.35 3-3 3s-3-1.35-3-3c0-1.04.54-2 1.5-2.58l.5-.29V5c0-.55.45-1 1-1z';
+const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM4 2l3 20h2L6.5 2zm16 0h-2L15 22h2z';
+const ICON_LEAF = 'stroke';
+
+export function updateBottomIndicators(coolantTemp, tripKm, avgFuelEco, instantEco) {
+  // TEMP
+  if (tempValEl) {
+    if (coolantTemp > 0) {
+      tempValEl.textContent = Math.round(coolantTemp);
+      const col = coolantTemp < 40 ? '#2979ff' : coolantTemp < 70 ? '#69f0ae' : coolantTemp < 80 ? '#fdd835' : coolantTemp < 105 ? '#ff9800' : '#f44336';
+      tempValEl.setAttribute('fill', col);
+      if (tempIconEl) tempIconEl.setAttribute('fill', col);
+    } else {
+      tempValEl.textContent = '--';
+      tempValEl.setAttribute('fill', '#333');
+      if (tempIconEl) tempIconEl.setAttribute('fill', '#333');
+    }
+  }
+  // TRIP
+  if (tripValEl) {
+    tripValEl.textContent = tripKm >= 0.1 ? tripKm.toFixed(1) : '0';
+    const col = tripKm < 300 ? '#69f0ae' : tripKm < 400 ? '#ff9800' : '#f44336';
+    tripValEl.setAttribute('fill', col);
+    if (tripIconEl) tripIconEl.setAttribute('fill', col);
+  }
+  // ECO
+  if (ecoValEl) {
+    const avg = Math.min(avgFuelEco || 0, 99.9);
+    ecoValEl.textContent = avg > 0.1 ? avg.toFixed(1) : '--';
+    let col;
+    if (instantEco < 0) col = '#69f0ae';       // エンブレ
+    else if (instantEco < 0.1) col = '#555';    // 停車
+    else if (instantEco >= 6) col = '#fdd835';  // 良い
+    else col = '#f44336';                        // 悪い
+    ecoValEl.setAttribute('fill', col);
+    if (ecoIconEl) {
+      ecoIconEl.setAttribute('stroke', col);
+      if (ecoIconEl._vein) ecoIconEl._vein.setAttribute('stroke', col);
+      if (ecoIconEl._stem) ecoIconEl._stem.setAttribute('stroke', col);
+    }
+  }
+}
+
 // --- ギアポジション表示 ---
 let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
 
@@ -141,18 +204,16 @@ export function updateGear(gear, range, hold, tcLocked) {
 
 // --- RPM色: 回転数に応じた色 ---
 function rpmColor(rpm) {
-  if (rpm >= 6000) return '#f44336';  // レッドゾーン
-  if (rpm >= 5000) return '#ff5722';  // 高回転
-  if (rpm >= 4000) return '#ff9800';  // やや高め
-  if (rpm >= 3000) return '#ffc107';  // 中回転
-  if (rpm >= 2000) return '#69f0ae';  // 通常
-  if (rpm >= 1000) return '#42a5f5';  // 低回転
-  return '#78909c';                    // アイドル
+  if (rpm >= 6500) return '#f44336';  // レッドゾーン
+  if (rpm >= 4500) return '#ff9800';  // 高回転
+  if (rpm >= 3000) return '#fdd835';  // パワーバンド
+  if (rpm >= 1500) return '#69f0ae';  // 通常
+  return '#42a5f5';                    // アイドル〜低回転
 }
 
 // --- RPM アニメーター ---
 let rpmAnimator;
-const RPM_MAX = 7000;
+const RPM_MAX = 8000;
 
 export function updateRPM(rpm) {
   if (rpmAnimator) rpmAnimator.update(rpm);
@@ -178,7 +239,10 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // RPM arc (outermost)
   const rpmR = r + RPM_R_OFFSET;
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  // Redzone background (6500-8000)
+  const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, redStart, ARC_END), fill: 'none', stroke: '#3d0000', 'stroke-width': 10, 'stroke-linecap': 'round' });
   const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // Track (thick bezel)
@@ -207,11 +271,14 @@ export function buildSpeedGauge(svgId, cfg) {
   const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // RPM readout (upper area inside gauge, centered)
-  const rpmReadY = cy - Math.round(throttleR / 2) - 10;
+  const rpmReadY = cy - Math.round(throttleR / 2) + 5;
   const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   rpmValEl.textContent = '--';
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 30, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
+
+  // THROTTLE label は unitY 確定後に配置
+  let thrLabel;
 
   // Shift position (左上、アークの外) — 枠付き
   const rangeX = cx - r - 10;
@@ -236,9 +303,6 @@ export function buildSpeedGauge(svgId, cfg) {
   lockLabelEl.textContent = 'LOCK';
   gearEl.textContent = '-';
 
-  // THROTTLE label — buildSpeedGauge内で後から配置（km/hの下）
-  let thrLabel;
-
   // Value arc
   const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round' });
   applyGlow(va, cfg.color);
@@ -259,13 +323,71 @@ export function buildSpeedGauge(svgId, cfg) {
   nm.textContent = '0';
 
   // Unit label
-  const unitY = numY + numSz * 0.55;
+  const unitY = numY + numSz * 0.45;
   const ut = svgEl(svg, 'text', { x: cx, y: unitY, class: 'g-unit', fill: '#fff', 'font-size': 28 });
   ut.textContent = unit;
 
-  // THROTTLE label (below km/h)
-  thrLabel = svgEl(svg, 'text', { x: cx, y: unitY + 48, class: 'g-unit', fill: '#333', 'font-size': 20 });
+  // THROTTLE label (km/hの下)
+  thrLabel = svgEl(svg, 'text', { x: cx, y: unitY + 40, class: 'g-unit', fill: '#333', 'font-size': 16, 'text-anchor': 'middle' });
   thrLabel.textContent = 'THROTTLE';
+
+  // TEMP (アーク外、左下)
+  tempBox = null;
+  const tempX = 50;
+  const tempY = 468;
+  tempIconEl = createIcon(svg, tempX - 10, tempY - 48, ICON_THERMOMETER, 30);
+  tempValEl = svgEl(svg, 'text', { x: tempX - 10, y: tempY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  tempValEl.textContent = '--';
+  tempUnitEl = svgEl(svg, 'text', { x: tempX + 38, y: tempY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  tempUnitEl.textContent = '°C';
+
+  // TRIP (下中央)
+  tripBox = null;
+  const tripY = 468;
+  tripIconEl = createIcon(svg, cx - 68, tripY - 10, ICON_ROAD, 28);
+  tripValEl = svgEl(svg, 'text', { x: cx, y: tripY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  tripValEl.textContent = '0';
+  tripUnitEl = svgEl(svg, 'text', { x: cx + 64, y: tripY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  tripUnitEl.textContent = 'km';
+
+  // ECO (アーク外、右下)
+  ecoBox = null;
+  const ecoX = 490;
+  const ecoY = 468;
+  // ECO leaf icon (stroke style, 先端右上向き)
+  const leafG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const leafCx = ecoX + 14, leafCy = ecoY - 46;
+  leafG.setAttribute('transform', `translate(${leafCx}, ${leafCy}) rotate(60) scale(1.3)`);
+  // 輪郭
+  const leafOutline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  leafOutline.setAttribute('d', 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z');
+  leafOutline.setAttribute('fill', 'none');
+  leafOutline.setAttribute('stroke', '#444');
+  leafOutline.setAttribute('stroke-width', '1.5');
+  leafG.appendChild(leafOutline);
+  // 葉脈（破線）
+  const leafVein = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  leafVein.setAttribute('x1', '0'); leafVein.setAttribute('y1', '-8');
+  leafVein.setAttribute('x2', '0'); leafVein.setAttribute('y2', '10');
+  leafVein.setAttribute('stroke', '#444');
+  leafVein.setAttribute('stroke-width', '1.5');
+  leafVein.setAttribute('stroke-dasharray', '3 2');
+  leafG.appendChild(leafVein);
+  // 茎
+  const leafStem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  leafStem.setAttribute('x1', '0'); leafStem.setAttribute('y1', '13');
+  leafStem.setAttribute('x2', '0'); leafStem.setAttribute('y2', '18');
+  leafStem.setAttribute('stroke', '#444');
+  leafStem.setAttribute('stroke-width', '1.5');
+  leafG.appendChild(leafStem);
+  svg.appendChild(leafG);
+  ecoIconEl = leafOutline;
+  ecoIconEl._vein = leafVein;
+  ecoIconEl._stem = leafStem;
+  ecoValEl = svgEl(svg, 'text', { x: ecoX - 16, y: ecoY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  ecoValEl.textContent = '--';
+  ecoUnitEl = svgEl(svg, 'text', { x: ecoX + 38, y: ecoY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  ecoUnitEl.textContent = 'km/L';
 
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({

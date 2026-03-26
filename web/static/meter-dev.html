@@ -20,16 +20,17 @@
 <!-- Dev controls -->
 <div style="position:fixed;bottom:0;left:0;right:0;background:#111;padding:8px;z-index:999;font-family:monospace;color:#aaa;font-size:12px;">
   <label>Speed <input type="range" id="s-spd" min="0" max="180" value="0"> <span id="v-spd">0</span></label>
-  <label>RPM <input type="range" id="s-rpm" min="0" max="7000" value="700"> <span id="v-rpm">700</span></label>
+  <label>RPM <input type="range" id="s-rpm" min="0" max="8000" value="700"> <span id="v-rpm">700</span></label>
   <label>Throttle <input type="range" id="s-thr" min="0" max="100" value="12"> <span id="v-thr">12</span></label>
   <label>Gear <select id="s-gear"><option value="0">N</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></label>
   <label>Range <select id="s-range"><option value="D" selected>D</option><option value="S">S</option><option value="L">L</option><option value="P">P</option><option value="R">R</option><option value="N">N</option></select></label>
   <label><input type="checkbox" id="s-hold"> HOLD</label>
   <label><input type="checkbox" id="s-tc"> LOCK</label>
+  <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94"> <span id="v-temp">94</span></label>
 </div>
 
 <script type="module">
-import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
 import { createIndicators, updateIndicators } from './js/indicators.js';
 
 const conf = {
@@ -65,7 +66,10 @@ function update() {
   updateThrottle(thr);
   updateRPM(rpm);
   const tcLocked = document.getElementById('s-tc') ? document.getElementById('s-tc').checked : false;
+  const temp = +document.getElementById('s-temp').value;
+  document.getElementById('v-temp').textContent = temp;
   updateGear(gear, range, hold, tcLocked);
+  updateBottomIndicators(temp, 284.1, 11.4, spd > 10 ? 8 + Math.random() * 4 : 0);
 
   const d = {
     speed_kmh: spd, rpm: rpm, throttle_pos: thr,

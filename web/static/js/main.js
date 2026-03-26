@@ -2,7 +2,7 @@
 // Main — エントリポイント + API ポーリング + Toast
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators } from './indicators.js';
 
 const DEFAULTS = {
@@ -52,6 +52,7 @@ function applyData(d) {
   updateThrottle(d.throttle_pos || 0);
   updateRPM(d.rpm || 0);
   updateGear(d.gear || 0, d.at_range_str || '?', d.hold || false, d.tc_locked || false);
+  updateBottomIndicators(d.coolant_temp || 0, d.trip_km || 0, d.avg_fuel_economy || 0, d.fuel_economy || 0);
   updateIndicators(dom, d, conf);
 
   // Maintenance toast（全件を順番に表示）
