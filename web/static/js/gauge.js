@@ -145,7 +145,7 @@ export function updateBottomIndicators(coolantTemp, tripKm, avgFuelEco, instantE
   // TRIP
   if (tripValEl) {
     tripValEl.textContent = tripKm >= 0.1 ? tripKm.toFixed(1) : '0';
-    const col = tripKm < 300 ? '#69f0ae' : tripKm < 400 ? '#ff9800' : '#f44336';
+    const col = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
     tripValEl.setAttribute('fill', col);
     if (tripIconEl) tripIconEl.setAttribute('fill', col);
   }
@@ -154,10 +154,12 @@ export function updateBottomIndicators(coolantTemp, tripKm, avgFuelEco, instantE
     const avg = Math.min(avgFuelEco || 0, 99.9);
     ecoValEl.textContent = avg > 0.1 ? avg.toFixed(1) : '--';
     let col;
-    if (instantEco < 0) col = '#69f0ae';       // エンブレ
+    if (instantEco < 0) col = '#2979ff';        // エンブレ（燃料カット）
     else if (instantEco < 0.1) col = '#555';    // 停車
-    else if (instantEco >= 6) col = '#fdd835';  // 良い
-    else col = '#f44336';                        // 悪い
+    else if (instantEco >= 15) col = '#69f0ae'; // すごく良い
+    else if (instantEco >= 6) col = '#fdd835';  // 普通
+    else if (instantEco >= 3) col = '#ff9800';  // 悪い
+    else col = '#f44336';                        // 燃料食ってる
     ecoValEl.setAttribute('fill', col);
     if (ecoIconEl) {
       ecoIconEl.setAttribute('stroke', col);
