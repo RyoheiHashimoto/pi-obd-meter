@@ -451,8 +451,8 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 	if cfg.ThrottleIdlePct != 11.5 {
 		t.Errorf("ThrottleIdlePct: got %.1f, want 11.5", cfg.ThrottleIdlePct)
 	}
-	if cfg.FuelTankL != 40 {
-		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	if cfg.FuelTankL != 46 {
+		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)
 	}
 	if cfg.FuelRateCorrection != 1.3 {
 		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
@@ -541,8 +541,8 @@ func TestValidateConfig_InvalidValues(t *testing.T) {
 	if cfg.FuelRateCorrection != 1.3 {
 		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
 	}
-	if cfg.FuelTankL != 40 {
-		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	if cfg.FuelTankL != 46 {
+		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)
 	}
 	if cfg.MaxSpeedKmh != 180 {
 		t.Errorf("MaxSpeedKmh: got %d, want 180", cfg.MaxSpeedKmh)

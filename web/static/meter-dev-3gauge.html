@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, height=480">
+<title>pi-obd-meter 3-gauge prototype</title>
+<link rel="preload" href="fonts/Orbitron-Black.ttf" as="font" type="font/truetype" crossorigin>
+<link rel="preload" href="fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="meter.css">
+<style>
+  /* Override panel for SVG gauges + warning lamps */
+  .dashboard .panel {
+    padding: 0;
+    justify-content: flex-start;
+    position: relative;
+  }
+  .warning-lamps { display: none; }
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <div class="gauge-area">
+    <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
+  </div>
+  <div class="panel" id="panel">
+    <div class="warning-lamps">
+      <span class="wlamp" id="wl-wifi">WiFi</span>
+      <span class="wlamp" id="wl-can">CAN</span>
+      <span class="wlamp" id="wl-maint">MAINT</span>
+    </div>
+    <svg id="rg" width="270" height="480" viewBox="-30 0 270 480" style="margin-left:-30px"></svg>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<!-- Dev controls -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#111;padding:6px 8px;z-index:999;font-family:monospace;color:#aaa;font-size:11px;display:flex;flex-wrap:wrap;gap:4px 12px;">
+  <label>Speed <input type="range" id="s-spd" min="0" max="180" value="0" style="width:80px"> <span id="v-spd">0</span></label>
+  <label>RPM <input type="range" id="s-rpm" min="0" max="8000" value="700" style="width:80px"> <span id="v-rpm">700</span></label>
+  <label>Thr <input type="range" id="s-thr" min="0" max="100" value="12" style="width:60px"> <span id="v-thr">12</span></label>
+  <label>MAP <input type="range" id="s-map" min="10" max="101" value="30" style="width:60px"> <span id="v-map">30</span></label>
+  <label>Gear <select id="s-gear"><option value="0">N</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></label>
+  <label>Range <select id="s-range"><option value="D" selected>D</option><option value="S">S</option><option value="L">L</option><option value="P">P</option><option value="R">R</option><option value="N">N</option></select></label>
+  <label><input type="checkbox" id="s-hold"> HOLD</label>
+  <label><input type="checkbox" id="s-tc"> LOCK</label>
+  <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94" style="width:60px"> <span id="v-temp">94</span></label>
+  <label><input type="checkbox" id="s-wifi" checked> WiFi</label>
+  <label><input type="checkbox" id="s-can" checked> CAN</label>
+  <label><input type="checkbox" id="s-maint"> MAINT</label>
+</div>
+
+<script type="module">
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
+
+// ============================================================
+// ZJ-VE Performance Curve — VE table from official spec
+// ============================================================
+const VE_TABLE_RPM =  [1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500];
+const VE_TABLE_TQ_NM = [90,  105,  115,  120,  123,  124,  122,  118,  113,  108,  103,   95];
+
+// Theoretical torque at 100% VE: T = (MAP/101.3) * (displacement/2) * (airDensity) * ...
+// We derive VE from the spec torque at WOT (MAP≈101.3kPa)
+// VE(rpm) = specTorque(rpm) / maxSpecTorque * peakVE
+const PEAK_VE = 0.88; // typical NA peak
+const MAX_TQ = 124;
+const VE_TABLE = VE_TABLE_TQ_NM.map(tq => (tq / MAX_TQ) * PEAK_VE);
+
+function interpolateVE(rpm) {
+  if (rpm <= VE_TABLE_RPM[0]) return VE_TABLE[0];
+  if (rpm >= VE_TABLE_RPM[VE_TABLE_RPM.length - 1]) return VE_TABLE[VE_TABLE.length - 1];
+  for (let i = 0; i < VE_TABLE_RPM.length - 1; i++) {
+    if (rpm <= VE_TABLE_RPM[i + 1]) {
+      const t = (rpm - VE_TABLE_RPM[i]) / (VE_TABLE_RPM[i + 1] - VE_TABLE_RPM[i]);
+      return VE_TABLE[i] + t * (VE_TABLE[i + 1] - VE_TABLE[i]);
+    }
+  }
+  return VE_TABLE[VE_TABLE.length - 1];
+}
+
+// Estimate PS and Torque from MAP + RPM
+// airFlow (g/s) = MAP(kPa)/101.3 * RPM/120 * displacement(L) * airDensity(1.184 g/L) * VE * 1000
+// torque (Nm) = airFlow / AFR / fuelDensity * fuelEnergy * thermalEff ...
+// Simpler: scale from spec curve
+function estimatePSTorque(mapKpa, rpm, atmKpa) {
+  if (rpm < 100) return { ps: 0, tq: 0 };
+  const ve = interpolateVE(rpm);
+  const loadFrac = mapKpa / atmKpa; // 0..1 for partial throttle
+  // Torque at this RPM and WOT from spec curve
+  const wotTorque = interpolateTorque(rpm);
+  const torque = wotTorque * loadFrac;
+  const ps = torque * rpm / 7162;
+  return { ps: Math.max(0, ps), tq: Math.max(0, torque) };
+}
+
+function interpolateTorque(rpm) {
+  if (rpm <= VE_TABLE_RPM[0]) return VE_TABLE_TQ_NM[0];
+  if (rpm >= VE_TABLE_RPM[VE_TABLE_RPM.length - 1]) return VE_TABLE_TQ_NM[VE_TABLE_RPM.length - 1];
+  for (let i = 0; i < VE_TABLE_RPM.length - 1; i++) {
+    if (rpm <= VE_TABLE_RPM[i + 1]) {
+      const t = (rpm - VE_TABLE_RPM[i]) / (VE_TABLE_RPM[i + 1] - VE_TABLE_RPM[i]);
+      return VE_TABLE_TQ_NM[i] + t * (VE_TABLE_TQ_NM[i + 1] - VE_TABLE_TQ_NM[i]);
+    }
+  }
+  return VE_TABLE_TQ_NM[VE_TABLE_TQ_NM.length - 1];
+}
+
+// ============================================================
+// Mini Gauge Builder — SVG arc gauges for right panel
+// ============================================================
+const DEG = Math.PI / 180;
+const MG_ARC_START = -135;
+const MG_ARC_END = 135;
+const MG_ARC_SWEEP = 270;
+const MG_LERP = 0.35;
+const MG_LERP_TH = 0.05;
+const MG_LERP_STOP = 0.01;
+const HUE_MAX = 210;
+
+function mgPolar(cx, cy, r, deg) {
+  const rad = deg * DEG;
+  return [cx + r * Math.sin(rad), cy - r * Math.cos(rad)];
+}
+
+function mgArcPath(cx, cy, r, s, e) {
+  if (Math.abs(e - s) < 0.3) return '';
+  const [x1, y1] = mgPolar(cx, cy, r, s);
+  const [x2, y2] = mgPolar(cx, cy, r, e);
+  const lg = Math.abs(e - s) > 180 ? 1 : 0;
+  return `M${x1.toFixed(1)},${y1.toFixed(1)}A${r},${r},0,${lg},1,${x2.toFixed(1)},${y2.toFixed(1)}`;
+}
+
+function mgSvgEl(parent, tag, attrs) {
+  const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  parent.appendChild(e);
+  return e;
+}
+
+// Build a single mini gauge with optional dual arcs
+// Returns { updateOuter(val), updateInner(val) }
+function buildMiniGauge(svg, cfg) {
+  const { cx, cy, r, label, outerMax, innerMax, outerUnit, innerUnit,
+          outerColor, innerColor, outerFmt, innerFmt, ticks } = cfg;
+
+  const ARC_W = 8;
+  const outerR = r;
+  const innerR = r - ARC_W - 4;
+
+  // Outer track
+  mgSvgEl(svg, 'path', {
+    d: mgArcPath(cx, cy, outerR, MG_ARC_START, MG_ARC_END),
+    fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+  // Inner track
+  mgSvgEl(svg, 'path', {
+    d: mgArcPath(cx, cy, innerR, MG_ARC_START, MG_ARC_END),
+    fill: 'none', stroke: '#0e0e14', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+
+  // Ticks (outer only)
+  if (ticks) {
+    for (let i = 0; i <= ticks.major * ticks.minor; i++) {
+      const a = MG_ARC_START + (i / (ticks.major * ticks.minor)) * MG_ARC_SWEEP;
+      const isMj = i % ticks.minor === 0;
+      const ri = outerR + 2;
+      const ro = isMj ? outerR + 10 : outerR + 6;
+      const [x1, y1] = mgPolar(cx, cy, ri, a);
+      const [x2, y2] = mgPolar(cx, cy, ro, a);
+      mgSvgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#666' : '#333', 'stroke-width': isMj ? 2 : 1 });
+    }
+  }
+
+  // Outer value arc
+  const outerArc = mgSvgEl(svg, 'path', {
+    d: '', fill: 'none', stroke: outerColor || '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+  // Inner value arc
+  const innerArc = mgSvgEl(svg, 'path', {
+    d: '', fill: 'none', stroke: innerColor || '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+
+  // Outer value readout (upper)
+  const outerValEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+  });
+  outerValEl.textContent = '--';
+
+  // Outer unit
+  const outerUnitEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+  });
+  outerUnitEl.textContent = outerUnit || '';
+
+  // Inner value readout (lower)
+  const innerValEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+  });
+  innerValEl.textContent = '--';
+
+  // Inner unit
+  const innerUnitEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+  });
+  innerUnitEl.textContent = innerUnit || '';
+
+  // Animators
+  let outerCur = 0, outerTgt = 0, outerRaf = 0;
+  let innerCur = 0, innerTgt = 0, innerRaf = 0;
+
+  function lerpOuter() {
+    const delta = outerTgt - outerCur;
+    outerCur = Math.abs(delta) > MG_LERP_TH ? outerCur + delta * MG_LERP : outerTgt;
+    const pct = Math.max(0, Math.min(100, outerCur / outerMax * 100));
+    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
+    outerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, outerR, MG_ARC_START, angle) : '');
+    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
+    const active = outerCur > 0.5;
+    const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
+    outerArc.setAttribute('stroke', col);
+    outerArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
+    outerValEl.setAttribute('fill', active ? col : '#333');
+    outerValEl.textContent = active ? (outerFmt || (v => Math.round(v)))(outerCur) : '--';
+    outerUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    outerRaf = Math.abs(outerCur - outerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpOuter) : 0;
+  }
+
+  function lerpInner() {
+    const delta = innerTgt - innerCur;
+    innerCur = Math.abs(delta) > MG_LERP_TH ? innerCur + delta * MG_LERP : innerTgt;
+    const pct = Math.max(0, Math.min(100, innerCur / innerMax * 100));
+    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
+    innerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, innerR, MG_ARC_START, angle) : '');
+    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
+    const active = innerCur > 0.3;
+    const col = active ? `hsl(${hue}, 85%, 50%)` : '#222';
+    innerArc.setAttribute('stroke', col);
+    innerArc.style.filter = active ? `drop-shadow(0 0 3px ${col})` : '';
+    innerValEl.setAttribute('fill', active ? col : '#333');
+    innerValEl.textContent = active ? (innerFmt || (v => Math.round(v)))(innerCur) : '--';
+    innerUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    innerRaf = Math.abs(innerCur - innerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpInner) : 0;
+  }
+
+  return {
+    updateOuter(v) { outerTgt = v; if (!outerRaf) outerRaf = requestAnimationFrame(lerpOuter); },
+    updateInner(v) { innerTgt = v; if (!innerRaf) innerRaf = requestAnimationFrame(lerpInner); },
+  };
+}
+
+// ============================================================
+// A/F gauge — special: center-zero style (14.7 = center)
+// ============================================================
+function buildAFGauge(svg, cfg) {
+  const { cx, cy, r } = cfg;
+  const ARC_W = 8;
+  const outerR = r;
+  const innerR = r - ARC_W - 4;
+
+  // MAP outer track
+  mgSvgEl(svg, 'path', {
+    d: mgArcPath(cx, cy, outerR, MG_ARC_START, MG_ARC_END),
+    fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+  // A/F inner track
+  mgSvgEl(svg, 'path', {
+    d: mgArcPath(cx, cy, innerR, MG_ARC_START, MG_ARC_END),
+    fill: 'none', stroke: '#0e0e14', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+
+  // MAP outer value arc
+  const mapArc = mgSvgEl(svg, 'path', {
+    d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+  // A/F inner value arc
+  const afArc = mgSvgEl(svg, 'path', {
+    d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round'
+  });
+
+
+
+  // MAP readout (upper)
+  const mapValEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+  });
+  mapValEl.textContent = '--';
+  const mapUnitEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+  });
+  mapUnitEl.textContent = 'kPa';
+
+  // A/F readout (lower)
+  const afValEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+  });
+  afValEl.textContent = '--';
+  const afUnitEl = mgSvgEl(svg, 'text', {
+    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+  });
+  afUnitEl.textContent = 'A/F';
+
+  // MAP animator (0-101 kPa, same as PS gauge style)
+  let mapCur = 0, mapTgt = 0, mapRaf = 0;
+  function lerpMap() {
+    const delta = mapTgt - mapCur;
+    mapCur = Math.abs(delta) > MG_LERP_TH ? mapCur + delta * MG_LERP : mapTgt;
+    const pct = Math.max(0, Math.min(100, mapCur / 101 * 100));
+    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
+    mapArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, outerR, MG_ARC_START, angle) : '');
+    // Color: low MAP (vacuum) = blue, high MAP (load) = red
+    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
+    const active = mapCur > 5;
+    const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
+    mapArc.setAttribute('stroke', col);
+    mapArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
+    mapValEl.setAttribute('fill', active ? col : '#333');
+    mapValEl.textContent = active ? Math.round(mapCur) : '--';
+    mapUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpMap) : 0;
+  }
+
+  // A/F animator: range 10-20, center at 14.7
+  // Map to arc: 10=left(-135), 14.7=center(0), 20=right(+135)
+  let afCur = 14.7, afTgt = 14.7, afRaf = 0;
+  const AF_MIN = 10, AF_MAX = 20;
+  function lerpAF() {
+    const delta = afTgt - afCur;
+    afCur = Math.abs(delta) > 0.01 ? afCur + delta * 0.5 : afTgt; // faster lerp for AF oscillation
+    const pct = Math.max(0, Math.min(100, (afCur - AF_MIN) / (AF_MAX - AF_MIN) * 100));
+    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
+    // Draw from center (stoich) to current
+    const stoichPct = (14.7 - AF_MIN) / (AF_MAX - AF_MIN) * 100;
+    const stoichAng = MG_ARC_START + (stoichPct / 100) * MG_ARC_SWEEP;
+    if (Math.abs(angle - stoichAng) > 1) {
+      const s = Math.min(angle, stoichAng);
+      const e = Math.max(angle, stoichAng);
+      afArc.setAttribute('d', mgArcPath(cx, cy, innerR, s, e));
+    } else {
+      afArc.setAttribute('d', '');
+    }
+    // Color: lean (>14.7) = blue, rich (<14.7) = red/orange
+    const isRich = afCur < 14.5;
+    const isLean = afCur > 14.9;
+    const col = isRich ? '#ff6e40' : isLean ? '#29b6f6' : '#4caf50';
+    afArc.setAttribute('stroke', col);
+    afArc.style.filter = `drop-shadow(0 0 3px ${col})`;
+    afValEl.setAttribute('fill', col);
+    afValEl.textContent = afCur.toFixed(1);
+    afUnitEl.setAttribute('fill', '#fff');
+    afRaf = Math.abs(afCur - afTgt) > 0.005 ? requestAnimationFrame(lerpAF) : 0;
+  }
+
+  return {
+    updateMAP(v) { mapTgt = v; if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap); },
+    updateAF(v) { afTgt = v; if (!afRaf) afRaf = requestAnimationFrame(lerpAF); },
+  };
+}
+
+// ============================================================
+// Setup
+// ============================================================
+const conf = {
+  max_speed_kmh: 180, throttle_idle_pct: 11.5, throttle_max_pct: 78,
+  eco_kmpl_green: 15.4, eco_kmpl_orange: 6.2,
+  trip_warn_km: 300, trip_danger_km: 500,
+};
+setThrottleIdleBaseline(conf.throttle_idle_pct);
+setThrottleMaxPct(conf.throttle_max_pct);
+
+// Main speed gauge (left panel)
+const gs = buildSpeedGauge('gs', {
+  cx: 280, cy: 260, r: 220,
+  min: 0, max: conf.max_speed_kmh, color: '#78909c',
+  unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
+  fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
+});
+
+// Right panel gauges
+const rgSvg = document.getElementById('rg');
+const GAUGE_CX = 144;
+const GAUGE_R = 80;
+const GAUGE_SPACING = 155;
+const GAUGE_Y_START = 98;
+
+// Gauge 1: PS + Torque
+const g1 = buildMiniGauge(rgSvg, {
+  cx: GAUGE_CX, cy: GAUGE_Y_START,
+  r: GAUGE_R,
+  outerMax: 91, innerMax: 12.6,
+  outerUnit: 'PS', innerUnit: 'kgf\u00B7m',
+  outerFmt: v => Math.round(v),
+  innerFmt: v => v.toFixed(1),
+});
+
+// Gauge 2: MAP + A/F
+const g2 = buildAFGauge(rgSvg, {
+  cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING,
+  r: GAUGE_R,
+});
+
+// Gauge 3: placeholder — candidates TBD
+const g3 = buildMiniGauge(rgSvg, {
+  cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING * 2,
+  r: GAUGE_R,
+  outerMax: 100, innerMax: 50,
+  outerUnit: '', innerUnit: '',
+  outerFmt: v => Math.round(v),
+  innerFmt: v => v.toFixed(1),
+});
+
+// Warning lamps — one in each gap between meters
+// Warning lamps: centered vertically, slightly left of gap center
+const WLAMP_GAP_RIGHT = GAUGE_CX - GAUGE_R - 12;
+const WLAMP_X = WLAMP_GAP_RIGHT / 2 - 12;
+const WLAMP_LINE_H = 24;
+const wlamps = {};
+const wlampLabels = ['WiFi', 'CAN', 'MAINT'];
+const wlampTotalH = wlampLabels.length * WLAMP_LINE_H;
+const wlampStartY = (480 - wlampTotalH) / 2 + 16;
+const wlampY = wlampLabels.map((_, i) => wlampStartY + i * WLAMP_LINE_H);
+wlampLabels.forEach((label, i) => {
+  const el = mgSvgEl(rgSvg, 'text', {
+    x: WLAMP_X, y: wlampY[i],
+    'font-family': "'Share Tech Mono', monospace",
+    'font-size': 16, 'font-weight': 700,
+    fill: '#333', 'text-anchor': 'middle',
+  });
+  el.textContent = label;
+  wlamps[label.toLowerCase()] = el;
+});
+
+// ============================================================
+// Update loop
+// ============================================================
+function update() {
+  const spd = +document.getElementById('s-spd').value;
+  const rpm = +document.getElementById('s-rpm').value;
+  const thr = +document.getElementById('s-thr').value;
+  const mapKpa = +document.getElementById('s-map').value;
+  const gear = +document.getElementById('s-gear').value;
+  const range = document.getElementById('s-range').value;
+  const hold = document.getElementById('s-hold').checked;
+  const tcLocked = document.getElementById('s-tc').checked;
+  const temp = +document.getElementById('s-temp').value;
+
+  document.getElementById('v-spd').textContent = spd;
+  document.getElementById('v-rpm').textContent = rpm;
+  document.getElementById('v-thr').textContent = thr;
+  document.getElementById('v-map').textContent = mapKpa;
+  document.getElementById('v-temp').textContent = temp;
+
+  // Left panel
+  gs.update(spd, speedColor(spd));
+  updateThrottle(thr);
+  updateRPM(rpm);
+  updateGear(gear, range, hold, tcLocked);
+  updateBottomIndicators(temp, 284.1, 11.4, spd > 10 ? 8 + Math.random() * 4 : 0);
+
+  // Right panel - Gauge 1: PS + Torque
+  const atmKpa = 101.3;
+  const { ps, tq } = estimatePSTorque(mapKpa, rpm, atmKpa);
+  g1.updateOuter(ps);
+  g1.updateInner(tq / 9.807); // Nm → kgf·m
+
+  // Right panel - Gauge 2: MAP + A/F
+  g2.updateMAP(mapKpa);
+  // Simulate A/F: stoich at cruise, rich when high MAP, lean on decel
+  let af = 14.7;
+  if (mapKpa < 25) af = 16 + Math.random() * 2; // engine brake: lean
+  else if (mapKpa > 80) af = 12.0 + Math.random() * 0.5; // WOT: rich
+  else af = 14.4 + Math.random() * 0.6; // cruise: oscillate around stoich
+  g2.updateAF(af);
+
+  // Right panel - Gauge 3: placeholder
+  g3.updateOuter(thr);
+  g3.updateInner(spd > 10 ? 2 + mapKpa * 0.1 : 0.8);
+
+  // Warning lamps
+  const wifiOk = document.getElementById('s-wifi').checked;
+  const canOk = document.getElementById('s-can').checked;
+  const maintWarn = document.getElementById('s-maint').checked;
+  wlamps.wifi.setAttribute('fill', wifiOk ? '#333' : '#f44336');
+  wlamps.wifi.style.filter = wifiOk ? '' : 'drop-shadow(0 0 6px #f44336)';
+  wlamps.can.setAttribute('fill', canOk ? '#333' : '#f44336');
+  wlamps.can.style.filter = canOk ? '' : 'drop-shadow(0 0 6px #f44336)';
+  wlamps.maint.setAttribute('fill', maintWarn ? '#fdd835' : '#333');
+  wlamps.maint.style.filter = maintWarn ? 'drop-shadow(0 0 6px #fdd835)' : '';
+}
+
+document.querySelectorAll('input,select').forEach(el => el.addEventListener('input', update));
+update();
+</script>
+</body>
+</html>
