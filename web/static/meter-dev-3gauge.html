@@ -24,7 +24,7 @@
   </div>
   <div class="panel" id="panel">
     <div class="warning-lamps">
-      <span class="wlamp" id="wl-wifi">WiFi</span>
+      <span class="wlamp" id="wl-wifi">NETWORK</span>
       <span class="wlamp" id="wl-can">CAN</span>
       <span class="wlamp" id="wl-maint">MAINT</span>
     </div>
@@ -44,8 +44,8 @@
   <label><input type="checkbox" id="s-hold"> HOLD</label>
   <label><input type="checkbox" id="s-tc"> LOCK</label>
   <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94" style="width:60px"> <span id="v-temp">94</span></label>
-  <label><input type="checkbox" id="s-wifi" checked> WiFi</label>
-  <label><input type="checkbox" id="s-can" checked> CAN</label>
+  <label><input type="checkbox" id="s-wifi" checked> NETWORK</label>
+  <label><input type="checkbox" id="s-can" checked> LINK</label>
   <label><input type="checkbox" id="s-maint"> MAINT</label>
 </div>
 
@@ -413,7 +413,7 @@ const WLAMP_GAP_RIGHT = GAUGE_CX - GAUGE_R - 12;
 const WLAMP_X = WLAMP_GAP_RIGHT / 2 - 12;
 const WLAMP_LINE_H = 24;
 const wlamps = {};
-const wlampLabels = ['WiFi', 'CAN', 'MAINT'];
+const wlampLabels = ['NETWORK', 'LINK', 'MAINT'];
 const wlampTotalH = wlampLabels.length * WLAMP_LINE_H;
 const wlampStartY = (480 - wlampTotalH) / 2 + 16;
 const wlampY = wlampLabels.map((_, i) => wlampStartY + i * WLAMP_LINE_H);
@@ -478,10 +478,10 @@ function update() {
   const wifiOk = document.getElementById('s-wifi').checked;
   const canOk = document.getElementById('s-can').checked;
   const maintWarn = document.getElementById('s-maint').checked;
-  wlamps.wifi.setAttribute('fill', wifiOk ? '#333' : '#f44336');
-  wlamps.wifi.style.filter = wifiOk ? '' : 'drop-shadow(0 0 6px #f44336)';
-  wlamps.can.setAttribute('fill', canOk ? '#333' : '#f44336');
-  wlamps.can.style.filter = canOk ? '' : 'drop-shadow(0 0 6px #f44336)';
+  wlamps.network.setAttribute('fill', wifiOk ? '#333' : '#f44336');
+  wlamps.network.style.filter = wifiOk ? '' : 'drop-shadow(0 0 6px #f44336)';
+  wlamps.link.setAttribute('fill', canOk ? '#333' : '#f44336');
+  wlamps.link.style.filter = canOk ? '' : 'drop-shadow(0 0 6px #f44336)';
   wlamps.maint.setAttribute('fill', maintWarn ? '#fdd835' : '#333');
   wlamps.maint.style.filter = maintWarn ? 'drop-shadow(0 0 6px #fdd835)' : '';
 }

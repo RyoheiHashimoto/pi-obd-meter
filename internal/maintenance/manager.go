@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,10 +23,20 @@ const (
 	TypeDate     ReminderType = "date"     // 日付ベース（車検等）
 )
 
+// Severity はリマインダーの深刻度
+type Severity string
+
+const (
+	SeveritySoft Severity = "soft" // 黄→橙で止まる（超過しても赤にならない）
+	SeverityHard Severity = "hard" // 黄→橙→赤（超過で赤）
+)
+
 // Reminder はメンテナンスリマインダー
 type Reminder struct {
 	ID           string       `json:"id"`
 	Name         string       `json:"name"`
+	Lamp         string       `json:"lamp,omitempty"`
+	Severity     Severity     `json:"severity,omitempty"`
 	Type         ReminderType `json:"type"`
 	IntervalKm   float64      `json:"interval_km,omitempty"`   // 距離ベース: 交換間隔 (km)
 	IntervalDays int          `json:"interval_days,omitempty"` // 日付ベース: 間隔 (日)
@@ -35,10 +46,30 @@ type Reminder struct {
 	WarningPct   float64      `json:"warning_pct"`             // 警告を出す割合 (0.8 = 80%到達時)
 }
 
+// LampLabel はランプ表示用のラベルを返す。Lamp が未設定なら ID を大文字にする。
+func (r *Reminder) LampLabel() string {
+	if r.Lamp != "" {
+		return r.Lamp
+	}
+	return strings.ToUpper(r.ID)
+}
+
+// AlertLevel は警告灯の色レベル
+type AlertLevel string
+
+const (
+	AlertNone   AlertLevel = ""       // 消灯
+	AlertYellow AlertLevel = "yellow" // 認知「わかってるよ」
+	AlertOrange AlertLevel = "orange" // 催促「そろそろですよ」
+	AlertRed    AlertLevel = "red"    // 超過「アウト」(hard のみ)
+)
+
 // Status はリマインダーの現在状態
 type Status struct {
-	Reminder    Reminder `json:"reminder"`
-	CurrentKm   float64  `json:"current_km,omitempty"`   // 前回リセットからの走行距離
+	Reminder    Reminder   `json:"reminder"`
+	Lamp        string     `json:"lamp"`
+	Alert       AlertLevel `json:"alert"`
+	CurrentKm   float64    `json:"current_km,omitempty"`   // 前回リセットからの走行距離
 	RemainingKm float64  `json:"remaining_km,omitempty"` // 残り距離
 	DaysElapsed int      `json:"days_elapsed,omitempty"` // 前回リセットからの経過日数
 	DaysLeft    int      `json:"days_left,omitempty"`    // 残り日数
@@ -158,7 +189,7 @@ func (m *Manager) GetAlerts() []Status {
 
 // checkOne は1件のリマインダーの進捗・アラート状態を計算する
 func (m *Manager) checkOne(r *Reminder) Status {
-	s := Status{Reminder: *r}
+	s := Status{Reminder: *r, Lamp: r.LampLabel()}
 
 	switch r.Type {
 	case TypeDistance:
@@ -180,6 +211,10 @@ func (m *Manager) checkOne(r *Reminder) Status {
 		s.NeedsAlert = s.Progress >= r.WarningPct
 	}
 
+	// 警告灯の色レベルを判定
+	s.Alert = r.alertLevel(s.Progress, s.IsOverdue)
+	s.NeedsAlert = s.Alert != AlertNone
+
 	// 同じ日に2回通知しない
 	if r.NotifiedAt != nil {
 		today := time.Now().Truncate(24 * time.Hour)
@@ -190,6 +225,25 @@ func (m *Manager) checkOne(r *Reminder) Status {
 	}
 
 	return s
+}
+
+// alertLevel は progress と severity から警告灯の色を返す
+// soft: 消灯 → 黄(warning_pct) → 橙(超過)
+// hard: 消灯 → 橙(warning_pct) → 赤(超過)
+func (r *Reminder) alertLevel(progress float64, overdue bool) AlertLevel {
+	if overdue {
+		if r.Severity == SeverityHard {
+			return AlertRed
+		}
+		return AlertOrange
+	}
+	if progress >= r.WarningPct {
+		if r.Severity == SeverityHard {
+			return AlertOrange
+		}
+		return AlertYellow
+	}
+	return AlertNone
 }
 
 // GetAll は全リマインダーを返す
