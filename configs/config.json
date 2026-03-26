@@ -25,7 +25,7 @@
     { "id": "inspection_12m", "name": "法定12ヶ月点検", "lamp": "12M", "type": "date", "interval_days": 365, "warning_pct": 0.9, "last_reset_at": "2026-02-20T00:00:00+09:00" },
     { "id": "shaken", "name": "車検", "lamp": "24M", "severity": "hard", "type": "date", "interval_days": 730, "warning_pct": 0.9, "last_reset_at": "2026-02-20T00:00:00+09:00" },
     { "id": "atf_change", "name": "ATF交換", "lamp": "ATF", "type": "distance", "interval_km": 40000, "warning_pct": 0.9, "last_reset_km": 80000 },
-    { "id": "cabin_filter", "name": "エアコンフィルター交換", "lamp": "AC", "type": "distance", "interval_km": 10000, "warning_pct": 0.8, "last_reset_km": 90000 },
+    { "id": "cabin_filter", "name": "エアコンフィルター交換", "lamp": "AC.F", "type": "distance", "interval_km": 10000, "warning_pct": 0.8, "last_reset_km": 90000 },
     { "id": "spark_plug", "name": "スパークプラグ交換", "lamp": "PLUG", "type": "distance", "interval_km": 100000, "warning_pct": 0.8, "last_reset_km": 95000 },
     { "id": "ignition_coil", "name": "イグニッションコイル交換", "lamp": "COIL", "type": "distance", "interval_km": 100000, "warning_pct": 0.8, "last_reset_km": 0 },
     { "id": "brake_fluid", "name": "ブレーキフルード交換", "lamp": "BRK.F", "type": "date", "interval_days": 730, "warning_pct": 0.8, "last_reset_at": "2024-01-01T00:00:00+09:00" },
