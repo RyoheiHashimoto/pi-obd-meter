@@ -138,8 +138,10 @@ function mgSvgEl(parent, tag, attrs) {
 // Build a single mini gauge with optional dual arcs
 // Returns { updateOuter(val), updateInner(val) }
 function buildMiniGauge(svg, cfg) {
-  const { cx, cy, r, label, outerMax, innerMax, outerUnit, innerUnit,
-          outerColor, innerColor, outerFmt, innerFmt, ticks } = cfg;
+  const { cx, cy, r, label, outerMin, outerMax, innerMin, innerMax, outerUnit, innerUnit,
+          outerColor, innerColor, outerFmt, innerFmt, outerInvert, innerInvert, ticks } = cfg;
+  const oMin = outerMin || 0;
+  const iMin = innerMin || 0;
 
   const ARC_W = 8;
   const outerR = r;
@@ -180,25 +182,25 @@ function buildMiniGauge(svg, cfg) {
 
   // Outer value readout (upper)
   const outerValEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle'
   });
   outerValEl.textContent = '--';
 
   // Outer unit
   const outerUnitEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle'
   });
   outerUnitEl.textContent = outerUnit || '';
 
   // Inner value readout (lower)
   const innerValEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle'
   });
   innerValEl.textContent = '--';
 
   // Inner unit
   const innerUnitEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle'
   });
   innerUnitEl.textContent = innerUnit || '';
 
@@ -209,11 +211,12 @@ function buildMiniGauge(svg, cfg) {
   function lerpOuter() {
     const delta = outerTgt - outerCur;
     outerCur = Math.abs(delta) > MG_LERP_TH ? outerCur + delta * MG_LERP : outerTgt;
-    const pct = Math.max(0, Math.min(100, outerCur / outerMax * 100));
+    let pct = Math.max(0, Math.min(100, (outerCur - oMin) / (outerMax - oMin) * 100));
+    if (outerInvert) pct = 100 - pct;
     const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
     outerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, outerR, MG_ARC_START, angle) : '');
     const hue = HUE_MAX - (pct / 100) * HUE_MAX;
-    const active = outerCur > 0.5;
+    const active = outerCur > oMin + 0.01;
     const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
     outerArc.setAttribute('stroke', col);
     outerArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
@@ -226,11 +229,12 @@ function buildMiniGauge(svg, cfg) {
   function lerpInner() {
     const delta = innerTgt - innerCur;
     innerCur = Math.abs(delta) > MG_LERP_TH ? innerCur + delta * MG_LERP : innerTgt;
-    const pct = Math.max(0, Math.min(100, innerCur / innerMax * 100));
+    let pct = Math.max(0, Math.min(100, (innerCur - iMin) / (innerMax - iMin) * 100));
+    if (innerInvert) pct = 100 - pct;
     const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
     innerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, innerR, MG_ARC_START, angle) : '');
     const hue = HUE_MAX - (pct / 100) * HUE_MAX;
-    const active = innerCur > 0.3;
+    const active = innerCur > iMin + 0.01;
     const col = active ? `hsl(${hue}, 85%, 50%)` : '#222';
     innerArc.setAttribute('stroke', col);
     innerArc.style.filter = active ? `drop-shadow(0 0 3px ${col})` : '';
@@ -279,21 +283,21 @@ function buildAFGauge(svg, cfg) {
 
   // MAP readout (upper)
   const mapValEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+    x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle'
   });
   mapValEl.textContent = '--';
   const mapUnitEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+    x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle'
   });
   mapUnitEl.textContent = 'kPa';
 
   // A/F readout (lower)
   const afValEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle'
+    x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle'
   });
   afValEl.textContent = '--';
   const afUnitEl = mgSvgEl(svg, 'text', {
-    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 16, 'text-anchor': 'middle'
+    x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle'
   });
   afUnitEl.textContent = 'A/F';
 
@@ -380,28 +384,29 @@ const GAUGE_R = 80;
 const GAUGE_SPACING = 155;
 const GAUGE_Y_START = 98;
 
-// Gauge 1: PS + Torque
-const g1 = buildMiniGauge(rgSvg, {
+// Gauge 1: Gear Ratio + TCC Lock %
+const gGear = buildMiniGauge(rgSvg, {
   cx: GAUGE_CX, cy: GAUGE_Y_START,
   r: GAUGE_R,
-  outerMax: 91, innerMax: 12.6,
-  outerUnit: 'PS', innerUnit: 'kgf\u00B7m',
-  outerFmt: v => Math.round(v),
+  outerMin: 0.7, outerMax: 3.0, outerInvert: true,
+  innerMin: 0, innerMax: 100,
+  outerUnit: ':1', innerUnit: 'LOCK %',
+  outerFmt: v => v.toFixed(2),
   innerFmt: v => v.toFixed(1),
 });
 
 // Gauge 2: MAP + A/F
-const g2 = buildAFGauge(rgSvg, {
+const gMap = buildAFGauge(rgSvg, {
   cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING,
   r: GAUGE_R,
 });
 
-// Gauge 3: placeholder — candidates TBD
-const g3 = buildMiniGauge(rgSvg, {
+// Gauge 3: PS + Torque
+const gPower = buildMiniGauge(rgSvg, {
   cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING * 2,
   r: GAUGE_R,
-  outerMax: 100, innerMax: 50,
-  outerUnit: '', innerUnit: '',
+  outerMax: 91, innerMax: 12.6,
+  outerUnit: 'PS', innerUnit: 'kgf\u00B7m',
   outerFmt: v => Math.round(v),
   innerFmt: v => v.toFixed(1),
 });
@@ -483,24 +488,26 @@ function update() {
   updateGear(gear, range, hold, tcLocked);
   updateBottomIndicators(temp, 284.1, 11.4, spd > 10 ? 8 + Math.random() * 4 : 0);
 
-  // Right panel - Gauge 1: PS + Torque
-  const atmKpa = 101.3;
-  const { ps, tq } = estimatePSTorque(mapKpa, rpm, atmKpa);
-  g1.updateOuter(ps);
-  g1.updateInner(tq / 9.807); // Nm → kgf·m
+  // Right panel - Gauge 1: Gear Ratio + TCC Lock %
+  const gearRatios = [0, 2.816, 1.498, 1.000, 0.726]; // N,1,2,3,4
+  const mockGearRatio = gear > 0 ? gearRatios[gear] * (1 + Math.random() * 0.02) : 0;
+  const mockLockPct = gear >= 3 && spd > 40 ? 97 + Math.random() * 3 : gear > 0 ? 50 + Math.random() * 30 : 0;
+  gGear.updateOuter(mockGearRatio);
+  gGear.updateInner(mockLockPct);
 
   // Right panel - Gauge 2: MAP + A/F
-  g2.updateMAP(mapKpa);
-  // Simulate A/F: stoich at cruise, rich when high MAP, lean on decel
+  gMap.updateMAP(mapKpa);
   let af = 14.7;
-  if (mapKpa < 25) af = 16 + Math.random() * 2; // engine brake: lean
-  else if (mapKpa > 80) af = 12.0 + Math.random() * 0.5; // WOT: rich
-  else af = 14.4 + Math.random() * 0.6; // cruise: oscillate around stoich
-  g2.updateAF(af);
+  if (mapKpa < 25) af = 16 + Math.random() * 2;
+  else if (mapKpa > 80) af = 12.0 + Math.random() * 0.5;
+  else af = 14.4 + Math.random() * 0.6;
+  gMap.updateAF(af);
 
-  // Right panel - Gauge 3: placeholder
-  g3.updateOuter(thr);
-  g3.updateInner(spd > 10 ? 2 + mapKpa * 0.1 : 0.8);
+  // Right panel - Gauge 3: PS + Torque
+  const atmKpa = 101.3;
+  const { ps, tq } = estimatePSTorque(mapKpa, rpm, atmKpa);
+  gPower.updateOuter(ps);
+  gPower.updateInner(tq / 9.807); // Nm → kgf·m
 
   // Warning lamps
   const wifiOk = document.getElementById('s-wifi').checked;
