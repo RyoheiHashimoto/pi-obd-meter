@@ -6,7 +6,7 @@ const DEG = Math.PI / 180;
 const MG_ARC_START = -135;
 const MG_ARC_END = 135;
 const MG_ARC_SWEEP = 270;
-const MG_LERP = 0.35;
+const MG_LERP = 0.7;
 const MG_LERP_TH = 0.05;
 const MG_LERP_STOP = 0.01;
 const HUE_MAX = 210;
@@ -292,7 +292,7 @@ export function createIndicators(panelEl) {
     wlamps[def.lamp] = el;
   });
 
-  return { toast: document.getElementById('toast') };
+  return {};
 }
 
 // updateIndicators: APIデータで3連メーター + 警告灯を更新

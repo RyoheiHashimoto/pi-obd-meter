@@ -1,5 +1,5 @@
 // ============================================================
-// Main — エントリポイント + API ポーリング + Toast
+// Main — エントリポイント + API ポーリング
 // ============================================================
 
 import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
@@ -13,37 +13,11 @@ const DEFAULTS = {
 };
 const POLL_INTERVAL_MS = 50;
 const FETCH_TIMEOUT_MS = 3000;
-const TOAST_DURATION_MS = 5000;
-const ALERT_INTERVAL_MS = 5500;
 
 let conf = DEFAULTS;
 let gs;
 let dom;
 let connected = false;
-
-// --- Toast ---
-let lastNotification = '';
-let toastTimer = null;
-
-function showToast(msg) {
-  if (msg === lastNotification) return;
-  lastNotification = msg;
-  dom.toast.textContent = msg;
-  dom.toast.classList.add('show');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { dom.toast.classList.remove('show'); }, TOAST_DURATION_MS);
-}
-
-// --- メンテナンスアラートキュー ---
-let prevAlertCount = 0;
-let alertQueue = [];
-let alertQueueTimer = null;
-
-function showAlertQueue() {
-  if (alertQueue.length === 0) { alertQueueTimer = null; return; }
-  showToast(alertQueue.shift());
-  alertQueueTimer = setTimeout(showAlertQueue, ALERT_INTERVAL_MS);
-}
 
 // --- データ適用 ---
 function applyData(d) {
@@ -54,25 +28,6 @@ function applyData(d) {
   updateGear(d.gear || 0, d.at_range_str || '?', d.hold || false, d.tc_locked || false);
   updateBottomIndicators(d.coolant_temp || 0, d.trip_km || 0, d.avg_fuel_economy || 0, d.fuel_economy || 0);
   updateIndicators(dom, d, conf);
-
-  // Maintenance toast（全件を順番に表示）
-  const alertCount = d.alerts ? d.alerts.length : 0;
-  if (alertCount > 0 && alertCount !== prevAlertCount) {
-    alertQueue = [];
-    if (alertQueueTimer) { clearTimeout(alertQueueTimer); alertQueueTimer = null; }
-    for (const a of d.alerts) {
-      const { reminder: r } = a;
-      const remain = r.type === 'distance'
-        ? `${Math.round(a.remaining_km).toLocaleString()} km`
-        : `${a.days_left} \u65E5`;
-      alertQueue.push(`\u26A0 ${r.name}\u307E\u3067 ${remain}`);
-    }
-    showAlertQueue();
-  }
-  prevAlertCount = alertCount;
-
-  if (d.notification) showToast(d.notification);
-  else if (lastNotification) lastNotification = '';
 }
 
 // --- APIポーリング ---
@@ -106,9 +61,8 @@ async function initApp() {
   let kioskTimer = null;
   const KIOSK_HOLD_MS = 3000;
 
-  function startHold(e) {
+  function startHold() {
     kioskTimer = setTimeout(async () => {
-      showToast('Closing...');
       try { await fetch('/api/kiosk/stop', { method: 'POST' }); } catch {}
     }, KIOSK_HOLD_MS);
   }
@@ -127,7 +81,6 @@ async function initApp() {
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
-  // fetch完了後に次を予約（setIntervalだとリクエスト重複の恐れ）
   (function poll() {
     fetchRealtime().then(() => setTimeout(poll, POLL_INTERVAL_MS));
   })();
