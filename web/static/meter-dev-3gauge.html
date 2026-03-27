@@ -421,6 +421,7 @@ const wlamps = {};
 const maintLamps = [
   { lamp: 'LINK',    alert: '', system: true },
   { lamp: 'NETWORK', alert: '', system: true },
+  { lamp: 'CHECK',   alert: '', system: true },
   { lamp: '24M',     alert: '' },
   { lamp: '12M',     alert: '' },
   { lamp: 'OIL',     alert: '' },
@@ -516,6 +517,8 @@ function update() {
     let alert = m.alert;
     if (m.lamp === 'NETWORK') alert = wifiOk ? '' : 'red';
     if (m.lamp === 'LINK') alert = canOk ? '' : 'red';
+    // CHECK: mock — MIL OFF, TRIM normal
+    if (m.lamp === 'CHECK') alert = '';
     setLampColor(wlamps[m.lamp.toLowerCase()], alert);
   }
 }
