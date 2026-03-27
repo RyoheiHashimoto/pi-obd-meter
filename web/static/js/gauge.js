@@ -174,7 +174,7 @@ let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
 
 export function updateGear(gear, range, hold, tcLocked) {
   if (!gearEl) return;
-  const color = range === 'P' ? '#f44336' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
+  const color = range === 'P' ? '#ffffff' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
 
   // 右上: ギア番号
   if (range === 'P' || range === 'N' || range === 'R') {
