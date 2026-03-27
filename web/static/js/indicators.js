@@ -134,8 +134,8 @@ function buildMiniGauge(svg, cfg) {
   }
 
   return {
-    updateOuter(v) { outerTgt = v; if (!outerRaf) outerRaf = requestAnimationFrame(lerpOuter); },
-    updateInner(v) { innerTgt = v; if (!innerRaf) innerRaf = requestAnimationFrame(lerpInner); },
+    updateOuter(v) { if (v === outerTgt) return; outerTgt = v; if (!outerRaf) outerRaf = requestAnimationFrame(lerpOuter); },
+    updateInner(v) { if (v === innerTgt) return; innerTgt = v; if (!innerRaf) innerRaf = requestAnimationFrame(lerpInner); },
     setColorMode(mode) { colorMode = mode; },
   };
 }
@@ -205,8 +205,8 @@ function buildAFGauge(svg, cfg) {
   }
 
   return {
-    updateMAP(v) { mapTgt = v; if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap); },
-    updateAF(v) { afTgt = v; if (!afRaf) afRaf = requestAnimationFrame(lerpAF); },
+    updateMAP(v) { if (v === mapTgt) return; mapTgt = v; if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap); },
+    updateAF(v) { if (v === afTgt) return; afTgt = v; if (!afRaf) afRaf = requestAnimationFrame(lerpAF); },
   };
 }
 

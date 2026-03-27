@@ -40,10 +40,8 @@ function svgEl(parent, tag, attrs) {
   return e;
 }
 
-// グロー効果（CSS drop-shadow）をSVG要素に適用
-function applyGlow(el, color) {
-  el.style.filter = `drop-shadow(0 0 6px ${color})`;
-}
+// グロー効果（無効化: Pi GPU負荷軽減）
+function applyGlow(el, color) {}
 
 // 速度→ゲージ色（寒色→暖色）
 export function speedColor(v) {
