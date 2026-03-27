@@ -11,7 +11,7 @@ const DEFAULTS = {
   eco_kmpl_green: 15.4, eco_kmpl_orange: 6.2,
   trip_warn_km: 300, trip_danger_km: 500,
 };
-const POLL_INTERVAL_MS = 50;
+const POLL_INTERVAL_MS = 200;
 const FETCH_TIMEOUT_MS = 3000;
 
 let conf = DEFAULTS;
