@@ -17,20 +17,20 @@ import (
 
 // configResponse は /api/config のレスポンス
 type configResponse struct {
-	MaxSpeedKmh     int     `json:"max_speed_kmh"`
-	Version         string  `json:"version"`
-	EcoLHGreen      float64 `json:"eco_lh_green"`
-	EcoLHRed        float64 `json:"eco_lh_red"`
-	ThrottleIdlePct float64 `json:"throttle_idle_pct"`
-	ThrottleMaxPct  float64 `json:"throttle_max_pct"`
-	EcoKmplGreen    float64 `json:"eco_kmpl_green"`
-	EcoKmplOrange   float64 `json:"eco_kmpl_orange"`
-	TripWarnKm      float64 `json:"trip_warn_km"`
-	TripDangerKm    float64 `json:"trip_danger_km"`
-	MaxPS           float64 `json:"max_ps"`
-	MaxTorqueKgfm   float64 `json:"max_torque_kgfm"`
-	MaxTorqueRPM    int     `json:"max_torque_rpm"`
-	MaxPSRPM        int     `json:"max_ps_rpm"`
+	MaxSpeedKmh        int     `json:"max_speed_kmh"`
+	Version            string  `json:"version"`
+	EcoGradientMaxKmpl float64 `json:"eco_gradient_max_kmpl"`
+	ThrottleIdlePct    float64 `json:"throttle_idle_pct"`
+	ThrottleMaxPct     float64 `json:"throttle_max_pct"`
+	TripWarnKm         float64 `json:"trip_warn_km"`
+	TripDangerKm       float64 `json:"trip_danger_km"`
+	MaxPS              float64 `json:"max_ps"`
+	MaxTorqueKgfm      float64 `json:"max_torque_kgfm"`
+	MaxTorqueRPM       int     `json:"max_torque_rpm"`
+	MaxPSRPM           int     `json:"max_ps_rpm"`
+	CoolantColdMax     int     `json:"coolant_cold_max"`
+	CoolantNormalMax   int     `json:"coolant_normal_max"`
+	CoolantWarningMax  int     `json:"coolant_warning_max"`
 }
 
 // healthResponse は /api/health のレスポンス
@@ -88,15 +88,11 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		d := app.cfg.EngineDisplacementL
-		ecoKmplGreen := math.Round(20/d*10) / 10
-		ecoKmplOrange := math.Round(8/d*10) / 10
-		if app.cfg.EcoGreenKmpl > 0 {
-			ecoKmplGreen = app.cfg.EcoGreenKmpl
+		ecoGradientMax := app.cfg.EcoGradientMaxKmpl
+		if ecoGradientMax <= 0 {
+			ecoGradientMax = math.Round(20/d*10) / 10
 		}
-		if app.cfg.EcoOrangeKmpl > 0 {
-			ecoKmplOrange = app.cfg.EcoOrangeKmpl
-		}
-		estRange := app.cfg.FuelTankL * ecoKmplGreen
+		estRange := app.cfg.FuelTankL * ecoGradientMax
 		tripWarnKm := math.Round(estRange * 0.5)
 		tripDangerKm := math.Round(estRange * 0.85)
 		if app.cfg.TripWarnKm > 0 {
@@ -105,21 +101,33 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		if app.cfg.TripDangerKm > 0 {
 			tripDangerKm = app.cfg.TripDangerKm
 		}
+		coolantColdMax := app.cfg.CoolantTemp.ColdMax
+		if coolantColdMax <= 0 {
+			coolantColdMax = 60
+		}
+		coolantNormalMax := app.cfg.CoolantTemp.NormalMax
+		if coolantNormalMax <= 0 {
+			coolantNormalMax = 100
+		}
+		coolantWarningMax := app.cfg.CoolantTemp.WarningMax
+		if coolantWarningMax <= 0 {
+			coolantWarningMax = 104
+		}
 		writeJSON(w, configResponse{
-			MaxSpeedKmh:     app.cfg.MaxSpeedKmh,
-			Version:         version,
-			EcoLHGreen:      1.5 * d,
-			EcoLHRed:        3.0 * d,
-			ThrottleIdlePct: app.cfg.ThrottleIdlePct,
-			ThrottleMaxPct:  app.cfg.ThrottleMaxPct,
-			EcoKmplGreen:    ecoKmplGreen,
-			EcoKmplOrange:   ecoKmplOrange,
-			TripWarnKm:      tripWarnKm,
-			TripDangerKm:    tripDangerKm,
-			MaxPS:           app.cfg.MaxPS,
-			MaxTorqueKgfm:   app.cfg.MaxTorqueKgfm,
-			MaxTorqueRPM:    app.cfg.MaxTorqueRPM,
-			MaxPSRPM:        app.cfg.MaxPSRPM,
+			MaxSpeedKmh:        app.cfg.MaxSpeedKmh,
+			Version:            version,
+			EcoGradientMaxKmpl: ecoGradientMax,
+			ThrottleIdlePct:    app.cfg.ThrottleIdlePct,
+			ThrottleMaxPct:     app.cfg.ThrottleMaxPct,
+			TripWarnKm:         tripWarnKm,
+			TripDangerKm:       tripDangerKm,
+			MaxPS:              app.cfg.MaxPS,
+			MaxTorqueKgfm:      app.cfg.MaxTorqueKgfm,
+			MaxTorqueRPM:       app.cfg.MaxTorqueRPM,
+			MaxPSRPM:           app.cfg.MaxPSRPM,
+			CoolantColdMax:     coolantColdMax,
+			CoolantNormalMax:   coolantNormalMax,
+			CoolantWarningMax:  coolantWarningMax,
 		})
 	})
 
@@ -146,9 +154,9 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		})
 	})
 
-	// --- メンテナンスAPI（メーター画面のアラートバー用） ---
+	// --- オイル交換状態API ---
 	mux.HandleFunc("GET /api/maintenance", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, app.maintMgr.CheckAll())
+		writeJSON(w, app.maintMgr.OilStatus())
 	})
 
 	// --- キオスク停止API（タッチパネルから Chromium を終了する） ---

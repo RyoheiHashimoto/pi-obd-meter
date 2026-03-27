@@ -141,13 +141,16 @@ func main() {
 			if !ev.Connected || ev.Data == nil {
 				// OBD未接続: ステータスだけ更新
 				wifiConnected = checkWiFi()
+				oil := app.maintMgr.OilStatus()
 				app.updateRealtimeData(RealtimeData{
-					Alerts:        app.maintMgr.GetAlerts(),
-					Notification:  app.getNotification(),
-					OBDConnected:  false,
-					WiFiConnected: wifiConnected,
-					PendingCount:  app.client.QueueSize(),
-					SendSending:   app.client.IsSending(),
+					OilAlert:       string(oil.Alert),
+					OilCurrentKm:   oil.CurrentKm,
+					OilRemainingKm: oil.RemainingKm,
+					Notification:   app.getNotification(),
+					OBDConnected:   false,
+					WiFiConnected:  wifiConnected,
+					PendingCount:   app.client.QueueSize(),
+					SendSending:    app.client.IsSending(),
 				})
 				continue
 			}
@@ -194,6 +197,7 @@ func main() {
 			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
+			oil := app.maintMgr.OilStatus()
 			app.updateRealtimeData(RealtimeData{
 				SpeedKmh:       data.SpeedKmh,
 				RPM:            data.RPM,
@@ -221,8 +225,12 @@ func main() {
 				ATRangeStr:     can.ATRange(data.ATRange).String(),
 				Hold:           data.Hold,
 				TCLocked:       data.TCLocked,
+				TCCLockPct:     data.TCCLockPct,
 				Shifting:       data.Shifting,
-				Alerts:         app.maintMgr.GetAlerts(),
+				BaroPressure:   data.BaroKPa,
+				OilAlert:       string(oil.Alert),
+				OilCurrentKm:   oil.CurrentKm,
+				OilRemainingKm: oil.RemainingKm,
 				Notification:   app.getNotification(),
 				OBDConnected:   true,
 				WiFiConnected:  wifiConnected,

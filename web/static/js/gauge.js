@@ -109,6 +109,24 @@ let tempValEl, tempUnitEl, tempBox, tempIconEl;
 let tripValEl, tripUnitEl, tripBox, tripIconEl;
 let ecoValEl, ecoUnitEl, ecoBox, ecoIconEl;
 
+// 水温閾値（config から設定可能）
+let coolantColdMax = 60;
+let coolantNormalMax = 100;
+let coolantWarningMax = 104;
+
+// ECO グラデーション上限（config から設定可能）
+let ecoGradientMax = 15;
+
+export function setCoolantThresholds(cold, normal, warning) {
+  coolantColdMax = cold;
+  coolantNormalMax = normal;
+  coolantWarningMax = warning;
+}
+
+export function setEcoGradientMax(max) {
+  ecoGradientMax = max;
+}
+
 // SVGアイコン生成ヘルパー
 function createIcon(parent, x, y, pathD, size, rotate) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -133,7 +151,7 @@ export function updateBottomIndicators(coolantTemp, tripKm, avgFuelEco, instantE
   if (tempValEl) {
     if (coolantTemp > 0) {
       tempValEl.textContent = Math.round(coolantTemp);
-      const col = coolantTemp < 40 ? '#2979ff' : coolantTemp < 70 ? '#69f0ae' : coolantTemp < 80 ? '#fdd835' : coolantTemp < 105 ? '#ff9800' : '#f44336';
+      const col = coolantTemp < coolantColdMax ? '#29b6f6' : coolantTemp <= coolantNormalMax ? '#69f0ae' : coolantTemp <= coolantWarningMax ? '#ff9800' : '#f44336';
       tempValEl.setAttribute('fill', col);
       if (tempIconEl) tempIconEl.setAttribute('fill', col);
     } else {
@@ -154,12 +172,13 @@ export function updateBottomIndicators(coolantTemp, tripKm, avgFuelEco, instantE
     const avg = Math.min(avgFuelEco || 0, 99.9);
     ecoValEl.textContent = avg > 0.1 ? avg.toFixed(1) : '--';
     let col;
-    if (instantEco < 0) col = '#2979ff';        // エンブレ（燃料カット）
-    else if (instantEco < 0.1) col = '#555';    // 停車
-    else if (instantEco >= 15) col = '#69f0ae'; // すごく良い
-    else if (instantEco >= 6) col = '#fdd835';  // 普通
-    else if (instantEco >= 3) col = '#ff9800';  // 悪い
-    else col = '#f44336';                        // 燃料食ってる
+    if (instantEco < 0) col = '#29b6f6';        // エンブレ（燃料カット）
+    else if (instantEco < 0.1) col = '#ddd';    // 停車
+    else {
+      // 0〜ecoGradientMax km/L を赤(0)→ミントグリーン(153) のHSLグラデーション
+      const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
+      col = `hsl(${hue}, 100%, 55%)`;
+    }
     ecoValEl.setAttribute('fill', col);
     if (ecoIconEl) {
       ecoIconEl.setAttribute('stroke', col);
@@ -338,27 +357,27 @@ export function buildSpeedGauge(svgId, cfg) {
   const tempX = 50;
   const tempY = 468;
   tempIconEl = createIcon(svg, tempX - 10, tempY - 48, ICON_THERMOMETER, 30);
-  tempValEl = svgEl(svg, 'text', { x: tempX - 10, y: tempY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  tempValEl = svgEl(svg, 'text', { x: tempX - 10, y: tempY, class: 'g-num', fill: '#333', 'font-size': 34, 'text-anchor': 'middle' });
   tempValEl.textContent = '--';
-  tempUnitEl = svgEl(svg, 'text', { x: tempX + 38, y: tempY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  tempUnitEl = svgEl(svg, 'text', { x: tempX + 38, y: tempY, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'start' });
   tempUnitEl.textContent = '°C';
 
   // TRIP (下中央)
   tripBox = null;
   const tripY = 468;
   tripIconEl = createIcon(svg, cx - 68, tripY - 10, ICON_ROAD, 28);
-  tripValEl = svgEl(svg, 'text', { x: cx, y: tripY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  tripValEl = svgEl(svg, 'text', { x: cx, y: tripY, class: 'g-num', fill: '#333', 'font-size': 34, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
-  tripUnitEl = svgEl(svg, 'text', { x: cx + 64, y: tripY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  tripUnitEl = svgEl(svg, 'text', { x: cx + 74, y: tripY, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'start' });
   tripUnitEl.textContent = 'km';
 
   // ECO (アーク外、右下)
   ecoBox = null;
-  const ecoX = 490;
+  const ecoX = 493;
   const ecoY = 468;
   // ECO leaf icon (stroke style, 先端右上向き)
   const leafG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  const leafCx = ecoX + 14, leafCy = ecoY - 46;
+  const leafCx = ecoX + 24, leafCy = ecoY - 46;
   leafG.setAttribute('transform', `translate(${leafCx}, ${leafCy}) rotate(60) scale(1.3)`);
   // 輪郭
   const leafOutline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -386,9 +405,9 @@ export function buildSpeedGauge(svgId, cfg) {
   ecoIconEl = leafOutline;
   ecoIconEl._vein = leafVein;
   ecoIconEl._stem = leafStem;
-  ecoValEl = svgEl(svg, 'text', { x: ecoX - 16, y: ecoY, class: 'g-num', fill: '#333', 'font-size': 28, 'text-anchor': 'middle' });
+  ecoValEl = svgEl(svg, 'text', { x: ecoX - 16, y: ecoY, class: 'g-num', fill: '#333', 'font-size': 34, 'text-anchor': 'middle' });
   ecoValEl.textContent = '--';
-  ecoUnitEl = svgEl(svg, 'text', { x: ecoX + 38, y: ecoY + 2, class: 'g-unit', fill: '#fff', 'font-size': 18, 'text-anchor': 'start' });
+  ecoUnitEl = svgEl(svg, 'text', { x: ecoX + 48, y: ecoY - 2, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'start' });
   ecoUnitEl.textContent = 'km/L';
 
   // ArcAnimator インスタンス生成

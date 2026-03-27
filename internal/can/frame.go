@@ -12,7 +12,7 @@ type Frame struct {
 // DY デミオ CAN ID 定義
 const (
 	IDEngine   uint32 = 0x201 // RPM + 車速 + 負荷
-	IDATCtrl   uint32 = 0x230 // AT制御: ギア + TCロックアップ + ギア比
+	IDATCtrl   uint32 = 0x230 // AT制御: ギア + ギア係合状態 + ギア比
 	IDATStatus uint32 = 0x231 // ATステータス: ギア + HOLD + シフトフラグ
 	IDCoolant  uint32 = 0x420 // 水温 + 距離パルス
 	IDElectric uint32 = 0x430 // オルタ負荷 + 電圧 + 大気圧
@@ -134,14 +134,18 @@ func DecodeCoolant(data [8]byte) (tempC float64, distPulse uint8) {
 	return
 }
 
-// DecodeWheelSpeed は 0x4B0 フレームから前輪左の車速をデコードする
+// DecodeWheelSpeed は 0x4B0 フレームから4輪平均車速をデコードする
 //
-//	B0-1: FL速度 ((raw - 10000) / 100 km/h)
+//	B0-1: FL, B2-3: FR, B4-5: RL, B6-7: RR ((raw - 10000) / 100 km/h)
 func DecodeWheelSpeed(data [8]byte) float64 {
-	raw := int(uint16(data[0])<<8 | uint16(data[1]))
-	speed := float64(raw-10000) / 100.0
-	if speed < 0 {
-		return 0
+	var sum float64
+	for i := 0; i < 4; i++ {
+		raw := int(uint16(data[i*2])<<8 | uint16(data[i*2+1]))
+		spd := float64(raw-10000) / 100.0
+		if spd < 0 {
+			spd = 0
+		}
+		sum += spd
 	}
-	return speed
+	return sum / 4.0
 }

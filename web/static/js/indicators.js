@@ -1,5 +1,5 @@
 // ============================================================
-// Indicators — 右パネル 3連二重アークメーター + 警告灯
+// Indicators — 右パネル 2連二重アークメーター + OIL ランプ
 // ============================================================
 
 const DEG = Math.PI / 180;
@@ -11,10 +11,11 @@ const MG_LERP_TH = 0.05;
 const MG_LERP_STOP = 0.01;
 const HUE_MAX = 210;
 
-const GAUGE_CX = 144;
-const GAUGE_R = 80;
-const GAUGE_SPACING = 155;
-const GAUGE_Y_START = 98;
+// 2連メーター: 上下に240pxずつ、メーター大きく
+const GAUGE_CX = 110;
+const GAUGE_R = 118;
+const GAUGE_Y1 = 135;  // 上メーター中心
+const GAUGE_Y2 = 355;  // 下メーター中心
 
 // --- SVG helpers ---
 function mgPolar(cx, cy, r, deg) {
@@ -37,40 +38,15 @@ function mgSvgEl(parent, tag, attrs) {
   return e;
 }
 
-// --- ZJ-VE Performance Curve ---
-const VE_TABLE_RPM =  [1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500];
-const VE_TABLE_TQ_NM = [90,  105,  115,  120,  123,  124,  122,  118,  113,  108,  103,   95];
-
-function interpolateTorque(rpm) {
-  if (rpm <= VE_TABLE_RPM[0]) return VE_TABLE_TQ_NM[0];
-  if (rpm >= VE_TABLE_RPM[VE_TABLE_RPM.length - 1]) return VE_TABLE_TQ_NM[VE_TABLE_RPM.length - 1];
-  for (let i = 0; i < VE_TABLE_RPM.length - 1; i++) {
-    if (rpm <= VE_TABLE_RPM[i + 1]) {
-      const t = (rpm - VE_TABLE_RPM[i]) / (VE_TABLE_RPM[i + 1] - VE_TABLE_RPM[i]);
-      return VE_TABLE_TQ_NM[i] + t * (VE_TABLE_TQ_NM[i + 1] - VE_TABLE_TQ_NM[i]);
-    }
-  }
-  return VE_TABLE_TQ_NM[VE_TABLE_TQ_NM.length - 1];
-}
-
-function estimatePSTorque(mapKpa, rpm, atmKpa) {
-  if (rpm < 100) return { ps: 0, tq: 0 };
-  const loadFrac = mapKpa / (atmKpa || 101.3);
-  const wotTorque = interpolateTorque(rpm);
-  const torque = wotTorque * loadFrac;
-  const ps = torque * rpm / 7162;
-  return { ps: Math.max(0, ps), tq: Math.max(0, torque) };
-}
-
 // --- Mini Gauge Builder ---
 function buildMiniGauge(svg, cfg) {
   const { cx, cy, r, outerMin, outerMax, innerMin, innerMax, outerUnit, innerUnit,
           outerColor, innerColor, outerFmt, innerFmt, outerInvert, innerInvert } = cfg;
   const oMin = outerMin || 0;
   const iMin = innerMin || 0;
-  const ARC_W = 8;
+  const ARC_W = 10;
   const outerR = r;
-  const innerR = r - ARC_W - 4;
+  const innerR = r - ARC_W - 5;
 
   mgSvgEl(svg, 'path', { d: mgArcPath(cx, cy, outerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
   mgSvgEl(svg, 'path', { d: mgArcPath(cx, cy, innerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#0e0e14', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
@@ -78,14 +54,14 @@ function buildMiniGauge(svg, cfg) {
   const outerArc = mgSvgEl(svg, 'path', { d: '', fill: 'none', stroke: outerColor || '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
   const innerArc = mgSvgEl(svg, 'path', { d: '', fill: 'none', stroke: innerColor || '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
 
-  const outerValEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle' });
+  const outerValEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 28, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   outerValEl.textContent = '--';
-  const outerUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle' });
+  const outerUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
   outerUnitEl.textContent = outerUnit || '';
 
-  const innerValEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle' });
+  const innerValEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 44, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   innerValEl.textContent = '--';
-  const innerUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle' });
+  const innerUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 68, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
   innerUnitEl.textContent = innerUnit || '';
 
   let colorMode = 'default';
@@ -142,117 +118,20 @@ function buildMiniGauge(svg, cfg) {
   };
 }
 
-// --- A/F Gauge (center-zero style) ---
-function buildAFGauge(svg, cfg) {
-  const { cx, cy, r } = cfg;
-  const ARC_W = 8;
-  const outerR = r;
-  const innerR = r - ARC_W - 4;
-
-  mgSvgEl(svg, 'path', { d: mgArcPath(cx, cy, outerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
-  mgSvgEl(svg, 'path', { d: mgArcPath(cx, cy, innerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#0e0e14', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
-
-  const mapArc = mgSvgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
-  const afArc = mgSvgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
-
-  const mapValEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 22, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle' });
-  mapValEl.textContent = '--';
-  const mapUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy - 4, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle' });
-  mapUnitEl.textContent = 'kPa';
-
-  const afValEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 36, class: 'g-num', fill: '#333', 'font-size': 22, 'text-anchor': 'middle' });
-  afValEl.textContent = '--';
-  const afUnitEl = mgSvgEl(svg, 'text', { x: cx, y: cy + 56, class: 'g-unit', fill: '#fff', 'font-size': 14, 'text-anchor': 'middle' });
-  afUnitEl.textContent = 'A/F';
-
-  let mapCur = 0, mapTgt = 0, mapRaf = 0;
-  function lerpMap() {
-    const delta = mapTgt - mapCur;
-    mapCur = Math.abs(delta) > MG_LERP_TH ? mapCur + delta * MG_LERP : mapTgt;
-    const pct = Math.max(0, Math.min(100, mapCur / 101 * 100));
-    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
-    mapArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, outerR, MG_ARC_START, angle) : '');
-    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
-    const active = mapCur > 5;
-    const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
-    mapArc.setAttribute('stroke', col);
-    mapArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
-    mapValEl.setAttribute('fill', active ? col : '#333');
-    mapValEl.textContent = active ? Math.round(mapCur) : '--';
-    mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpMap) : 0;
-  }
-
-  let afCur = 14.7, afTgt = 14.7, afRaf = 0;
-  const AF_MIN = 10, AF_MAX = 20;
-  function lerpAF() {
-    const delta = afTgt - afCur;
-    afCur = Math.abs(delta) > 0.01 ? afCur + delta * 0.5 : afTgt;
-    const pct = Math.max(0, Math.min(100, (afCur - AF_MIN) / (AF_MAX - AF_MIN) * 100));
-    const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
-    const stoichPct = (14.7 - AF_MIN) / (AF_MAX - AF_MIN) * 100;
-    const stoichAng = MG_ARC_START + (stoichPct / 100) * MG_ARC_SWEEP;
-    if (Math.abs(angle - stoichAng) > 1) {
-      const s = Math.min(angle, stoichAng);
-      const e = Math.max(angle, stoichAng);
-      afArc.setAttribute('d', mgArcPath(cx, cy, innerR, s, e));
-    } else {
-      afArc.setAttribute('d', '');
-    }
-    const isRich = afCur < 14.5;
-    const isLean = afCur > 14.9;
-    const col = isRich ? '#ff6e40' : isLean ? '#29b6f6' : '#4caf50';
-    afArc.setAttribute('stroke', col);
-    afArc.style.filter = `drop-shadow(0 0 3px ${col})`;
-    afValEl.setAttribute('fill', col);
-    afValEl.textContent = afCur.toFixed(1);
-    afRaf = Math.abs(afCur - afTgt) > 0.005 ? requestAnimationFrame(lerpAF) : 0;
-  }
-
-  return {
-    updateMAP(v) { mapTgt = v; if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap); },
-    updateAF(v) { afTgt = v; if (!afRaf) afRaf = requestAnimationFrame(lerpAF); },
-  };
-}
-
-// --- Warning Lamps ---
-const LAMP_COLORS = { yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
-function setLampColor(el, alert) {
-  const col = LAMP_COLORS[alert];
-  el.setAttribute('fill', col || '#333');
-  el.style.filter = col ? `drop-shadow(0 0 6px ${col})` : '';
-}
-
-// All lamps in display order
-const LAMP_DEFS = [
-  { lamp: 'LINK',    system: true },
-  { lamp: 'NETWORK', system: true },
-  { lamp: 'CHECK',   system: true },
-  { lamp: '24M' },
-  { lamp: '12M' },
-  { lamp: 'OIL' },
-  { lamp: 'AC.F' },
-  { lamp: 'TIRE' },
-  { lamp: 'WIPER' },
-  { lamp: 'FILTER' },
-  { lamp: 'BRK.F' },
-  { lamp: 'LLC' },
-  { lamp: 'ATF' },
-  { lamp: 'BATT' },
-  { lamp: 'PLUG' },
-  { lamp: 'COIL' },
-];
+// --- OIL lamp colors ---
+const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
 
 // --- Module state ---
-let gGear, gMap, gPower;
-let wlamps = {};
+let gGear, gMapMaf;
+let oilLampEl;
 
-// createIndicators: 右パネルに3連メーター + 警告灯を構築
+// createIndicators: 右パネルに2連メーターを構築
 export function createIndicators(panelEl) {
   const svg = document.getElementById('rg');
 
-  // Gauge 1: Gear Ratio + TCC Lock %
+  // Gauge 1 (上): Gear Ratio + TCC Lock %
   gGear = buildMiniGauge(svg, {
-    cx: GAUGE_CX, cy: GAUGE_Y_START, r: GAUGE_R,
+    cx: GAUGE_CX, cy: GAUGE_Y1, r: GAUGE_R,
     outerMin: 0.7, outerMax: 3.0, outerInvert: true,
     innerMin: 0, innerMax: 100,
     outerUnit: ':1', innerUnit: 'LOCK %',
@@ -260,42 +139,30 @@ export function createIndicators(panelEl) {
     innerFmt: v => v.toFixed(1),
   });
 
-  // Gauge 2: MAP + A/F
-  gMap = buildAFGauge(svg, {
-    cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING, r: GAUGE_R,
-  });
-
-  // Gauge 3: PS + Torque
-  gPower = buildMiniGauge(svg, {
-    cx: GAUGE_CX, cy: GAUGE_Y_START + GAUGE_SPACING * 2, r: GAUGE_R,
-    outerMax: 91, innerMax: 12.6,
-    outerUnit: 'PS', innerUnit: 'kgf\u00B7m',
+  // Gauge 2 (下): MAP + MAF
+  gMapMaf = buildMiniGauge(svg, {
+    cx: GAUGE_CX, cy: GAUGE_Y2, r: GAUGE_R,
+    outerMin: 0, outerMax: 101,
+    innerMin: 0, innerMax: 70,
+    outerUnit: 'kPa', innerUnit: 'g/s',
     outerFmt: v => Math.round(v),
     innerFmt: v => v.toFixed(1),
   });
 
-  // Warning lamps (left column between gauges and main gauge)
-  const WLAMP_GAP_RIGHT = GAUGE_CX - GAUGE_R - 12;
-  const WLAMP_X = WLAMP_GAP_RIGHT / 2 - 12;
-  const WLAMP_LINE_H = 20;
-  const wlampTotalH = LAMP_DEFS.length * WLAMP_LINE_H;
-  const wlampStartY = (480 - wlampTotalH) / 2 + 54;
-
-  LAMP_DEFS.forEach((def, i) => {
-    const el = mgSvgEl(svg, 'text', {
-      x: WLAMP_X, y: wlampStartY + i * WLAMP_LINE_H,
-      'font-family': "'Share Tech Mono', monospace",
-      'font-size': 14, 'font-weight': 700,
-      fill: '#333', 'text-anchor': 'middle',
-    });
-    el.textContent = def.lamp;
-    wlamps[def.lamp] = el;
+  // OIL CHANGE ランプ（下メーター下）
+  const oilY = GAUGE_Y2 + GAUGE_R - 6;
+  oilLampEl = mgSvgEl(svg, 'text', {
+    x: GAUGE_CX, y: oilY,
+    'font-family': "'Share Tech Mono', monospace",
+    'font-size': 16, 'font-weight': 700,
+    fill: '#69f0ae', 'text-anchor': 'middle',
   });
+  oilLampEl.textContent = 'OIL CHANGE';
 
-  return { toast: document.getElementById('toast') };
+  return {};
 }
 
-// updateIndicators: APIデータで3連メーター + 警告灯を更新
+// updateIndicators: APIデータで2連メーターを更新
 export function updateIndicators(dom, d, conf) {
   const range = d.at_range_str || '?';
   const hold = d.hold || false;
@@ -303,7 +170,7 @@ export function updateIndicators(dom, d, conf) {
   const gearRatio = d.gear_ratio || 0;
   const lockPct = d.tcc_lock_pct || 0;
   const mapKpa = d.intake_map || 0;
-  const rpm = d.rpm || 0;
+  const mafGs = d.maf_airflow || 0;
 
   // Gauge 1: Gear Ratio + TCC Lock %
   if (range === 'P' || range === 'N') {
@@ -324,58 +191,13 @@ export function updateIndicators(dom, d, conf) {
     gGear.updateInner(lockPct);
   }
 
-  // Gauge 2: MAP + A/F
-  gMap.updateMAP(mapKpa);
-  // A/F estimation from MAP (until Go side provides real A/F)
-  let af = 14.7;
-  if (mapKpa > 5 && rpm > 100) {
-    if (mapKpa < 25) af = 16 + (25 - mapKpa) / 15 * 2;      // decel/coast = lean
-    else if (mapKpa > 80) af = 12.0 + (101 - mapKpa) / 21;   // WOT = rich
-    else af = 14.5 + (mapKpa - 25) / 55 * 0.4;               // part throttle ≈ stoich
-  }
-  gMap.updateAF(af);
+  // Gauge 2: MAP + MAF
+  gMapMaf.updateOuter(mapKpa);
+  gMapMaf.updateInner(mafGs);
 
-  // Gauge 3: PS + Torque
-  const atmKpa = d.barometric_pressure || 101.3;
-  const { ps, tq } = estimatePSTorque(mapKpa, rpm, atmKpa);
-  gPower.updateOuter(ps);
-  gPower.updateInner(tq / 9.807); // Nm → kgf·m
-
-  // Warning lamps
-  const wifiOk = d.wifi_connected !== false;
-  const canOk = d.can_connected !== false && d.obd_connected !== false;
-  setLampColor(wlamps['LINK'], canOk ? '' : 'red');
-  setLampColor(wlamps['NETWORK'], wifiOk ? '' : 'red');
-
-  // CHECK lamp: MIL or fuel trim ±20%
-  let checkAlert = '';
-  if (d.mil_on) checkAlert = 'red';
-  else if (d.short_fuel_trim != null && Math.abs(d.short_fuel_trim) > 20) checkAlert = 'orange';
-  setLampColor(wlamps['CHECK'], checkAlert);
-
-  // Maintenance lamps from alerts
-  // Reset all maintenance lamps first
-  for (const def of LAMP_DEFS) {
-    if (def.system) continue;
-    setLampColor(wlamps[def.lamp], '');
-  }
-  // Apply alerts from API
-  if (d.alerts) {
-    for (const a of d.alerts) {
-      const r = a.reminder;
-      const lamp = r.lamp;
-      if (lamp && wlamps[lamp]) {
-        const severity = r.severity || 'soft';
-        const pct = a.progress || 0;
-        const overdue = pct >= 1.0;
-        let color = '';
-        if (severity === 'hard') {
-          color = overdue ? 'red' : 'orange';
-        } else {
-          color = overdue ? 'orange' : 'yellow';
-        }
-        setLampColor(wlamps[lamp], color);
-      }
-    }
-  }
+  // OIL lamp
+  const oilAlert = d.oil_alert || 'green';
+  const oilCol = OIL_COLORS[oilAlert] || OIL_COLORS.green;
+  oilLampEl.setAttribute('fill', oilCol);
+  oilLampEl.style.filter = oilAlert !== 'green' ? `drop-shadow(0 0 6px ${oilCol})` : '';
 }

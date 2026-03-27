@@ -37,19 +37,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	)
 
 	// OBD-2クエリ対象PID（ラウンドロビンで1 tickに1 PIDずつ送信）
+	// CAN直結モードでは速度・RPM・負荷・水温はCAN受信、OBDはMAF+MAPのみ
 	obdPIDs := []byte{
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDMAFAirFlow,       // 0x10
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDIntakeMAP,        // 0x0B
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDO2SensorB1S1,     // 0x14
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDShortFuelTrim,    // 0x06
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDTimingAdvance,    // 0x0E
-		obd.PIDThrottlePosition, // 0x11
-		obd.PIDIntakeAirTemp,    // 0x0F
+		obd.PIDMAFAirFlow, // 0x10
+		obd.PIDIntakeMAP,  // 0x0B
 	}
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
@@ -79,7 +70,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		rpm           float64
 		speedKmh      float64
 		engineLoad    float64
-		throttlePos   float64
+		wheelSpeedKmh float64
 		coolantTemp   float64
 		intakeMAP     float64
 		baroKPa       float64
@@ -155,15 +146,12 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 					_, voltage, baroKPa = can.DecodeElectric(frame.Data)
 					lastFrameTime = time.Now()
 				case can.IDWheels:
+					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
 					lastFrameTime = time.Now()
 				case can.IDOBDResponse:
 					// OBD-2 レスポンス処理
 					if pid, data, ok := can.ParseOBDResponse(frame); ok {
 						switch pid {
-						case obd.PIDThrottlePosition:
-							if len(data) >= 1 {
-								throttlePos = float64(data[0]) * 100.0 / 255.0
-							}
 						case obd.PIDCoolantTemp:
 							if len(data) >= 1 {
 								coolantTemp = float64(data[0]) - 40.0
@@ -285,13 +273,40 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				continue
 			}
 
+			// 4輪平均車速を使用（0x4B0 から取得、CAN直読み）
+			// 0x201 の speedKmh より正確（従動輪含む4輪平均）
+			currentSpeed := wheelSpeedKmh
+			if currentSpeed < 0.1 {
+				currentSpeed = speedKmh // フォールバック
+			}
+
+			// ロック率計算: RPM÷車速 から TC スリップを算出
+			// ロック率 = 理論RPM / 実RPM × 100 (100% = 完全ロック)
+			// 理論RPM = 車速(km/h) / 3.6 / タイヤ周長(m) × 60 × 最終減速比 × ギア比
+			const tireCircM = 1.832  // 175/65R14 タイヤ周長
+			const finalRatio = 4.147 // 最終減速比
+			var tccLockPct float64
+			if currentSpeed > 5 && rpm > 300 && gear >= 1 && gear <= 4 {
+				gearRatios := [5]float64{0, 2.816, 1.498, 1.000, 0.726}
+				theoreticalRPM := currentSpeed / 3.6 / tireCircM * 60 * finalRatio * gearRatios[gear]
+				if theoreticalRPM > 0 {
+					tccLockPct = theoreticalRPM / rpm * 100
+					if tccLockPct > 100 {
+						tccLockPct = 100
+					}
+					if tccLockPct < 0 {
+						tccLockPct = 0
+					}
+				}
+			}
+
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
 			data := &obd.OBDData{
 				RPM:           rpm,
-				SpeedKmh:      speedKmh,
+				SpeedKmh:      currentSpeed,
 				EngineLoad:    engineLoad,
-				ThrottlePos:   throttlePos,
+				ThrottlePos:   engineLoad, // LOADをスロットル表示に使用（CAN 0x201 B6）
 				CoolantTemp:   coolantTemp,
 				IntakeMAP:     intakeMAP,
 				MAFAirFlow:    mafAirFlow,
@@ -311,10 +326,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				TCLocked:      tcLocked,
 				Shifting:      shifting,
 				HasMAF:        hasMAF,
+				TCCLockPct:    tccLockPct,
+				BaroKPa:       baroKPa,
 			}
 			currentHasMAP := hasMAP
-			_ = baroKPa      // 将来使用（燃費補正等）
-			_ = longFuelTrim // 将来使用（燃費補正等）
 			mu.Unlock()
 
 			select {
@@ -322,7 +337,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				Data:      data,
 				IsFull:    isFull,
 				Connected: true,
-				HasMAF:    false,
+				HasMAF:    hasMAF,
 				HasMAP:    currentHasMAP,
 				ReadAt:    time.Now(),
 			}:

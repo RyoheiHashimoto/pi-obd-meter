@@ -113,17 +113,17 @@ function handleMaintenance(data) {
   const tripCorrectionKm = getSettingValue('trip_correction_km');
 
   // trip_correction_kmは読んだら即クリア（1回だけ実行すればよい）
-  if (tripCorrectionKm) {
+  // 注意: 値が 0 の場合もあるので null チェック（0 は falsy）
+  if (tripCorrectionKm != null) {
     clearSetting('trip_correction_km');
   }
 
   return jsonResponse({
     status: 'ok',
     type: 'maintenance',
-    count: statuses.length,
     pending_resets: pendingIds,
-    odometer_correction: odoCorrection ? parseFloat(odoCorrection) : null,
-    trip_correction_km: tripCorrectionKm ? parseFloat(tripCorrectionKm) : null,
+    odometer_correction: odoCorrection != null ? parseFloat(odoCorrection) : null,
+    trip_correction_km: tripCorrectionKm != null ? parseFloat(tripCorrectionKm) : null,
   });
 }
 

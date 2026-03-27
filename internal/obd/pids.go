@@ -52,9 +52,10 @@ type OBDData struct {
 	ATRange       int     // レンジ (1=P,2=R,3=N,4=D,5=S,6=L) — CAN 0x231
 	Hold          bool    // HOLD — CAN 0x231 B1 bit7
 	TCLocked      bool    // TC ロックアップ — CAN 0x231 B1 bit4
-	Shifting      bool    // シフト中 — CAN 0x231 B1 (要確認)
-	Kickdown      bool    // キックダウン — CAN 0x231 B1 bit3
+	Shifting      bool    // シフト中 — CAN 0x231 B1 bit3
 	HasMAF        bool    // MAFセンサー対応か
+	TCCLockPct    float64 // TCロック率 (0-100%) — RPM÷車速から算出
+	BaroKPa       float64 // 大気圧 (kPa) — CAN 0x430
 }
 
 // Reader はOBD-2データを読み取る

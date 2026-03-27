@@ -12,27 +12,15 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
-// maintenanceStatusItem はGASに送信するメンテナンス項目
-type maintenanceStatusItem struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Type        string  `json:"type"`
-	Progress    float64 `json:"progress"`
-	NeedsAlert  bool    `json:"needs_alert"`
-	IsOverdue   bool    `json:"is_overdue"`
-	RemainingKm float64 `json:"remaining_km,omitempty"`
-	CurrentKm   float64 `json:"current_km,omitempty"`
-	DaysLeft    int     `json:"days_left,omitempty"`
-	DaysElapsed int     `json:"days_elapsed,omitempty"`
-}
-
-// maintenancePayload はGASに送信するメンテナンスペイロード
-type maintenancePayload struct {
-	Statuses        []maintenanceStatusItem `json:"statuses"`
-	SentAt          time.Time               `json:"sent_at"`
-	TotalKm         float64                 `json:"total_km"`
-	TripKm          float64                 `json:"trip_km"`
-	OdometerApplied bool                    `json:"odometer_applied,omitempty"`
+// oilStatusPayload はGASに送信するオイル状態
+type oilStatusPayload struct {
+	OilCurrentKm    float64   `json:"oil_current_km"`
+	OilRemainingKm  float64   `json:"oil_remaining_km"`
+	OilAlert        string    `json:"oil_alert"`
+	TotalKm         float64   `json:"total_km"`
+	TripKm          float64   `json:"trip_km"`
+	OdometerApplied bool      `json:"odometer_applied,omitempty"`
+	SentAt          time.Time `json:"sent_at"`
 }
 
 // gasMaintenanceResponse はGASからのメンテナンスレスポンス
@@ -40,7 +28,7 @@ type gasMaintenanceResponse struct {
 	PendingResets      []string `json:"pending_resets"`
 	OdometerCorrection *float64 `json:"odometer_correction"`
 	TripCorrectionKm   *float64 `json:"trip_correction_km"`
-	TripReset          bool     `json:"trip_reset"` // 後方互換（将来削除）
+	TripReset          bool     `json:"trip_reset"`
 }
 
 // App はアプリケーション全体の状態を管理する
@@ -66,16 +54,22 @@ type App struct {
 
 // newApp はアプリケーション状態を初期化する
 func newApp(cfg Config) *App {
+	oilCfg := maintenance.OilConfig{
+		IntervalKm: cfg.OilChange.IntervalKm,
+		WarningKm:  cfg.OilChange.WarningKm,
+		DangerKm:   cfg.OilChange.DangerKm,
+	}
+	if oilCfg.IntervalKm <= 0 {
+		oilCfg = maintenance.DefaultOilConfig()
+	}
+
 	app := &App{
 		cfg:       cfg,
 		client:    sender.NewClient(cfg.WebhookURL),
-		maintMgr:  maintenance.NewManager(cfg.MaintenancePath),
+		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{}),
 		startedAt: time.Now(),
 	}
-
-	app.maintMgr.InitDefaults(cfg.MaintenanceReminders)
-	slog.Info("メンテナンスリマインダー初期化", "count", len(app.maintMgr.GetAll()))
 
 	// 累計走行距離の初期化
 	app.totalKmAccum = app.maintMgr.TotalKm()
@@ -124,53 +118,31 @@ func (app *App) getRealtimeData() RealtimeData {
 }
 
 // sendMaintenanceStatus はメンテナンス状態をGASに送信し、レスポンスを処理する。
-// ODO補正時は再送信するが、再帰ではなくループで処理する。
 func (app *App) sendMaintenanceStatus(ctx context.Context) {
 	const maxRetries = 3
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		statuses := app.maintMgr.CheckAll()
-		if len(statuses) == 0 {
-			return
-		}
-
-		items := make([]maintenanceStatusItem, 0, len(statuses))
-		for _, s := range statuses {
-			item := maintenanceStatusItem{
-				ID:         s.Reminder.ID,
-				Name:       s.Reminder.Name,
-				Type:       string(s.Reminder.Type),
-				Progress:   s.Progress,
-				NeedsAlert: s.NeedsAlert,
-				IsOverdue:  s.IsOverdue,
-			}
-			if s.Reminder.Type == "distance" {
-				item.RemainingKm = s.RemainingKm
-				item.CurrentKm = s.CurrentKm
-			} else {
-				item.DaysLeft = s.DaysLeft
-				item.DaysElapsed = s.DaysElapsed
-			}
-			items = append(items, item)
-		}
+		oil := app.maintMgr.OilStatus()
 
 		app.totalKmMu.Lock()
 		odoApplied := app.odoApplied
 		app.totalKmMu.Unlock()
 
-		payload := maintenancePayload{
-			Statuses:        items,
-			SentAt:          time.Now(),
+		payload := oilStatusPayload{
+			OilCurrentKm:    oil.CurrentKm,
+			OilRemainingKm:  oil.RemainingKm,
+			OilAlert:        string(oil.Alert),
 			TotalKm:         app.maintMgr.TotalKm(),
 			TripKm:          app.tracker.DistanceKm(),
 			OdometerApplied: odoApplied,
+			SentAt:          time.Now(),
 		}
 
 		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
 		if err != nil {
 			return
 		}
-		slog.Info("メンテナンス状態送信完了", "count", len(items))
+		slog.Info("メンテナンス状態送信完了")
 
 		if len(respBody) == 0 {
 			return
@@ -182,10 +154,11 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			return
 		}
 
-		// pending_resets 処理
+		// pending_resets 処理（OILリセット）
 		for _, id := range gasResp.PendingResets {
-			if app.maintMgr.ResetReminder(id) {
-				slog.Info("メンテナンスリセット", "id", id)
+			if id == "oil_change" {
+				app.maintMgr.ResetOil()
+				slog.Info("オイル交換リセット")
 			}
 		}
 
@@ -198,29 +171,26 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			app.totalKmMu.Unlock()
 			app.maintMgr.UpdateTotalKm(newOdo)
 			slog.Info("ODO補正適用", "odometer_km", newOdo)
-			// 補正後に再送信（ループで次のイテレーションへ）
 			continue
 		}
 
 		app.totalKmMu.Lock()
 		if app.odoApplied {
-			// GASが補正をクリア済み → フラグをリセット
 			app.odoApplied = false
 		}
 		app.totalKmMu.Unlock()
 
-		// トリップ補正処理（新方式: 距離を直接指定）
+		// トリップ補正処理
 		if gasResp.TripCorrectionKm != nil {
 			km := *gasResp.TripCorrectionKm
 			app.tracker.SetDistance(km)
 			slog.Info("トリップ補正", "km", km)
 		} else if gasResp.TripReset {
-			// 後方互換: 旧GASからのリセット指示
 			app.tracker.ManualReset()
 			slog.Info("トリップリセット", "reason", "給油記録")
 		}
 
-		return // 正常完了
+		return
 	}
 }
 
@@ -264,11 +234,8 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 		tripKm := restored.TotalKm - restored.LastRefuelKm
 		localTrip := app.tracker.DistanceKm()
 		if localTrip == 0 {
-			// ローカルが0 = 給油リセット済み。GASからの復元をスキップ。
-			// 次回メンテナンス送信で last_refuel_km が同期される。
 			slog.Info("ローカルトリップ0、GAS復元スキップ", "gas_trip_km", tripKm)
 		} else if tripKm > localTrip {
-			// GAS側のほうが大きい場合のみ補正（ローカルが進んでいる場合は上書きしない）
 			app.tracker.SetDistance(tripKm)
 			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
 		}
