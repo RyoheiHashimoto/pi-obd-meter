@@ -111,8 +111,8 @@ web/
     meter.css               CSS Custom Properties でテーマ管理
     js/
       main.js               エントリポイント + APIポーリング + Toast + キオスク終了
-      gauge.js              速度ゲージ + スロットルアーク + MAPアーク + FuelRateアーク + 60fps LERP補間
-      indicators.js         右パネルインジケーター (RPM/ECO/TRIP/TEMP/MAINT/WiFi/OBD)
+      gauge.js              速度ゲージ(針+アーク) + RPMアーク + スロットルアーク + ギア/レンジ表示 + 下部インジケーター(TEMP/TRIP/ECO) + 60fps LERP補間
+      indicators.js         右パネルインジケーター (GEAR/ECO/TRIP/TEMP/MAP/MAF/O2/TRIM)
     fonts/
       Orbitron-*.ttf        速度・数値表示フォント
       ShareTechMono-*.woff2 リードアウト表示フォント
@@ -195,8 +195,10 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 ### メーターUI
 - 800×480 全画面、速度の270° SVGアークゲージ
 - 内側にスロットルアーク（HSL連続グラデーション: 青→赤）
-- 外側にMAPアーク + FuelRateアーク（km/h下にリードアウト表示）
-- 右パネルにインジケーター7項目（RPM/ECO/TRIP/TEMP/MAINT/WiFi/OBD）
+- 外側にRPMアーク（レッドゾーン背景付き）
+- ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
+- 下部にTEMP(左)・TRIP(中)・ECO(右) アイコン付きインジケーター
+- 右パネルにインジケーター8項目（GEAR/ECO/TRIP/TEMP/MAP/MAF/O2/TRIM）
 - CSS/JS分離済み（meter.html + meter.css + js/main.js + js/gauge.js + js/indicators.js）
 - CSS Custom Properties で色・レイアウトを一元管理
 - requestAnimationFrame で60fps LERP補間、OBDデータは200msポーリング

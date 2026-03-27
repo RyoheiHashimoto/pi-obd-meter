@@ -26,6 +26,10 @@ type Config struct {
 	ThrottleMaxPct       float64                  `json:"throttle_max_pct"`
 	FuelTankL            float64                  `json:"fuel_tank_l"`
 	FuelRateCorrection   float64                  `json:"fuel_rate_correction"`
+	MaxPS                float64                  `json:"max_ps"`
+	MaxTorqueKgfm        float64                  `json:"max_torque_kgfm"`
+	MaxTorqueRPM         int                      `json:"max_torque_rpm"`
+	MaxPSRPM             int                      `json:"max_ps_rpm"`
 	EcoGreenKmpl         float64                  `json:"eco_green_kmpl"`
 	EcoOrangeKmpl        float64                  `json:"eco_orange_kmpl"`
 	TripWarnKm           float64                  `json:"trip_warn_km"`
@@ -85,7 +89,11 @@ func loadConfig(path string) Config {
 		EngineDisplacementL: 1.3,
 		ThrottleIdlePct:     11.5,
 		ThrottleMaxPct:      78,
-		FuelTankL:           40,
+		MaxPS:               91,
+		MaxTorqueKgfm:       12.6,
+		MaxTorqueRPM:        3500,
+		MaxPSRPM:            6000,
+		FuelTankL:           46,
 		FuelRateCorrection:  1.3,
 		Brightness:          display.DefaultConfig(),
 	}
@@ -115,7 +123,7 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.FuelTankL <= 0 {
 		slog.Warn("fuel_tank_l が不正、デフォルト使用", "value", cfg.FuelTankL)
-		cfg.FuelTankL = 40
+		cfg.FuelTankL = 46
 	}
 	if cfg.MaxSpeedKmh <= 0 || cfg.MaxSpeedKmh > 400 {
 		slog.Warn("max_speed_kmh が不正、デフォルト使用", "value", cfg.MaxSpeedKmh)
@@ -124,6 +132,22 @@ func validateConfig(cfg *Config) {
 	if cfg.LocalAPIPort <= 0 || cfg.LocalAPIPort > 65535 {
 		slog.Warn("local_api_port が不正、デフォルト使用", "value", cfg.LocalAPIPort)
 		cfg.LocalAPIPort = 9090
+	}
+	if cfg.MaxPS <= 0 {
+		slog.Warn("max_ps が不正、デフォルト使用", "value", cfg.MaxPS)
+		cfg.MaxPS = 91
+	}
+	if cfg.MaxTorqueKgfm <= 0 {
+		slog.Warn("max_torque_kgfm が不正、デフォルト使用", "value", cfg.MaxTorqueKgfm)
+		cfg.MaxTorqueKgfm = 12.6
+	}
+	if cfg.MaxTorqueRPM <= 0 {
+		slog.Warn("max_torque_rpm が不正、デフォルト使用", "value", cfg.MaxTorqueRPM)
+		cfg.MaxTorqueRPM = 3500
+	}
+	if cfg.MaxPSRPM <= 0 {
+		slog.Warn("max_ps_rpm が不正、デフォルト使用", "value", cfg.MaxPSRPM)
+		cfg.MaxPSRPM = 6000
 	}
 	if cfg.ThrottleIdlePct < 0 || cfg.ThrottleIdlePct > 100 {
 		slog.Warn("throttle_idle_pct が不正、デフォルト使用", "value", cfg.ThrottleIdlePct)

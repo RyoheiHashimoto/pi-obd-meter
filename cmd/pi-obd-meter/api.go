@@ -27,6 +27,10 @@ type configResponse struct {
 	EcoKmplOrange   float64 `json:"eco_kmpl_orange"`
 	TripWarnKm      float64 `json:"trip_warn_km"`
 	TripDangerKm    float64 `json:"trip_danger_km"`
+	MaxPS           float64 `json:"max_ps"`
+	MaxTorqueKgfm   float64 `json:"max_torque_kgfm"`
+	MaxTorqueRPM    int     `json:"max_torque_rpm"`
+	MaxPSRPM        int     `json:"max_ps_rpm"`
 }
 
 // healthResponse は /api/health のレスポンス
@@ -112,6 +116,10 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			EcoKmplOrange:   ecoKmplOrange,
 			TripWarnKm:      tripWarnKm,
 			TripDangerKm:    tripDangerKm,
+			MaxPS:           app.cfg.MaxPS,
+			MaxTorqueKgfm:   app.cfg.MaxTorqueKgfm,
+			MaxTorqueRPM:    app.cfg.MaxTorqueRPM,
+			MaxPSRPM:        app.cfg.MaxPSRPM,
 		})
 	})
 
