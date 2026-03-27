@@ -113,7 +113,6 @@ function buildMiniGauge(svg, cfg) {
     const active = outerCur > oMin + 0.01;
     const col = active ? resolveColor(pct, 100, 55) : '#333';
     outerArc.setAttribute('stroke', col);
-    outerArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
     outerValEl.setAttribute('fill', active ? col : '#333');
     outerValEl.textContent = active ? (outerFmt || (v => Math.round(v)))(outerCur) : '--';
     outerRaf = Math.abs(outerCur - outerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpOuter) : 0;
@@ -129,7 +128,6 @@ function buildMiniGauge(svg, cfg) {
     const active = innerCur > iMin + 0.01;
     const col = active ? resolveColor(pct, 85, 50) : '#222';
     innerArc.setAttribute('stroke', col);
-    innerArc.style.filter = active ? `drop-shadow(0 0 3px ${col})` : '';
     innerValEl.setAttribute('fill', active ? col : '#333');
     innerValEl.textContent = active ? (innerFmt || (v => Math.round(v)))(innerCur) : '--';
     innerRaf = Math.abs(innerCur - innerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpInner) : 0;
@@ -176,7 +174,6 @@ function buildAFGauge(svg, cfg) {
     const active = mapCur > 5;
     const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
     mapArc.setAttribute('stroke', col);
-    mapArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
     mapValEl.setAttribute('fill', active ? col : '#333');
     mapValEl.textContent = active ? Math.round(mapCur) : '--';
     mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpMap) : 0;
@@ -202,7 +199,6 @@ function buildAFGauge(svg, cfg) {
     const isLean = afCur > 14.9;
     const col = isRich ? '#ff6e40' : isLean ? '#29b6f6' : '#4caf50';
     afArc.setAttribute('stroke', col);
-    afArc.style.filter = `drop-shadow(0 0 3px ${col})`;
     afValEl.setAttribute('fill', col);
     afValEl.textContent = afCur.toFixed(1);
     afRaf = Math.abs(afCur - afTgt) > 0.005 ? requestAnimationFrame(lerpAF) : 0;
@@ -219,7 +215,6 @@ const LAMP_COLORS = { yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
 function setLampColor(el, alert) {
   const col = LAMP_COLORS[alert];
   el.setAttribute('fill', col || '#333');
-  el.style.filter = col ? `drop-shadow(0 0 6px ${col})` : '';
 }
 
 // All lamps in display order
