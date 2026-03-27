@@ -23,20 +23,20 @@ func Open(ifname string) (*Socket, error) {
 
 	iface, err := net.InterfaceByName(ifname)
 	if err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("インターフェース %s が見つかりません: %w", ifname, err)
 	}
 
 	addr := &unix.SockaddrCAN{Ifindex: iface.Index}
 	if err := unix.Bind(fd, addr); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("CANソケットバインド失敗: %w", err)
 	}
 
 	// 読み取りタイムアウト: 1秒（CAN無通信検出用）
 	tv := unix.Timeval{Sec: 1, Usec: 0}
 	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("受信タイムアウト設定失敗: %w", err)
 	}
 

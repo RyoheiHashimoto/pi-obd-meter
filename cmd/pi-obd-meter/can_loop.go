@@ -315,7 +315,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				HasMAF:        hasMAF,
 			}
 			currentHasMAP := hasMAP
-			_ = baroKPa     // 将来使用（燃費補正等）
+			_ = baroKPa      // 将来使用（燃費補正等）
 			_ = longFuelTrim // 将来使用（燃費補正等）
 			mu.Unlock()
 

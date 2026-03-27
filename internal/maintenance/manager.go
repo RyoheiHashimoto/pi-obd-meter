@@ -70,12 +70,12 @@ type Status struct {
 	Lamp        string     `json:"lamp"`
 	Alert       AlertLevel `json:"alert"`
 	CurrentKm   float64    `json:"current_km,omitempty"`   // 前回リセットからの走行距離
-	RemainingKm float64  `json:"remaining_km,omitempty"` // 残り距離
-	DaysElapsed int      `json:"days_elapsed,omitempty"` // 前回リセットからの経過日数
-	DaysLeft    int      `json:"days_left,omitempty"`    // 残り日数
-	Progress    float64  `json:"progress"`               // 進捗 0.0 - 1.0+
-	NeedsAlert  bool     `json:"needs_alert"`            // 通知が必要か
-	IsOverdue   bool     `json:"is_overdue"`             // 超過しているか
+	RemainingKm float64    `json:"remaining_km,omitempty"` // 残り距離
+	DaysElapsed int        `json:"days_elapsed,omitempty"` // 前回リセットからの経過日数
+	DaysLeft    int        `json:"days_left,omitempty"`    // 残り日数
+	Progress    float64    `json:"progress"`               // 進捗 0.0 - 1.0+
+	NeedsAlert  bool       `json:"needs_alert"`            // 通知が必要か
+	IsOverdue   bool       `json:"is_overdue"`             // 超過しているか
 }
 
 // Manager はメンテナンスリマインダーを管理する

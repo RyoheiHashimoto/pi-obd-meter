@@ -4,9 +4,9 @@ package can
 
 // Frame はCANフレームを表す
 type Frame struct {
-	ID   uint32   // CAN ID (11bit standard)
-	DLC  uint8    // データ長 (0-8)
-	Data [8]byte  // ペイロード
+	ID   uint32  // CAN ID (11bit standard)
+	DLC  uint8   // データ長 (0-8)
+	Data [8]byte // ペイロード
 }
 
 // DY デミオ CAN ID 定義
