@@ -204,6 +204,21 @@ function buildMiniGauge(svg, cfg) {
   });
   innerUnitEl.textContent = innerUnit || '';
 
+  // Color mode: 'default' = HSL blue→red, 'blue-green' = HSL blue→green, 'fixed:COLOR' = solid color
+  let colorMode = 'default';
+
+  function resolveColor(pct, sat, lum) {
+    if (colorMode.startsWith('fixed:')) return colorMode.slice(6);
+    if (colorMode === 'blue-green') {
+      // 210(blue) → 140(green)
+      const hue = 210 - (pct / 100) * 70;
+      return `hsl(${hue}, ${sat}%, ${lum}%)`;
+    }
+    // default: blue → red
+    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
+    return `hsl(${hue}, ${sat}%, ${lum}%)`;
+  }
+
   // Animators
   let outerCur = 0, outerTgt = 0, outerRaf = 0;
   let innerCur = 0, innerTgt = 0, innerRaf = 0;
@@ -215,9 +230,8 @@ function buildMiniGauge(svg, cfg) {
     if (outerInvert) pct = 100 - pct;
     const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
     outerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, outerR, MG_ARC_START, angle) : '');
-    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
     const active = outerCur > oMin + 0.01;
-    const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
+    const col = active ? resolveColor(pct, 100, 55) : '#333';
     outerArc.setAttribute('stroke', col);
     outerArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
     outerValEl.setAttribute('fill', active ? col : '#333');
@@ -233,9 +247,8 @@ function buildMiniGauge(svg, cfg) {
     if (innerInvert) pct = 100 - pct;
     const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
     innerArc.setAttribute('d', pct > 0.5 ? mgArcPath(cx, cy, innerR, MG_ARC_START, angle) : '');
-    const hue = HUE_MAX - (pct / 100) * HUE_MAX;
     const active = innerCur > iMin + 0.01;
-    const col = active ? `hsl(${hue}, 85%, 50%)` : '#222';
+    const col = active ? resolveColor(pct, 85, 50) : '#222';
     innerArc.setAttribute('stroke', col);
     innerArc.style.filter = active ? `drop-shadow(0 0 3px ${col})` : '';
     innerValEl.setAttribute('fill', active ? col : '#333');
@@ -247,6 +260,7 @@ function buildMiniGauge(svg, cfg) {
   return {
     updateOuter(v) { outerTgt = v; if (!outerRaf) outerRaf = requestAnimationFrame(lerpOuter); },
     updateInner(v) { innerTgt = v; if (!innerRaf) innerRaf = requestAnimationFrame(lerpInner); },
+    setColorMode(mode) { colorMode = mode; },
   };
 }
 
@@ -421,6 +435,7 @@ const wlamps = {};
 const maintLamps = [
   { lamp: 'LINK',    alert: '', system: true },
   { lamp: 'NETWORK', alert: '', system: true },
+  { lamp: 'CHECK',   alert: '', system: true },
   { lamp: '24M',     alert: '' },
   { lamp: '12M',     alert: '' },
   { lamp: 'OIL',     alert: '' },
@@ -492,6 +507,11 @@ function update() {
   const gearRatios = [0, 2.816, 1.498, 1.000, 0.726]; // N,1,2,3,4
   const mockGearRatio = gear > 0 ? gearRatios[gear] * (1 + Math.random() * 0.02) : 0;
   const mockLockPct = gear >= 3 && spd > 40 ? 97 + Math.random() * 3 : gear > 0 ? 50 + Math.random() * 30 : 0;
+  // Color mode based on range/hold
+  if (range === 'P' || range === 'N') gGear.setColorMode('default'); // won't matter, values are 0
+  else if (range === 'R') gGear.setColorMode('fixed:#ff9800');
+  else if (hold) gGear.setColorMode('fixed:#fdd835');
+  else gGear.setColorMode('blue-green');
   gGear.updateOuter(mockGearRatio);
   gGear.updateInner(mockLockPct);
 
@@ -516,6 +536,8 @@ function update() {
     let alert = m.alert;
     if (m.lamp === 'NETWORK') alert = wifiOk ? '' : 'red';
     if (m.lamp === 'LINK') alert = canOk ? '' : 'red';
+    // CHECK: mock — MIL OFF, TRIM normal
+    if (m.lamp === 'CHECK') alert = '';
     setLampColor(wlamps[m.lamp.toLowerCase()], alert);
   }
 }
