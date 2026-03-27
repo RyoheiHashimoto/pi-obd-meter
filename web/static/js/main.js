@@ -11,7 +11,7 @@ const DEFAULTS = {
   eco_gradient_max_kmpl: 15,
   trip_warn_km: 300, trip_danger_km: 500,
 };
-const POLL_INTERVAL_MS = 200;
+const POLL_INTERVAL_MS = 50;
 const FETCH_TIMEOUT_MS = 3000;
 
 let conf = DEFAULTS;
