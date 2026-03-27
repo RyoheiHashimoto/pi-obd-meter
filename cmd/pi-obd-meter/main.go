@@ -216,6 +216,7 @@ func main() {
 				O2Voltage:      data.O2Voltage,
 				RuntimeSec:     data.RuntimeSec,
 				Gear:           data.Gear,
+				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,
 				ATRangeStr:     can.ATRange(data.ATRange).String(),
 				Hold:           data.Hold,

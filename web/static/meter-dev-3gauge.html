@@ -236,7 +236,7 @@ function buildMiniGauge(svg, cfg) {
     outerArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
     outerValEl.setAttribute('fill', active ? col : '#333');
     outerValEl.textContent = active ? (outerFmt || (v => Math.round(v)))(outerCur) : '--';
-    outerUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    outerUnitEl.setAttribute('fill', '#fff');
     outerRaf = Math.abs(outerCur - outerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpOuter) : 0;
   }
 
@@ -253,7 +253,7 @@ function buildMiniGauge(svg, cfg) {
     innerArc.style.filter = active ? `drop-shadow(0 0 3px ${col})` : '';
     innerValEl.setAttribute('fill', active ? col : '#333');
     innerValEl.textContent = active ? (innerFmt || (v => Math.round(v)))(innerCur) : '--';
-    innerUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    innerUnitEl.setAttribute('fill', '#fff');
     innerRaf = Math.abs(innerCur - innerTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpInner) : 0;
   }
 
@@ -331,7 +331,7 @@ function buildAFGauge(svg, cfg) {
     mapArc.style.filter = active ? `drop-shadow(0 0 4px ${col})` : '';
     mapValEl.setAttribute('fill', active ? col : '#333');
     mapValEl.textContent = active ? Math.round(mapCur) : '--';
-    mapUnitEl.setAttribute('fill', active ? '#fff' : '#444');
+    mapUnitEl.setAttribute('fill', '#fff');
     mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpMap) : 0;
   }
 
