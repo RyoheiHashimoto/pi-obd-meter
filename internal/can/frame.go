@@ -52,7 +52,7 @@ func DecodeElectric(data [8]byte) (altLoadPct, voltageV, baroKPa float64) {
 //
 //	B0: ギア (0xF0=N/P, 0x01-0x04=1-4速, 0x10=遷移)
 //	B1: TCロックアップ (0x00=ロック, 0x01=アンロック)
-//	B2: ギア比 (×0.01)
+//	B2: ギア比 (×0.01、1バイトオーバーフロー: 1速/Rはギア比>2.55のため+256して解釈)
 func DecodeATCtrl(data [8]byte) (gear int, tcLocked bool, gearRatio float64) {
 	raw := data[0]
 	switch raw {
@@ -68,7 +68,12 @@ func DecodeATCtrl(data [8]byte) (gear int, tcLocked bool, gearRatio float64) {
 		gear = 0 // N/P or transition
 	}
 	tcLocked = data[1] == 0x00
-	gearRatio = float64(data[2]) / 100.0
+	b2 := int(data[2])
+	// 1速(gear=1)またはR(B0=0x10): ギア比>2.55で1バイトオーバーフロー
+	if gear == 1 || raw == 0x10 {
+		b2 += 256
+	}
+	gearRatio = float64(b2) / 100.0
 	return
 }
 

@@ -61,6 +61,7 @@ type RealtimeData struct {
 	O2Voltage      float64              `json:"o2_voltage"`
 	RuntimeSec     int                  `json:"runtime_sec"`
 	Gear           int                  `json:"gear"`
+	GearRatio      float64              `json:"gear_ratio"`
 	ATRange        int                  `json:"at_range"`
 	ATRangeStr     string               `json:"at_range_str"`
 	Hold           bool                 `json:"hold"`

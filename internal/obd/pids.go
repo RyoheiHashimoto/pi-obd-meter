@@ -48,6 +48,7 @@ type OBDData struct {
 	O2Voltage      float64 // O2センサー電圧 (V) — OBD PID 0x14
 	RuntimeSec     int     // エンジン稼働時間 (秒) — OBD PID 0x1F
 	Gear           int     // ギア (0=N/P, 1-4) — CAN 0x230
+	GearRatio      float64 // ギア比 — CAN 0x230 B2 (1バイトオーバーフロー対応)
 	ATRange        int     // レンジ (1=P,2=R,3=N,4=D,5=S,6=L) — CAN 0x231
 	Hold           bool    // HOLD — CAN 0x231 B1 bit7
 	TCLocked       bool    // TC ロックアップ — CAN 0x231 B1 bit4
