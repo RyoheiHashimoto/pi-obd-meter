@@ -178,7 +178,7 @@ func newTestApp(t *testing.T, serverURL string) *App {
 	return &App{
 		cfg:      Config{},
 		client:   sender.NewClient(serverURL),
-		maintMgr: maintenance.NewManager(filepath.Join(t.TempDir(), "maint.json")),
+		maintMgr: maintenance.NewManager(filepath.Join(t.TempDir(), "maint.json"), maintenance.DefaultOilConfig()),
 		tracker:  trip.NewTracker(trip.TrackerConfig{StatePath: filepath.Join(t.TempDir(), "trip.json")}),
 	}
 }
@@ -195,7 +195,6 @@ func TestSendMaintenanceStatus_Basic(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.totalKmAccum = 100.0
 
 	app.sendMaintenanceStatus(context.Background())
@@ -203,9 +202,8 @@ func TestSendMaintenanceStatus_Basic(t *testing.T) {
 	if receivedPayload == nil {
 		t.Fatal("expected payload to be sent")
 	}
-	statuses, ok := receivedPayload["statuses"].([]any)
-	if !ok || len(statuses) == 0 {
-		t.Error("expected non-empty statuses array")
+	if _, ok := receivedPayload["oil_current_km"]; !ok {
+		t.Error("expected oil_current_km in payload")
 	}
 }
 
@@ -217,16 +215,14 @@ func TestSendMaintenanceStatus_PendingResets(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.totalKmAccum = 5000.0
 
 	app.sendMaintenanceStatus(context.Background())
 
 	// oil_changeがリセットされたことを確認
-	for _, s := range app.maintMgr.CheckAll() {
-		if s.Reminder.ID == "oil_change" && s.CurrentKm > 100 {
-			t.Errorf("oil_change should have been reset, current_km=%.1f", s.CurrentKm)
-		}
+	oil := app.maintMgr.OilStatus()
+	if oil.CurrentKm > 100 {
+		t.Errorf("oil should have been reset, current_km=%.1f", oil.CurrentKm)
 	}
 }
 
@@ -244,7 +240,6 @@ func TestSendMaintenanceStatus_OdometerCorrection(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.totalKmAccum = 100.0
 
 	app.sendMaintenanceStatus(context.Background())
@@ -269,7 +264,6 @@ func TestSendMaintenanceStatus_TripReset(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.tracker.Update(60, 0) // トリップに走行データを追加
 	app.totalKmAccum = 100.0
 
@@ -289,7 +283,6 @@ func TestSendMaintenanceStatus_TripCorrection(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.tracker.Update(60, 0)
 	time.Sleep(20 * time.Millisecond)
 	app.tracker.Update(60, 0) // 走行データを蓄積
@@ -316,7 +309,6 @@ func TestSendMaintenanceStatus_TripCorrectionOverridesReset(t *testing.T) {
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.maintMgr.InitDefaults(nil)
 	app.tracker.Update(60, 0)
 	time.Sleep(20 * time.Millisecond)
 	app.tracker.Update(60, 0)
@@ -335,12 +327,10 @@ func TestSendMaintenanceStatus_TripCorrectionOverridesReset(t *testing.T) {
 }
 
 func TestSendMaintenanceStatus_Empty(t *testing.T) {
-	// リマインダー0件 → 送信しない
+	// OIL専用 → 常に送信される（パニックしなければOK）
 	app := newTestApp(t, "http://127.0.0.1:1")
-	// InitDefaultsを呼ばない = リマインダー0件
 
 	app.sendMaintenanceStatus(context.Background())
-	// パニックしなければOK
 }
 
 // --- corsMiddleware テスト ---
@@ -451,8 +441,8 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 	if cfg.ThrottleIdlePct != 11.5 {
 		t.Errorf("ThrottleIdlePct: got %.1f, want 11.5", cfg.ThrottleIdlePct)
 	}
-	if cfg.FuelTankL != 40 {
-		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	if cfg.FuelTankL != 46 {
+		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)
 	}
 	if cfg.FuelRateCorrection != 1.3 {
 		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
@@ -541,8 +531,8 @@ func TestValidateConfig_InvalidValues(t *testing.T) {
 	if cfg.FuelRateCorrection != 1.3 {
 		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
 	}
-	if cfg.FuelTankL != 40 {
-		t.Errorf("FuelTankL: got %.1f, want 40", cfg.FuelTankL)
+	if cfg.FuelTankL != 46 {
+		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)
 	}
 	if cfg.MaxSpeedKmh != 180 {
 		t.Errorf("MaxSpeedKmh: got %d, want 180", cfg.MaxSpeedKmh)
@@ -596,24 +586,26 @@ func TestValidateConfig_MaxSpeedTooHigh(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_WithMaintenanceReminders(t *testing.T) {
+func TestLoadConfig_WithOilChange(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.json")
-	content := `{
-		"maintenance_reminders": [
-			{"id": "custom_oil", "name": "Custom Oil", "type": "distance", "interval_km": 5000, "warning_pct": 0.9}
-		]
+	cfgContent := `{
+		"oil_change": {
+			"interval_km": 5000,
+			"warning_km": 4000,
+			"danger_km": 6000
+		}
 	}`
-	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte(cfgContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	cfg := loadConfig(cfgPath)
-	if len(cfg.MaintenanceReminders) != 1 {
-		t.Fatalf("MaintenanceReminders: got %d, want 1", len(cfg.MaintenanceReminders))
+	if cfg.OilChange.IntervalKm != 5000 {
+		t.Errorf("OilChange.IntervalKm: got %.0f, want 5000", cfg.OilChange.IntervalKm)
 	}
-	if cfg.MaintenanceReminders[0].ID != "custom_oil" {
-		t.Errorf("reminder ID: got %q, want custom_oil", cfg.MaintenanceReminders[0].ID)
+	if cfg.OilChange.WarningKm != 4000 {
+		t.Errorf("OilChange.WarningKm: got %.0f, want 4000", cfg.OilChange.WarningKm)
 	}
 }
 

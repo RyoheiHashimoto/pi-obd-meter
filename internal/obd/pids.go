@@ -11,6 +11,14 @@ const (
 	PIDIntakeMAP        byte = 0x0B // インマニ圧 (kPa)
 	PIDMAFAirFlow       byte = 0x10 // MAFエアフローレート (g/s)
 	PIDThrottlePosition byte = 0x11 // スロットル開度 (%)
+	PIDShortFuelTrim    byte = 0x06 // 短期燃料トリム (%)
+	PIDLongFuelTrim     byte = 0x07 // 長期燃料トリム (%)
+	PIDTimingAdvance    byte = 0x0E // 点火タイミング (° BTDC)
+	PIDIntakeAirTemp    byte = 0x0F // 吸気温度 (°C)
+	PIDO2SensorB1S1     byte = 0x14 // O2センサー B1S1
+	PIDRuntime          byte = 0x1F // エンジン稼働時間 (秒)
+	PIDFuelLevel        byte = 0x2F // 燃料レベル (%)
+	PIDAmbientTemp      byte = 0x46 // 外気温 (°C)
 )
 
 // Device はOBD-2アダプタの通信インタフェース。
@@ -23,14 +31,31 @@ type Device interface {
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
-	RPM         float64 // rpm
-	SpeedKmh    float64 // km/h
-	EngineLoad  float64 // 0-100%
-	CoolantTemp float64 // ℃
-	IntakeMAP   float64 // kPa (0=非対応)
-	MAFAirFlow  float64 // g/s (0=非対応)
-	ThrottlePos float64 // 0-100%
-	HasMAF      bool    // MAFセンサー対応か
+	RPM           float64 // rpm
+	SpeedKmh      float64 // km/h
+	EngineLoad    float64 // 0-100%
+	CoolantTemp   float64 // ℃
+	IntakeMAP     float64 // kPa (0=非対応)
+	MAFAirFlow    float64 // g/s (0=非対応)
+	ThrottlePos   float64 // 0-100%
+	Voltage       float64 // バッテリー電圧 (V) — CAN経由
+	FuelLevel     float64 // 燃料レベル (%) — OBD PID 0x2F
+	AmbientTemp   float64 // 外気温 (°C) — OBD PID 0x46
+	ShortFuelTrim float64 // 短期燃料トリム (%) — OBD PID 0x06
+	LongFuelTrim  float64 // 長期燃料トリム (%) — OBD PID 0x07
+	TimingAdvance float64 // 点火タイミング (° BTDC) — OBD PID 0x0E
+	IntakeAirTemp float64 // 吸気温度 (°C) — OBD PID 0x0F
+	O2Voltage     float64 // O2センサー電圧 (V) — OBD PID 0x14
+	RuntimeSec    int     // エンジン稼働時間 (秒) — OBD PID 0x1F
+	Gear          int     // ギア (0=N/P, 1-4) — CAN 0x230
+	GearRatio     float64 // ギア比 — CAN 0x230 B2 (1バイトオーバーフロー対応)
+	ATRange       int     // レンジ (1=P,2=R,3=N,4=D,5=S,6=L) — CAN 0x231
+	Hold          bool    // HOLD — CAN 0x231 B1 bit7
+	TCLocked      bool    // TC ロックアップ — CAN 0x231 B1 bit4
+	Shifting      bool    // シフト中 — CAN 0x231 B1 bit3
+	HasMAF        bool    // MAFセンサー対応か
+	TCCLockPct    float64 // TCロック率 (0-100%) — RPM÷車速から算出
+	BaroKPa       float64 // 大気圧 (kPa) — CAN 0x430
 }
 
 // Reader はOBD-2データを読み取る
@@ -159,6 +184,14 @@ func parsePID(data *OBDData, pid byte, raw []byte) {
 		if len(raw) >= 2 {
 			data.MAFAirFlow = float64(uint16(raw[0])<<8|uint16(raw[1])) / 100.0
 			data.HasMAF = true
+		}
+	case PIDFuelLevel:
+		if len(raw) >= 1 {
+			data.FuelLevel = float64(raw[0]) * 100.0 / 255.0
+		}
+	case PIDAmbientTemp:
+		if len(raw) >= 1 {
+			data.AmbientTemp = float64(raw[0]) - 40.0
 		}
 	}
 }

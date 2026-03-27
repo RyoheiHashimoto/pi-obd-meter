@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, height=480">
+<title>pi-obd-meter 2-gauge prototype</title>
+<link rel="preload" href="fonts/Orbitron-Black.ttf" as="font" type="font/truetype" crossorigin>
+<link rel="preload" href="fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="meter.css">
+<style>
+  .dashboard .panel {
+    padding: 0;
+    justify-content: flex-start;
+    position: relative;
+  }
+</style>
+</head>
+<body>
+<div class="dashboard">
+  <div class="gauge-area">
+    <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
+  </div>
+  <div class="panel" id="panel">
+    <svg id="rg" width="270" height="480" viewBox="-30 0 270 480" style="margin-left:-30px"></svg>
+  </div>
+</div>
+
+<!-- Dev controls -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#111;padding:6px 8px;z-index:999;font-family:monospace;color:#aaa;font-size:11px;display:flex;flex-wrap:wrap;gap:4px 12px;">
+  <label>Speed <input type="range" id="s-spd" min="0" max="180" value="0" style="width:80px"> <span id="v-spd">0</span></label>
+  <label>RPM <input type="range" id="s-rpm" min="0" max="8000" value="700" style="width:80px"> <span id="v-rpm">700</span></label>
+  <label>Thr <input type="range" id="s-thr" min="0" max="100" value="12" style="width:60px"> <span id="v-thr">12</span></label>
+  <label>MAP <input type="range" id="s-map" min="10" max="101" value="30" style="width:60px"> <span id="v-map">30</span></label>
+  <label>MAF <input type="range" id="s-maf" min="0" max="70" value="3" step="0.1" style="width:60px"> <span id="v-maf">3</span></label>
+  <label>Gear <select id="s-gear"><option value="0">N</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></label>
+  <label>Range <select id="s-range"><option value="D" selected>D</option><option value="S">S</option><option value="L">L</option><option value="P">P</option><option value="R">R</option><option value="N">N</option></select></label>
+  <label><input type="checkbox" id="s-hold"> HOLD</label>
+  <label><input type="checkbox" id="s-tc"> LOCK</label>
+  <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94" style="width:60px"> <span id="v-temp">94</span></label>
+  <label>ECO <input type="range" id="s-eco" min="-1" max="20" value="8" step="0.5" style="width:80px"> <span id="v-eco">8</span></label>
+  <label>OIL <select id="s-oil"><option value="green" selected>green</option><option value="yellow">yellow</option><option value="orange">orange</option><option value="red">red</option></select></label>
+</div>
+
+<script type="module">
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
+import { createIndicators, updateIndicators } from './js/indicators.js';
+
+const conf = {
+  max_speed_kmh: 180, throttle_idle_pct: 11.5, throttle_max_pct: 78,
+  eco_kmpl_green: 15.4, eco_kmpl_orange: 6.2,
+  trip_warn_km: 300, trip_danger_km: 500,
+};
+setThrottleIdleBaseline(conf.throttle_idle_pct);
+setThrottleMaxPct(conf.throttle_max_pct);
+
+const dom = createIndicators(document.getElementById('panel'));
+
+const gs = buildSpeedGauge('gs', {
+  cx: 280, cy: 260, r: 220,
+  min: 0, max: conf.max_speed_kmh, color: '#78909c',
+  unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
+  fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
+});
+
+function update() {
+  const spd = +document.getElementById('s-spd').value;
+  const rpm = +document.getElementById('s-rpm').value;
+  const thr = +document.getElementById('s-thr').value;
+  const mapKpa = +document.getElementById('s-map').value;
+  const mafGs = +document.getElementById('s-maf').value;
+  const gear = +document.getElementById('s-gear').value;
+  const range = document.getElementById('s-range').value;
+  const hold = document.getElementById('s-hold').checked;
+  const tcLocked = document.getElementById('s-tc').checked;
+  const temp = +document.getElementById('s-temp').value;
+
+  document.getElementById('v-spd').textContent = spd;
+  document.getElementById('v-rpm').textContent = rpm;
+  document.getElementById('v-thr').textContent = thr;
+  document.getElementById('v-map').textContent = mapKpa;
+  document.getElementById('v-maf').textContent = mafGs;
+  const eco = +document.getElementById('s-eco').value;
+  document.getElementById('v-temp').textContent = temp;
+  document.getElementById('v-eco').textContent = eco;
+
+  gs.update(spd, speedColor(spd));
+  updateThrottle(thr);
+  updateRPM(rpm);
+  updateGear(gear, range, hold, tcLocked);
+  updateBottomIndicators(temp, 284.1, 11.4, eco);
+
+  // Mock gear ratio and lock %
+  const gearRatios = [0, 2.816, 1.498, 1.000, 0.726];
+  const mockGearRatio = gear > 0 ? gearRatios[gear] * (1 + Math.random() * 0.02) : 0;
+  const mockLockPct = gear >= 3 && spd > 40 ? 97 + Math.random() * 3 : gear > 0 ? 50 + Math.random() * 30 : 0;
+
+  updateIndicators(dom, {
+    at_range_str: range,
+    hold: hold,
+    gear: gear,
+    gear_ratio: mockGearRatio,
+    tcc_lock_pct: mockLockPct,
+    intake_map: mapKpa,
+    maf_airflow: mafGs,
+    rpm: rpm,
+    oil_alert: document.getElementById('s-oil').value,
+  }, conf);
+}
+
+document.querySelectorAll('input,select').forEach(el => el.addEventListener('input', update));
+update();
+</script>
+</body>
+</html>

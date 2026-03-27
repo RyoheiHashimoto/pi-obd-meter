@@ -2,13 +2,11 @@
  * DYデミオ 車載メーター — Google Apps Script
  *
  * 役割:
- * - doPost: Pi からのデータ受信 (メンテナンス状態)
- * - doGet: スマホ向けダッシュボード (給油記録・ODO補正・メンテ管理)
+ * - doPost: Pi からのデータ受信 (オイル交換状態)
+ * - doGet: スマホ向けダッシュボード (給油記録・オイル交換・ODO補正)
  *
  * シート構成:
  * - 給油記録: 手動入力した給油データ + 燃費自動算出
- * - メンテ状態: Pi から受信した最新のメンテナンス進捗
- * - メンテ完了: ダッシュボードから「完了」を押した項目 (Pi がリセット後に自動削除)
  * - 設定: Pi との通信用 KVS (odometer_correction, trip_reset, total_km 等)
  *
  * セットアップ手順:
@@ -51,33 +49,15 @@ function doGet() {
 
 // === メンテナンス状態処理 (Pi → GAS、5分間隔) ===
 function handleMaintenance(data) {
-  const sheet = getOrCreateSheet('メンテ状態', [
-    '項目ID', '項目名', 'タイプ', '進捗(%)', '残り', '要アラート', '超過', '更新日時'
-  ]);
-
-  // 既存データをクリアして最新状態で上書き
-  if (sheet.getLastRow() > 1) {
-    sheet.getRange(2, 1, sheet.getLastRow() - 1, 8).clearContent();
+  // OIL 状態を設定シートに保存
+  if (data.oil_current_km != null) {
+    upsertSetting('oil_current_km', data.oil_current_km);
   }
-
-  const statuses = data.statuses || [];
-  const now = new Date();
-
-  for (const s of statuses) {
-    const remaining = s.type === 'distance'
-      ? `${round(s.remaining_km || 0, 0)} km`
-      : `${s.days_left || 0} 日`;
-
-    sheet.appendRow([
-      s.id || '',
-      s.name || s.id,
-      s.type === 'distance' ? '距離' : '期日',
-      round((s.progress || 0) * 100, 0),
-      remaining,
-      s.needs_alert ? '⚠' : '',
-      s.is_overdue ? '🔴' : '',
-      now
-    ]);
+  if (data.oil_remaining_km != null) {
+    upsertSetting('oil_remaining_km', data.oil_remaining_km);
+  }
+  if (data.oil_alert) {
+    upsertSetting('oil_alert', data.oil_alert);
   }
 
   // PiのtotalKm・tripKmを設定シートに保存
@@ -86,7 +66,6 @@ function handleMaintenance(data) {
   }
   if (data.trip_km >= 0) {
     upsertSetting('trip_km', data.trip_km);
-    // last_refuel_km を常に同期（Pi再起動時のトリップ復元ズレ防止）
     if (data.total_km > 0) {
       upsertSetting('last_refuel_km', data.total_km - data.trip_km);
     }
@@ -97,14 +76,14 @@ function handleMaintenance(data) {
     clearSetting('odometer_correction');
   }
 
-  // 完了済みアイテムのリセット待ちIDを取得
-  const completedIds = getCompletedIds();
-  const pendingIds = Object.keys(completedIds);
-
-  // 自動クリーンアップ: Piがリセット済み(progress < 10%)なら完了シートから削除
-  for (const s of statuses) {
-    if (completedIds[s.id] && (s.progress || 0) < 0.1) {
-      removeCompleted(s.id);
+  // OILリセット待ちチェック
+  const oilResetPending = getSettingValue('oil_reset_pending');
+  const pendingResets = [];
+  if (oilResetPending) {
+    pendingResets.push('oil_change');
+    // Pi がリセットしたら次回送信で oil_current_km ≈ 0 になるのでクリア
+    if ((data.oil_current_km || 0) < 100) {
+      clearSetting('oil_reset_pending');
     }
   }
 
@@ -113,17 +92,17 @@ function handleMaintenance(data) {
   const tripCorrectionKm = getSettingValue('trip_correction_km');
 
   // trip_correction_kmは読んだら即クリア（1回だけ実行すればよい）
-  if (tripCorrectionKm) {
+  // 注意: 値が 0 の場合もあるので null チェック（0 は falsy）
+  if (tripCorrectionKm != null) {
     clearSetting('trip_correction_km');
   }
 
   return jsonResponse({
     status: 'ok',
     type: 'maintenance',
-    count: statuses.length,
-    pending_resets: pendingIds,
-    odometer_correction: odoCorrection ? parseFloat(odoCorrection) : null,
-    trip_correction_km: tripCorrectionKm ? parseFloat(tripCorrectionKm) : null,
+    pending_resets: pendingResets,
+    odometer_correction: odoCorrection != null ? parseFloat(odoCorrection) : null,
+    trip_correction_km: tripCorrectionKm != null ? parseFloat(tripCorrectionKm) : null,
   });
 }
 
@@ -201,6 +180,12 @@ function correctTrip(tripDistance) {
   return { status: 'ok', last_refuel_km: round(lastRefuelKm, 1), trip_km: round(tripKm, 1) };
 }
 
+// === オイル交換リセット (ダッシュボードから呼ばれる) ===
+function resetOilChange() {
+  upsertSetting('oil_reset_pending', '1');
+  return { status: 'ok' };
+}
+
 // === 設定値取得 (設定シートからキーで検索) ===
 function getSettingValue(key) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -242,76 +227,20 @@ function clearSetting(key) {
   }
 }
 
-// === メンテナンス完了マーク (ダッシュボードから呼ばれる) ===
-function markMaintenanceDone(itemId, itemName) {
-  const sheet = getOrCreateSheet('メンテ完了', ['項目ID', '項目名', '完了日時']);
-
-  if (sheet.getLastRow() > 1) {
-    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-    const idx = data.findIndex(r => r[0] === itemId);
-    if (idx >= 0) {
-      sheet.getRange(idx + 2, 3).setValue(new Date());
-      return { status: 'ok' };
-    }
-  }
-
-  sheet.appendRow([itemId, itemName, new Date()]);
-  return { status: 'ok' };
-}
-
-// === 完了済みIDマップ取得 ===
-function getCompletedIds() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('メンテ完了');
-  if (!sheet || sheet.getLastRow() <= 1) return {};
-
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
-  const result = {};
-  for (const [id, name, date] of data) {
-    if (id) result[id] = { name, date };
-  }
-  return result;
-}
-
-// === 完了済みアイテム削除 ===
-function removeCompleted(itemId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('メンテ完了');
-  if (!sheet || sheet.getLastRow() <= 1) return;
-
-  const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
-  for (let i = data.length - 1; i >= 0; i--) {
-    if (data[i][0] === itemId) {
-      sheet.deleteRow(i + 2);
-      return;
-    }
-  }
-}
-
 // === Webダッシュボード HTML ===
 function buildDashboardHtml() {
   const fuelData = getSheetData('給油記録');
-  const maintData = getSheetData('メンテ状態');
-  const completedIds = getCompletedIds();
   const currentOdo = parseFloat(getSettingValue('total_km')) || 0;
   const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
   const piTripKm = parseFloat(getSettingValue('trip_km')) || 0;
+  const oilCurrentKm = parseFloat(getSettingValue('oil_current_km')) || 0;
+  const oilRemainingKm = parseFloat(getSettingValue('oil_remaining_km')) || 0;
+  const oilAlert = getSettingValue('oil_alert') || 'green';
 
   const recentFuel = fuelData.length > 0 ? fuelData.slice(-10).reverse() : [];
 
   // 走行統計の算出（Pi の trip_km を優先）
   const tripStats = computeTripStats(fuelData, currentOdo, lastRefuelKm, piTripKm);
-
-  // メンテ分割
-  const alertItems = maintData.filter(r => {
-    const id = r[0];
-    return !completedIds[id] && (r[5] === '⚠' || r[6] === '🔴');
-  });
-
-  // 完了済みエントリ
-  const completedEntries = Object.entries(completedIds).map(
-    ([id, { name, date }]) => ({ id, name, date })
-  );
 
   const now = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm');
 
@@ -332,6 +261,9 @@ function buildDashboardHtml() {
 
   // 走行統計カード
   html += renderTripStatsCard(tripStats);
+
+  // オイル交換カード（常時表示）
+  html += renderOilCard(oilCurrentKm, oilRemainingKm, oilAlert);
 
   // 給油記録フォーム
   html += '<div class="card">';
@@ -375,22 +307,6 @@ function buildDashboardHtml() {
   html += '<div class="form-result" id="trip-result"></div>';
   html += '</div>';
 
-  // メンテナンス必要
-  if (alertItems.length > 0) {
-    html += '<div class="card">';
-    html += '<h2>⚠ メンテナンス必要</h2>';
-    html += renderExpandableList(alertItems, 'alert', renderAlertItem);
-    html += '</div>';
-  }
-
-  // メンテ済
-  if (completedEntries.length > 0) {
-    html += '<div class="card">';
-    html += '<h2>✅ メンテ済</h2>';
-    html += renderExpandableList(completedEntries, 'done', renderCompletedItem);
-    html += '</div>';
-  }
-
   // ODO補正フォーム
   html += '<div class="card">';
   html += '<h2>🔧 ODO補正</h2>';
@@ -409,21 +325,23 @@ function buildDashboardHtml() {
   return html;
 }
 
-// === 展開可能リストの描画 ===
-function renderExpandableList(items, sectionId, renderFn) {
-  let html = '';
-  const limit = Math.min(5, items.length);
-  for (let i = 0; i < limit; i++) {
-    html += renderFn(items[i]);
-  }
-  if (items.length > 5) {
-    html += `<div id="${sectionId}-extra" style="display:none">`;
-    for (let i = 5; i < items.length; i++) {
-      html += renderFn(items[i]);
-    }
-    html += '</div>';
-    html += `<button class="toggle-btn" id="${sectionId}-extra-btn" onclick="toggleSection('${sectionId}-extra')">もっと見る ▼</button>`;
-  }
+// === オイル交換カードの描画 ===
+function renderOilCard(currentKm, remainingKm, alert) {
+  const colors = { green: '#4caf50', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
+  const labels = { green: '正常', yellow: 'そろそろ', orange: '交換時期', red: '要交換' };
+  const col = colors[alert] || colors.green;
+  const label = labels[alert] || '正常';
+
+  let html = '<div class="card">';
+  html += '<h2>🛢 オイル交換</h2>';
+  html += '<div class="stat-grid">';
+  html += renderStatItem('走行距離', round(currentKm, 0) + ' km', col);
+  html += renderStatItem('残り', round(remainingKm, 0) + ' km', remainingKm < 0 ? '#f44336' : '');
+  html += '</div>';
+  html += `<div style="text-align:center;margin-top:14px;font-size:28px;font-weight:700;color:${col}">${label}</div>`;
+  html += '<button class="form-submit" style="background:#4caf50;margin-top:14px" id="oil-btn" onclick="resetOil()">オイル交換完了</button>';
+  html += '<div class="form-result" id="oil-result"></div>';
+  html += '</div>';
   return html;
 }
 
@@ -440,27 +358,11 @@ function getDashboardCSS() {
     + 'table{width:100%;border-collapse:collapse;font-size:28px}'
     + 'th{text-align:left;color:#666;padding:14px 16px;border-bottom:1px solid #1a1a24}'
     + 'td{padding:14px 16px;border-bottom:1px solid #0f0f18}'
-    + '.bar-bg{height:16px;background:#1a1a24;border-radius:8px;overflow:hidden;margin-top:14px}'
-    + '.bar-fg{height:100%;border-radius:8px}'
-    + '.ok{background:#4caf50} .warn{background:#ff9800} .danger{background:#f44336}'
-    + '.maint-item{padding:18px 0;border-bottom:1px solid #1a1a24}'
-    + '.maint-item:last-child{border:none}'
-    + '.maint-name{font-weight:600;color:#ddd;font-size:28px}'
-    + '.maint-detail{font-size:24px;color:#888;margin-top:6px}'
-    + '.maint-row{display:flex;justify-content:space-between;align-items:center;gap:16px}'
-    + '.done-btn{background:#2a2a35;color:#aaa;border:1px solid #3a3a45;border-radius:12px;padding:18px 32px;font-size:24px;cursor:pointer;white-space:nowrap}'
-    + '.done-btn:active{background:#3a3a45}'
     + '.toggle-btn{background:none;border:none;color:#666;cursor:pointer;padding:18px 0;font-size:24px;width:100%;text-align:center}'
-    + '.completed-date{font-size:22px;color:#4caf50}'
     + '.form-group{margin-bottom:18px}'
     + '.form-group label{display:block;color:#888;font-size:22px;margin-bottom:6px}'
     + '.form-input{width:100%;background:#1a1a24;border:1px solid #3a3a45;border-radius:10px;color:#fff;font-size:28px;padding:16px;outline:none}'
     + '.form-input:focus{border-color:#2196f3}'
-    + '.form-row{display:flex;gap:14px}'
-    + '.form-row .form-group{flex:1}'
-    + '.form-check{display:flex;align-items:center;gap:12px;padding:12px 0}'
-    + '.form-check input[type=checkbox]{width:28px;height:28px;accent-color:#2196f3}'
-    + '.form-check label{color:#ddd;font-size:26px;margin:0}'
     + '.form-submit{width:100%;background:#2196f3;color:#fff;border:none;border-radius:12px;padding:18px;font-size:28px;font-weight:600;cursor:pointer;margin-top:8px}'
     + '.form-submit:active{background:#1976d2}'
     + '.form-submit:disabled{background:#333;color:#666;cursor:not-allowed}'
@@ -485,12 +387,28 @@ function toggleSection(id) {
   btn.textContent = hidden ? '閉じる ▲' : 'もっと見る ▼';
 }
 
-function markDone(id, name) {
-  if (!confirm(name + ' を完了にしますか？')) return;
+function resetOil() {
+  if (!confirm('オイル交換を完了にしますか？')) return;
+  const btn = document.getElementById('oil-btn');
+  const res = document.getElementById('oil-result');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+  res.className = 'form-result';
+
   google.script.run
-    .withSuccessHandler(() => location.reload())
-    .withFailureHandler(e => alert('エラー: ' + e.message))
-    .markMaintenanceDone(id, name);
+    .withSuccessHandler(function() {
+      res.className = 'form-result success';
+      res.textContent = 'オイル交換をリセットしました（次回送信時にPiに反映）';
+      btn.disabled = false;
+      btn.textContent = 'オイル交換完了';
+    })
+    .withFailureHandler(function(e) {
+      res.className = 'form-result error';
+      res.textContent = 'エラー: ' + e.message;
+      btn.disabled = false;
+      btn.textContent = 'オイル交換完了';
+    })
+    .resetOilChange();
 }
 
 function submitRefuel() {
@@ -673,33 +591,6 @@ function renderFuelRow(r) {
     + `<td>${round(r[3] || 0, 1)}L</td></tr>`;
 }
 
-// === Render helper: アラート項目 ===
-function renderAlertItem(r) {
-  const [id, name, , progress, remaining, needsAlert, isOverdue] = r;
-  const barClass = isOverdue === '🔴' ? 'danger' : needsAlert === '⚠' ? 'warn' : 'ok';
-  const pct = Math.min(100, progress || 0);
-  const nameColor = isOverdue === '🔴' ? '#f44336' : needsAlert === '⚠' ? '#ff9800' : '#ddd';
-
-  return `<div class="maint-item">`
-    + `<div class="maint-row">`
-    + `<div><div class="maint-name" style="color:${nameColor}">${name}</div>`
-    + `<div class="maint-detail">残り ${remaining} (${progress}%)</div></div>`
-    + `<button class="done-btn" onclick="markDone('${id}','${name}')">完了</button>`
-    + `</div>`
-    + `<div class="bar-bg"><div class="bar-fg ${barClass}" style="width:${pct}%"></div></div>`
-    + `</div>`;
-}
-
-// === Render helper: 完了済み項目 ===
-function renderCompletedItem(entry) {
-  let dateStr = '-';
-  try { dateStr = Utilities.formatDate(new Date(entry.date), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { /* skip */ }
-  return `<div class="maint-item"><div class="maint-row">`
-    + `<div class="maint-name" style="color:#666">${entry.name || ''}</div>`
-    + `<div class="completed-date">${dateStr} 完了</div>`
-    + `</div></div>`;
-}
-
 // === ユーティリティ: シートデータ取得 ===
 function getSheetData(sheetName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -713,13 +604,9 @@ function setup() {
   getOrCreateSheet('給油記録', [
     '日時', '距離(km)', '燃費(km/L)', '給油量(L)'
   ]);
-  getOrCreateSheet('メンテ状態', [
-    '項目ID', '項目名', 'タイプ', '進捗(%)', '残り', '要アラート', '超過', '更新日時'
-  ]);
-  getOrCreateSheet('メンテ完了', ['項目ID', '項目名', '完了日時']);
   getOrCreateSheet('設定', ['キー', '値', '更新日時']);
 
-  Logger.log('セットアップ完了: 給油記録 / メンテ状態 / メンテ完了 / 設定 シートを作成しました');
+  Logger.log('セットアップ完了: 給油記録 / 設定 シートを作成しました');
 }
 
 // === ユーティリティ: シート操作 ===

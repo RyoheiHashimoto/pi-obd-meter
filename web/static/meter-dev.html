@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=800, height=480">
+<title>pi-obd-meter (dev)</title>
+<link rel="preload" href="fonts/Orbitron-Black.ttf" as="font" type="font/truetype" crossorigin>
+<link rel="preload" href="fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="meter.css">
+</head>
+<body>
+<div class="dashboard">
+  <div class="gauge-area">
+    <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
+  </div>
+  <div class="panel" id="panel"></div>
+</div>
+<div id="toast" class="toast"></div>
+
+<!-- Dev controls -->
+<div style="position:fixed;bottom:0;left:0;right:0;background:#111;padding:8px;z-index:999;font-family:monospace;color:#aaa;font-size:12px;">
+  <label>Speed <input type="range" id="s-spd" min="0" max="180" value="0"> <span id="v-spd">0</span></label>
+  <label>RPM <input type="range" id="s-rpm" min="0" max="8000" value="700"> <span id="v-rpm">700</span></label>
+  <label>Throttle <input type="range" id="s-thr" min="0" max="100" value="12"> <span id="v-thr">12</span></label>
+  <label>Gear <select id="s-gear"><option value="0">N</option><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></label>
+  <label>Range <select id="s-range"><option value="D" selected>D</option><option value="S">S</option><option value="L">L</option><option value="P">P</option><option value="R">R</option><option value="N">N</option></select></label>
+  <label><input type="checkbox" id="s-hold"> HOLD</label>
+  <label><input type="checkbox" id="s-tc"> LOCK</label>
+  <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94"> <span id="v-temp">94</span></label>
+</div>
+
+<script type="module">
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
+import { createIndicators, updateIndicators } from './js/indicators.js';
+
+const conf = {
+  max_speed_kmh: 180, throttle_idle_pct: 11.5, throttle_max_pct: 78,
+  eco_kmpl_green: 15.4, eco_kmpl_orange: 6.2,
+  trip_warn_km: 300, trip_danger_km: 500,
+};
+
+const dom = createIndicators(document.getElementById('panel'));
+setThrottleIdleBaseline(conf.throttle_idle_pct);
+setThrottleMaxPct(conf.throttle_max_pct);
+
+const gs = buildSpeedGauge('gs', {
+  cx: 280, cy: 260, r: 220,
+  min: 0, max: conf.max_speed_kmh, color: '#78909c',
+  unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
+  fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
+});
+
+function update() {
+  const spd = +document.getElementById('s-spd').value;
+  const rpm = +document.getElementById('s-rpm').value;
+  const thr = +document.getElementById('s-thr').value;
+  const gear = +document.getElementById('s-gear').value;
+  const range = document.getElementById('s-range').value;
+  const hold = document.getElementById('s-hold').checked;
+
+  document.getElementById('v-spd').textContent = spd;
+  document.getElementById('v-rpm').textContent = rpm;
+  document.getElementById('v-thr').textContent = thr;
+
+  gs.update(spd, speedColor(spd));
+  updateThrottle(thr);
+  updateRPM(rpm);
+  const tcLocked = document.getElementById('s-tc') ? document.getElementById('s-tc').checked : false;
+  const temp = +document.getElementById('s-temp').value;
+  document.getElementById('v-temp').textContent = temp;
+  updateGear(gear, range, hold, tcLocked);
+  updateBottomIndicators(temp, 284.1, 11.4, spd > 10 ? 8 + Math.random() * 4 : 0);
+
+  const d = {
+    speed_kmh: spd, rpm: rpm, throttle_pos: thr,
+    gear: gear, at_range_str: range, hold: hold,
+    tc_locked: false, shifting: false, kickdown: false,
+    fuel_economy: spd > 10 ? 8 + Math.random() * 4 : 0,
+    avg_fuel_economy: 11.4, trip_km: 284.1,
+    coolant_temp: 94, intake_map: 20 + thr * 0.7,
+    maf_airflow: 1.8 + thr * 0.3, o2_voltage: 0.1 + Math.random() * 0.8,
+    short_fuel_trim: -2 + Math.random() * 4,
+    obd_connected: true,
+  };
+  updateIndicators(dom, d, conf);
+}
+
+document.querySelectorAll('input,select').forEach(el => el.addEventListener('input', update));
+update();
+</script>
+</body>
+</html>

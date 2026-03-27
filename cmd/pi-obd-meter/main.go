@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 )
@@ -43,6 +44,7 @@ func main() {
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)
 	fmt.Println("=================================")
 	slog.Info("設定読み込み完了",
+		"can_interface", cfg.CANInterface,
 		"serial_port", cfg.SerialPort,
 		"engine_displacement_l", cfg.EngineDisplacementL,
 		"fuel_tank_l", cfg.FuelTankL,
@@ -80,9 +82,17 @@ func main() {
 	if fastIntervalMs <= 0 {
 		fastIntervalMs = 150
 	}
-	elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
 	obdCh := make(chan OBDEvent, 1)
-	go obdReaderLoop(ctx, elm, fastIntervalMs, obdCh)
+	if cfg.CANInterface != "" {
+		// CAN直結モード（SocketCAN パッシブモニタリング）
+		slog.Info("CAN直結モードで起動", "interface", cfg.CANInterface)
+		go canReaderLoop(ctx, cfg.CANInterface, fastIntervalMs, obdCh)
+	} else {
+		// ELM327モード（従来のBluetooth OBD）
+		slog.Info("ELM327モードで起動", "port", cfg.SerialPort)
+		elm := obd.NewELM327(cfg.SerialPort, cfg.OBDProtocol)
+		go obdReaderLoop(ctx, elm, fastIntervalMs, obdCh)
+	}
 
 	// --- メインループ ---
 	retryTicker := time.NewTicker(5 * time.Minute) // 送信失敗キューのリトライ間隔
@@ -131,13 +141,16 @@ func main() {
 			if !ev.Connected || ev.Data == nil {
 				// OBD未接続: ステータスだけ更新
 				wifiConnected = checkWiFi()
+				oil := app.maintMgr.OilStatus()
 				app.updateRealtimeData(RealtimeData{
-					Alerts:        app.maintMgr.GetAlerts(),
-					Notification:  app.getNotification(),
-					OBDConnected:  false,
-					WiFiConnected: wifiConnected,
-					PendingCount:  app.client.QueueSize(),
-					SendSending:   app.client.IsSending(),
+					OilAlert:       string(oil.Alert),
+					OilCurrentKm:   oil.CurrentKm,
+					OilRemainingKm: oil.RemainingKm,
+					Notification:   app.getNotification(),
+					OBDConnected:   false,
+					WiFiConnected:  wifiConnected,
+					PendingCount:   app.client.QueueSize(),
+					SendSending:    app.client.IsSending(),
 				})
 				continue
 			}
@@ -184,6 +197,7 @@ func main() {
 			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
+			oil := app.maintMgr.OilStatus()
 			app.updateRealtimeData(RealtimeData{
 				SpeedKmh:       data.SpeedKmh,
 				RPM:            data.RPM,
@@ -195,7 +209,28 @@ func main() {
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
-				Alerts:         app.maintMgr.GetAlerts(),
+				Voltage:        data.Voltage,
+				FuelLevel:      data.FuelLevel,
+				AmbientTemp:    data.AmbientTemp,
+				EngineLoadPct:  data.EngineLoad,
+				MAFAirFlow:     data.MAFAirFlow,
+				ShortFuelTrim:  data.ShortFuelTrim,
+				TimingAdvance:  data.TimingAdvance,
+				IntakeAirTemp:  data.IntakeAirTemp,
+				O2Voltage:      data.O2Voltage,
+				RuntimeSec:     data.RuntimeSec,
+				Gear:           data.Gear,
+				GearRatio:      data.GearRatio,
+				ATRange:        data.ATRange,
+				ATRangeStr:     can.ATRange(data.ATRange).String(),
+				Hold:           data.Hold,
+				TCLocked:       data.TCLocked,
+				TCCLockPct:     data.TCCLockPct,
+				Shifting:       data.Shifting,
+				BaroPressure:   data.BaroKPa,
+				OilAlert:       string(oil.Alert),
+				OilCurrentKm:   oil.CurrentKm,
+				OilRemainingKm: oil.RemainingKm,
 				Notification:   app.getNotification(),
 				OBDConnected:   true,
 				WiFiConnected:  wifiConnected,

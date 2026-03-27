@@ -111,8 +111,8 @@ web/
     meter.css               CSS Custom Properties でテーマ管理
     js/
       main.js               エントリポイント + APIポーリング + Toast + キオスク終了
-      gauge.js              速度ゲージ + スロットルアーク + MAPアーク + FuelRateアーク + 60fps LERP補間
-      indicators.js         右パネルインジケーター (RPM/ECO/TRIP/TEMP/MAINT/WiFi/OBD)
+      gauge.js              速度ゲージ(針+アーク) + RPMアーク + スロットルアーク + ギア/レンジ表示 + 下部インジケーター(TEMP/TRIP/ECO) + 60fps LERP補間
+      indicators.js         右パネルインジケーター (GEAR/ECO/TRIP/TEMP/MAP/MAF/O2/TRIM)
     fonts/
       Orbitron-*.ttf        速度・数値表示フォント
       ShareTechMono-*.woff2 リードアウト表示フォント
@@ -186,6 +186,10 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 - ログ: journald（RAM上）
 - 起動時にGASからODO復元（`type: "restore"`）。電源断でリセットされた場合のフォールバック
 
+### CAN データの注意事項
+- 0x230 B2（ギア比）: 1バイトオーバーフローあり。1速(2.816×100=282)とR(2.648×100=265)は256を超えるため折り返す。1速/R時は `(B2+256)/100` でデコード
+- 0x210 B0-B1: DYデミオでは常に 0xFFFF（タービン回転数は CAN に出ていない）
+
 ### ELM327通信
 - Bluetooth 2.0 Classic (SPP)。BLEはGATT複雑で不採用
 - rfcomm bind → /dev/rfcomm0 でシリアルポートとして扱う
@@ -195,8 +199,15 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 ### メーターUI
 - 800×480 全画面、速度の270° SVGアークゲージ
 - 内側にスロットルアーク（HSL連続グラデーション: 青→赤）
-- 外側にMAPアーク + FuelRateアーク（km/h下にリードアウト表示）
-- 右パネルにインジケーター7項目（RPM/ECO/TRIP/TEMP/MAINT/WiFi/OBD）
+- 外側にRPMアーク（レッドゾーン背景付き）
+- ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
+- 下部にTEMP(左)・TRIP(中)・ECO(右) アイコン付きインジケーター
+- 右パネル: 3連二重アークメーター（プロトタイプ: meter-dev-3gauge.html）
+  - メーター1: ギア比(:1) + TCCロック率(LOCK %) — 青→緑、HOLD=黄、R=橙
+  - メーター2: MAP(kPa) + A/F(空燃比) — リッチ=赤、ストイキ=緑、リーン=青
+  - メーター3: 推定PS + トルク(kgf·m) — MAP×RPM×VE推定
+- 警告灯16項目: LINK/NETWORK/CHECK + メンテ13項目（config.jsonのlampフィールドで動的生成）
+  - soft: 消灯→黄(warning_pct)→橙(超過) / hard: 消灯→橙(warning_pct)→赤(超過)
 - CSS/JS分離済み（meter.html + meter.css + js/main.js + js/gauge.js + js/indicators.js）
 - CSS Custom Properties で色・レイアウトを一元管理
 - requestAnimationFrame で60fps LERP補間、OBDデータは200msポーリング
@@ -262,13 +273,17 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `web_static_dir`: Web UI配信元（空 = 埋め込みファイル使用、開発時にパス指定可）
 - `throttle_idle_pct`: スロットルアイドル開度 (例: 11.5) — スロットル表示のゼロ基準
 - `throttle_max_pct`: スロットル最大開度 (例: 75) — スロットル表示の100%基準
-- `fuel_tank_l`: 燃料タンク容量 (例: 40) — トリップ警告閾値の導出に使用
+- `fuel_tank_l`: 燃料タンク容量 (例: 46) — トリップ警告閾値の導出に使用
 - `fuel_rate_correction`: 燃料レート補正係数 (例: 1.3) — 理論値と実燃費の乖離を補正
 - `obd_protocol`: OBDプロトコル (例: "6" = CAN 11bit 500k)
 - `poll_interval_ms`: ポーリング間隔 (例: 500)
 - `local_api_port`: ローカルAPIポート (デフォルト: 9090)
 - `brightness`: 輝度スケジュール設定（`hdmi_output` + `schedule[]`）
-- `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, タイプ, 間隔, 警告閾値）
+- `max_ps`: メーター最大馬力 (例: 91) — PS メーターのスケール
+- `max_torque_kgfm`: メーター最大トルク (例: 12.6) — トルクメーターのスケール
+- `max_torque_rpm`: 最大トルク回転数 (例: 3500)
+- `max_ps_rpm`: 最高出力回転数 (例: 6000)
+- `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, lamp, severity, タイプ, 間隔, 警告閾値）
 
 ### 開発元の確認車両
 - マツダ DYデミオ DBA-DY3W / ZJ-VE 1.3L 91PS / 1,090kg / 4AT / CAN 2.0B
