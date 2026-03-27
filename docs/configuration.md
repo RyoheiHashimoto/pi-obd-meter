@@ -20,7 +20,9 @@
   "throttle_max_pct": 75,
   "fuel_tank_l": 40,
   "fuel_rate_correction": 1.3,
-  "maintenance_reminders": [...],
+  "oil_change": {"interval_km": 3000, "warning_km": 2500, "danger_km": 4000},
+  "coolant_temp": {"cold_max": 60, "normal_max": 100, "warning_max": 104},
+  "eco_gradient_max_kmpl": 15,
   "brightness": {...}
 }
 ```
@@ -99,53 +101,59 @@
 
 ---
 
-## メンテナンスリマインダー
+## オイル交換リマインダー
 
 ```json
 {
-  "maintenance_reminders": [
-    {
-      "id": "oil_change",
-      "name": "エンジンオイル交換",
-      "type": "distance",
-      "interval_km": 3000,
-      "warning_pct": 0.8,
-      "last_reset_km": 97000
-    },
-    {
-      "id": "shaken",
-      "name": "車検",
-      "type": "date",
-      "interval_days": 730,
-      "warning_pct": 0.9,
-      "last_reset_at": "2026-02-20T00:00:00+09:00"
-    }
-  ]
+  "oil_change": {
+    "interval_km": 3000,
+    "warning_km": 2500,
+    "danger_km": 4000
+  }
 }
 ```
 
-### 項目フィールド
-
-| フィールド | 型 | 説明 |
-|---|---|---|
-| `id` | string | 一意の識別子（GAS との同期に使用） |
-| `name` | string | 表示名 |
-| `type` | string | `"distance"` (距離ベース) または `"date"` (日付ベース) |
-| `interval_km` | int | 交換/実施間隔 (km)。type=distance の場合 |
-| `interval_days` | int | 有効期間 (日)。type=date の場合 |
-| `warning_pct` | float | 警告表示開始の進捗率 (0.0-1.0)。例: 0.8 = 80%到達で橙表示 |
-| `last_reset_km` | float | 最終リセット時の累積走行距離 (km)。type=distance の場合 |
-| `last_reset_at` | string | 最終リセット日時 (ISO 8601)。type=date の場合 |
-
-### デフォルト項目
-
-| 項目 | 種別 | 間隔 | 警告 |
+| フィールド | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| エンジンオイル交換 | 距離 | 3,000 km | 80% |
-| エアフィルター交換 | 距離 | 20,000 km | 85% |
-| タイヤローテーション | 距離 | 10,000 km | 80% |
-| 車検 | 日付 | 730日 | 90% |
-| ATF交換 | 距離 | 40,000 km | 90% |
+| `interval_km` | int | `3000` | オイル交換推奨間隔 (km) |
+| `warning_km` | int | `2500` | 橙表示（警告）開始距離 (km) |
+| `danger_km` | int | `4000` | 赤表示（超過）開始距離 (km) |
+
+メーター右パネルに OIL CHANGE ランプとして表示。走行距離に応じて 消灯 → 橙 → 赤 と遷移する。
+
+---
+
+## 冷却水温設定
+
+```json
+{
+  "coolant_temp": {
+    "cold_max": 60,
+    "normal_max": 100,
+    "warning_max": 104
+  }
+}
+```
+
+| フィールド | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `cold_max` | int | `60` | 暖機中（青表示）の上限温度 (°C) |
+| `normal_max` | int | `100` | 正常（緑表示）の上限温度 (°C) |
+| `warning_max` | int | `104` | 警告（橙表示）の上限温度 (°C)。超過で赤表示 |
+
+---
+
+## ECO グラデーション設定
+
+```json
+{
+  "eco_gradient_max_kmpl": 15
+}
+```
+
+| パラメータ | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `eco_gradient_max_kmpl` | float | `15` | ECO 表示の HSL グラデーション最大値 (km/L)。0 km/L = 赤、この値 = 緑 |
 
 ---
 
@@ -164,7 +172,7 @@
 | 燃料レート補正係数 | `fuel_rate_correction` | 1.3 | 給油燃費と比較して調整 |
 | メーター最大速度 | `max_speed_kmh` | 180 | 260 |
 | OBDプロトコル | `obd_protocol` | "6" (CAN 11bit) | "0" (自動検出) |
-| メンテ項目 | `maintenance_reminders` | 上記参照 | 車種推奨間隔に合わせる |
+| オイル交換間隔 | `oil_change` | 3000 km | 車種推奨間隔に合わせる |
 
 ### 排気量・タンク容量から自動導出される値
 
@@ -173,10 +181,8 @@
 | 項目 | 導出式 | 1.3L/40L | 2.0L/60L |
 |---|---|---|---|
 | アイドル燃料消費 | `0.6 × 排気量` L/h | 0.78 | 1.20 |
-| ECO 緑閾値 (km/L) | `round(20 / 排気量, 1)` | 15.4 | 10.0 |
-| ECO 橙閾値 (km/L) | `round(8 / 排気量, 1)` | 6.2 | 4.0 |
-| TRIP 警告 (km) | `tank × ecoGreen × 0.5` | 308 | 300 |
-| TRIP 危険 (km) | `tank × ecoGreen × 0.85` | 523 | 510 |
+| TRIP 警告 (km) | `tank × ecoGradientMax × 0.5` | 300 | 450 |
+| TRIP 危険 (km) | `tank × ecoGradientMax × 0.85` | 510 | 765 |
 
 ### `fuel_rate_correction` の調整方法
 
@@ -200,4 +206,3 @@
 | エンブレ負荷閾値 | `fuel.go` | 5.0% | ほぼ汎用 |
 | エンブレMAP閾値 | `fuel.go` | 35.0 kPa | ほぼ汎用 |
 | 燃費表示最低速度 | `fuel.go` | 10.0 km/h | ほぼ汎用 |
-| ECO排気量係数 (km/L) | `api.go` | 20 / 8 | 排気量に連動 |
