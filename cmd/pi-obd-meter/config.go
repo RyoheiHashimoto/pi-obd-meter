@@ -67,7 +67,6 @@ type RealtimeData struct {
 	Hold           bool                 `json:"hold"`
 	TCLocked       bool                 `json:"tc_locked"`
 	Shifting       bool                 `json:"shifting"`
-	Kickdown       bool                 `json:"kickdown"`
 	Alerts         []maintenance.Status `json:"alerts"`
 	Notification   string               `json:"notification,omitempty"`
 	OBDConnected   bool                 `json:"obd_connected"`

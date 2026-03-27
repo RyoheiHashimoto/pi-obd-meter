@@ -50,10 +50,10 @@ func DecodeElectric(data [8]byte) (altLoadPct, voltageV, baroKPa float64) {
 
 // DecodeATCtrl は 0x230 フレームをデコードする
 //
-//	B0: ギア (0xF0=N/P, 0x01-0x04=1-4速, 0x10=遷移)
-//	B1: TCロックアップ (0x00=ロック, 0x01=アンロック)
+//	B0: ギア (0x01-0x04=1-4速, 0x10=R, 0xF0=N/P)
+//	B1: ギア係合状態 (0x00/0x01)
 //	B2: ギア比 (×0.01、1バイトオーバーフロー: 1速/Rはギア比>2.55のため+256して解釈)
-func DecodeATCtrl(data [8]byte) (gear int, tcLocked bool, gearRatio float64) {
+func DecodeATCtrl(data [8]byte) (gear int, gearRatio float64) {
 	raw := data[0]
 	switch raw {
 	case 0x01:
@@ -67,7 +67,6 @@ func DecodeATCtrl(data [8]byte) (gear int, tcLocked bool, gearRatio float64) {
 	default:
 		gear = 0 // N/P or transition
 	}
-	tcLocked = data[1] == 0x00
 	b2 := int(data[2])
 	// 1速(gear=1)またはR(B0=0x10): ギア比>2.55で1バイトオーバーフロー
 	if gear == 1 || raw == 0x10 {
@@ -114,14 +113,14 @@ func (r ATRange) String() string {
 //
 //	B0 上位ニブル: ギア (0=N/P, 1-4)
 //	B0 下位ニブル: レンジ (1=P, 2=R, 3=N, 4=D, 5=S, 6=L)
-//	B1: bit7=HOLD, bit4=TCロックアップ, bit3=キックダウン
-func DecodeATStatus(data [8]byte) (gear int, atRange ATRange, hold bool, shifting bool, kickdown bool) {
+//	B1: bit7=HOLD, bit4=TCロックアップ, bit3=ギアチェンジ中
+func DecodeATStatus(data [8]byte) (gear int, atRange ATRange, hold bool, tcLocked bool, shifting bool) {
 	gear = int(data[0] >> 4)
 	sub := data[0] & 0x0F
 	atRange = ATRange(sub)
 	hold = data[1]&0x80 != 0
-	shifting = data[1]&0x10 != 0 // TODO: 走行中に要確認
-	kickdown = data[1]&0x08 != 0 // TODO: 走行中に要確認
+	tcLocked = data[1]&0x10 != 0
+	shifting = data[1]&0x08 != 0
 	return
 }
 

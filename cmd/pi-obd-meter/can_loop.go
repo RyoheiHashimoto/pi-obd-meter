@@ -99,7 +99,6 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		hold          bool
 		tcLocked      bool
 		shifting      bool
-		kickdown      bool
 		hasMAF        bool
 		hasMAP        bool
 		hasData       bool
@@ -143,10 +142,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 					hasData = true
 					lastFrameTime = time.Now()
 				case can.IDATCtrl:
-					gear, tcLocked, gearRatio = can.DecodeATCtrl(frame.Data)
+					gear, gearRatio = can.DecodeATCtrl(frame.Data)
 					lastFrameTime = time.Now()
 				case can.IDATStatus:
-					_, atRange, hold, shifting, kickdown = can.DecodeATStatus(frame.Data)
+					_, atRange, hold, tcLocked, shifting = can.DecodeATStatus(frame.Data)
 					lastFrameTime = time.Now()
 				case can.IDCoolant:
 					ct, _ := can.DecodeCoolant(frame.Data)
@@ -311,7 +310,6 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				Hold:          hold,
 				TCLocked:      tcLocked,
 				Shifting:      shifting,
-				Kickdown:      kickdown,
 				HasMAF:        hasMAF,
 			}
 			currentHasMAP := hasMAP

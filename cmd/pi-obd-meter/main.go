@@ -222,7 +222,6 @@ func main() {
 				Hold:           data.Hold,
 				TCLocked:       data.TCLocked,
 				Shifting:       data.Shifting,
-				Kickdown:       data.Kickdown,
 				Alerts:         app.maintMgr.GetAlerts(),
 				Notification:   app.getNotification(),
 				OBDConnected:   true,
