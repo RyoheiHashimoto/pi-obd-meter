@@ -37,6 +37,7 @@ type App struct {
 	client   *sender.Client
 	maintMgr *maintenance.Manager
 	tracker  *trip.Tracker
+	wsHub    *WSHub
 
 	dataMu     sync.RWMutex
 	latestData RealtimeData
@@ -69,6 +70,10 @@ func newApp(cfg Config) *App {
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{}),
 		startedAt: time.Now(),
+	}
+
+	if cfg.WebSocket.Enabled {
+		app.wsHub = NewWSHub(cfg.WebSocket, app.getRealtimeData)
 	}
 
 	// 累計走行距離の初期化

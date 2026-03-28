@@ -27,6 +27,11 @@
     "warning_km": 2500,
     "danger_km": 4000
   },
+  "websocket": {
+    "enabled": true,
+    "broadcast_interval_ms": 50,
+    "max_clients": 3
+  },
   "brightness": {
     "hdmi_output": "HDMI-A-1",
     "schedule": [

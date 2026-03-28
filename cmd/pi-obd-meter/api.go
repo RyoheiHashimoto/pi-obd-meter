@@ -131,10 +131,15 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		})
 	})
 
-	// --- リアルタイムAPI（LCD用、200ms間隔でポーリングされる） ---
+	// --- リアルタイムAPI（デバッグ/フォールバック用） ---
 	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, app.getRealtimeData())
 	})
+
+	// --- WebSocketリアルタイム配信 ---
+	if app.wsHub != nil {
+		mux.HandleFunc("GET /ws/realtime", app.wsHub.HandleWebSocket)
+	}
 
 	// --- ヘルスチェックAPI ---
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +180,12 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: corsMiddleware(mux),
+	}
+
+	// WebSocket Hub のブロードキャストループ起動
+	if app.wsHub != nil {
+		go app.wsHub.Run(ctx)
+		slog.Info("WebSocket 配信有効", "interval_ms", app.cfg.WebSocket.BroadcastIntervalMs, "max_clients", app.cfg.WebSocket.MaxClients)
 	}
 
 	go func() {
