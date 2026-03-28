@@ -121,11 +121,13 @@ export function updateGear(gear, range, hold, tcLocked) {
     gearEl.textContent = '-';
   }
   gearEl.setAttribute('fill', color);
+  gearEl.style.filter = `drop-shadow(0 0 6px ${color})`;
   gearEl._box.setAttribute('stroke', color);
 
   // 左上: レンジ
   gearSubEl.textContent = range || '';
   gearSubEl.setAttribute('fill', color);
+  gearSubEl.style.filter = `drop-shadow(0 0 6px ${color})`;
   gearSubEl._box.setAttribute('stroke', color);
 
   // HOLD label
@@ -234,10 +236,10 @@ export function buildSpeedGauge(svgId, cfg) {
   gearEl._box = gearBox;
 
   // HOLD label (レンジ枠の下)
-  holdLabelEl = svgEl(svg, 'text', { x: rangeX, y: rangeY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
+  holdLabelEl = svgEl(svg, 'text', { x: rangeX, y: rangeY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   holdLabelEl.textContent = 'HOLD';
   // LOCK label (ギア枠の下)
-  lockLabelEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 20, 'text-anchor': 'middle' });
+  lockLabelEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   lockLabelEl.textContent = 'LOCK';
   gearEl.textContent = '-';
 
