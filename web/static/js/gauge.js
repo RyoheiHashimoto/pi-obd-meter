@@ -6,7 +6,7 @@ const DEG_TO_RAD = Math.PI / 180;
 const ARC_START = -135;
 const ARC_END = 135;
 const ARC_SWEEP = 270;
-const THROTTLE_R_OFFSET = 80;
+const THROTTLE_R_OFFSET = 84;
 const RPM_R_OFFSET = 24; // 速度アークの外側
 
 const LERP_SPEED = 0.35;
@@ -200,7 +200,7 @@ export function buildSpeedGauge(svgId, cfg) {
     svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 5 : 2.5 });
     if (isMj) {
       const v = min + (i / total) * (max - min);
-      const [lx, ly] = polarToXY(cx, cy, r - 50, a);
+      const [lx, ly] = polarToXY(cx, cy, r - 54, a);
       const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': tkSz });
       t.textContent = Math.round(v);
     }

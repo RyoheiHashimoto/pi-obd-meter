@@ -156,14 +156,14 @@ export function createIndicators(panelEl) {
   for (let i = 0; i <= MAP_TOTAL; i++) {
     const a = MG_ARC_START + (i / MAP_TOTAL) * MG_ARC_SWEEP;
     const isMj = i % MAP_MN === 0;
-    const ri = isMj ? MAP_R - 24 : MAP_R - 15;
+    const ri = isMj ? MAP_R - 18 : MAP_R - 13;
     const ro = MAP_R + 4;
     const [x1, y1] = polar(MAP_CX, MAP_CY, ri, a);
     const [x2, y2] = polar(MAP_CX, MAP_CY, ro, a);
     svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 4 : 2 });
     if (isMj) {
       const v = Math.round((i / MAP_TOTAL) * 100);
-      const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 38, a);
+      const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 32, a);
       const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 22 });
       t.textContent = v;
     }
@@ -209,10 +209,10 @@ export function createIndicators(panelEl) {
   atomGEl = atomG;
 
   // Value
-  mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.45, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.52, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
   mapValEl.textContent = '--';
   // Unit
-  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.45 + 32, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
+  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.52 + 32, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'kPa';
 
   // === 4行インジケーター ===
