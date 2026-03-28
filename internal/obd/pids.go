@@ -221,26 +221,43 @@ func (r *Reader) readAllBatch() (*OBDData, error) {
 		parsePID(data, pid, raw)
 	}
 
-	// 冷却水温
+	// バッチ2: 水温 + MAP + MAF（対応PIDのみ動的に構築）
+	batch2 := []byte{PIDCoolantTemp}
+	if r.hasMAP {
+		batch2 = append(batch2, PIDIntakeMAP)
+	}
+	if r.hasMAF {
+		batch2 = append(batch2, PIDMAFAirFlow)
+	}
+
+	result2, err := r.dev.QueryMultiPID(batch2)
+	if err != nil {
+		// バッチ2失敗時は個別クエリにフォールバック
+		r.readBatch2Fallback(data)
+		return data, nil
+	}
+	for pid, raw := range result2 {
+		parsePID(data, pid, raw)
+	}
+
+	return data, nil
+}
+
+// readBatch2Fallback はバッチ2失敗時に個別クエリで水温・MAP・MAFを取得する
+func (r *Reader) readBatch2Fallback(data *OBDData) {
 	if raw, err := r.dev.QueryPID(PIDCoolantTemp); err == nil {
 		parsePID(data, PIDCoolantTemp, raw)
 	}
-
-	// インマニ圧（MAP）
 	if r.hasMAP {
 		if raw, err := r.dev.QueryPID(PIDIntakeMAP); err == nil {
 			parsePID(data, PIDIntakeMAP, raw)
 		}
 	}
-
-	// MAFエアフロー（燃費計算用）
 	if r.hasMAF {
 		if raw, err := r.dev.QueryPID(PIDMAFAirFlow); err == nil {
 			parsePID(data, PIDMAFAirFlow, raw)
 		}
 	}
-
-	return data, nil
 }
 
 // readAllSingle は従来の個別PIDクエリで読み取る（フォールバック）
