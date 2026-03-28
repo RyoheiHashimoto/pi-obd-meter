@@ -2,7 +2,7 @@
 # メーター画面の定期スクリーンキャプチャ（実走テスト用）
 # 使い方: ./capture-screenshots.sh [start|stop]
 
-DIR="/tmp/meter-screenshots"
+DIR="$HOME/meter-screenshots"
 PIDFILE="/tmp/meter-screenshots.pid"
 INTERVAL=10
 

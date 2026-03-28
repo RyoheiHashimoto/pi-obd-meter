@@ -2,12 +2,12 @@
 // Main — エントリポイント + API ポーリング
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct, setCoolantThresholds, setEcoGradientMax } from './gauge.js';
-import { createIndicators, updateIndicators } from './indicators.js';
+import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
+import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax } from './indicators.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180,
-  throttle_idle_pct: 11.5, throttle_max_pct: 78,
+  throttle_idle_pct: 0, throttle_max_pct: 200,
   eco_gradient_max_kmpl: 15,
   trip_warn_km: 300, trip_danger_km: 500,
 };
@@ -26,7 +26,6 @@ function applyData(d) {
   updateThrottle(d.throttle_pos || 0);
   updateRPM(d.rpm || 0);
   updateGear(d.gear || 0, d.at_range_str || '?', d.hold || false, d.tc_locked || false);
-  updateBottomIndicators(d.coolant_temp || 0, d.trip_km || 0, d.avg_fuel_economy || 0, d.fuel_economy || 0);
   updateIndicators(dom, d, conf);
 }
 
@@ -81,7 +80,7 @@ async function initApp() {
   document.body.addEventListener('mouseup', cancelHold);
 
   gs = buildSpeedGauge('gs', {
-    cx: 280, cy: 260, r: 220,
+    cx: 280, cy: 270, r: 230,
     min: 0, max: conf.max_speed_kmh, color: '#78909c',
     unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
