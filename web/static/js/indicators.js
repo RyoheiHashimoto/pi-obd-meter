@@ -15,7 +15,7 @@ const HUE_MAX = 210;
 const MAP_CX = 110;
 const MAP_CY = 155;
 const MAP_R = 125;
-const ARC_W = 12;
+const ARC_W = 10;
 
 // インジケーター配置
 const IND_X_ICON = 2;
