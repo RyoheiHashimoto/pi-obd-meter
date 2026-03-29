@@ -22,6 +22,13 @@ type OilChangeConfig struct {
 	DangerKm   float64 `json:"danger_km"`
 }
 
+// WebSocketConfig はWebSocket設定
+type WebSocketConfig struct {
+	Enabled             bool `json:"enabled"`
+	BroadcastIntervalMs int  `json:"broadcast_interval_ms"`
+	MaxClients          int  `json:"max_clients"`
+}
+
 // Config はアプリケーション設定
 type Config struct {
 	CANInterface        string                   `json:"can_interface"`
@@ -49,6 +56,7 @@ type Config struct {
 	CoolantTemp         CoolantTempConfig        `json:"coolant_temp"`
 	OilChange           OilChangeConfig          `json:"oil_change"`
 	Brightness          display.BrightnessConfig `json:"brightness"`
+	WebSocket           WebSocketConfig          `json:"websocket"`
 }
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
@@ -113,6 +121,11 @@ func loadConfig(path string) Config {
 		FuelTankL:           46,
 		FuelRateCorrection:  1.3,
 		Brightness:          display.DefaultConfig(),
+		WebSocket: WebSocketConfig{
+			Enabled:             true,
+			BroadcastIntervalMs: 50,
+			MaxClients:          3,
+		},
 	}
 
 	data, err := os.ReadFile(path)
@@ -173,5 +186,12 @@ func validateConfig(cfg *Config) {
 	if cfg.ThrottleMaxPct <= cfg.ThrottleIdlePct || cfg.ThrottleMaxPct > 100 {
 		slog.Warn("throttle_max_pct が不正、デフォルト使用", "value", cfg.ThrottleMaxPct)
 		cfg.ThrottleMaxPct = 78
+	}
+	// WebSocket デフォルト値（config.json にフィールドがない場合）
+	if cfg.WebSocket.BroadcastIntervalMs <= 0 {
+		cfg.WebSocket.BroadcastIntervalMs = 50
+	}
+	if cfg.WebSocket.MaxClients <= 0 {
+		cfg.WebSocket.MaxClients = 3
 	}
 }
