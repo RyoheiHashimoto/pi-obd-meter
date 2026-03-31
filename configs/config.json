@@ -10,7 +10,7 @@
   "max_speed_kmh": 180,
   "engine_displacement_l": 1.3,
   "initial_odometer_km": 98000,
-  "throttle_idle_pct": 0,
+  "throttle_idle_pct": 1,
   "throttle_max_pct": 197,
   "fuel_tank_l": 46,
   "fuel_rate_correction": 1.3,
