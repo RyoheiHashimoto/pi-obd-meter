@@ -285,7 +285,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({
     cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
-    arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel, dimZone: 5,
+    arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel, dimZone: 10,
   });
 
   // RPM ArcAnimator（目盛り数字の上を通過、色はRPMに応じて動的変化）
