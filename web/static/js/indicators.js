@@ -101,7 +101,7 @@ function lerpMap() {
   if (vacLabelEl) {
     const lum = 10 + (pct / 100) * 45; // 10%(暗い) → 55%(明るい)
     const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
-    const vacCol = `hsl(${hue}, ${sat}%, ${lum}%)`;
+    const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
     vacLabelEl.setAttribute('fill', vacCol);
     vacLabelEl.style.filter = active ? `drop-shadow(0 0 ${3 + pct / 100 * 5}px ${vacCol})` : '';
   }
