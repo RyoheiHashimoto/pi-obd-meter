@@ -52,7 +52,7 @@ const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
 
 // --- Module state ---
-let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, atomGEl;
+let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
 let ecoValEl, ecoIconEls;
@@ -77,27 +77,37 @@ export function setEcoGradientMax(max) {
 }
 
 // --- MAP meter LERP ---
+// バキューム計: mapCur/mapTgt は bar 値 (-1.0 〜 0)
+const VAC_MIN = -1.0;
+const VAC_MAX = 0;
+
 function lerpMap() {
   const delta = mapTgt - mapCur;
-  mapCur = Math.abs(delta) > MG_LERP_TH ? mapCur + delta * MG_LERP : mapTgt;
-  const pct = Math.max(0, Math.min(100, mapCur / 101 * 100));
+  mapCur = Math.abs(delta) > MG_LERP_TH * 0.01 ? mapCur + delta * MG_LERP : mapTgt;
+  // -1.0=左端(0%), 0=右端(100%)
+  const pct = Math.max(0, Math.min(100, (mapCur - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
   const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
   mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
-  const active = mapCur > 0.5;
-  const hue = HUE_MAX - (pct / 100) * HUE_MAX;
-  const col = active ? `hsl(${hue}, 100%, 55%)` : '#333';
+  const active = mapCur < 0.01;
+  // 色: 0 bar(大気圧/全開)=赤, -1 bar(深い負圧)=青
+  const hue = (1 - pct / 100) * HUE_MAX;
+  const col = active ? (hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`) : '#333';
   mapArcEl.setAttribute('stroke', col);
   mapArcEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
   mapNeedleEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
-  if (atomGEl) {
-    atomGEl.setAttribute('stroke', active ? col : '#333');
-    atomGEl.querySelector('rect[fill-opacity]').setAttribute('fill', active ? col : '#333');
+  // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
+  if (vacLabelEl) {
+    const lum = 10 + (pct / 100) * 45; // 10%(暗い) → 55%(明るい)
+    const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
+    const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
+    vacLabelEl.setAttribute('fill', vacCol);
+    vacLabelEl.style.filter = active ? `drop-shadow(0 0 ${3 + pct / 100 * 5}px ${vacCol})` : '';
   }
   mapValEl.setAttribute('fill', active ? col : '#333');
-  mapValEl.textContent = active ? Math.round(mapCur) : '--';
-  mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP ? requestAnimationFrame(lerpMap) : 0;
+  mapValEl.textContent = active ? mapCur.toFixed(2) : '--';
+  mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP * 0.01 ? requestAnimationFrame(lerpMap) : 0;
 }
 
 // --- アイコン生成 ---
@@ -143,36 +153,39 @@ function createLeafIcon(svg, x, y, size) {
 export function createIndicators(panelEl) {
   const svg = document.getElementById('rg');
 
-  // === MAP メーター ===
-  const MAP_MAX = 101;
-  const MAP_MJ = 5;   // 主目盛り数 (0,20,40,60,80,100)
-  const MAP_MN = 4;    // 主目盛り間の副目盛り数
-  const MAP_TOTAL = MAP_MJ * MAP_MN;
+  // === バキューム計 (-1.0 〜 0 bar) ===
+  const VAC_MJ = 5;    // 主目盛り数 (-1.0, -0.8, -0.6, -0.4, -0.2, 0)
+  const VAC_MN = 4;    // 主目盛り間の副目盛り数
+  const VAC_TOTAL = VAC_MJ * VAC_MN;
 
   // Track
   svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
 
   // Ticks
-  for (let i = 0; i <= MAP_TOTAL; i++) {
-    const a = MG_ARC_START + (i / MAP_TOTAL) * MG_ARC_SWEEP;
-    const isMj = i % MAP_MN === 0;
-    const ri = isMj ? MAP_R - 18 : MAP_R - 13;
-    const ro = MAP_R + 4;
+  for (let i = 0; i <= VAC_TOTAL; i++) {
+    const a = MG_ARC_START + (i / VAC_TOTAL) * MG_ARC_SWEEP;
+    const isMj = i % VAC_MN === 0;
+    const ri = isMj ? MAP_R - 14 : MAP_R - 11;
+    const ro = MAP_R + 3;
     const [x1, y1] = polar(MAP_CX, MAP_CY, ri, a);
     const [x2, y2] = polar(MAP_CX, MAP_CY, ro, a);
     svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 4 : 2 });
     if (isMj) {
-      const v = Math.round((i / MAP_TOTAL) * 100);
+      const v = VAC_MIN + (i / VAC_TOTAL) * (VAC_MAX - VAC_MIN);
       const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 32, a);
       const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 22 });
-      t.textContent = v;
+      t.textContent = v === 0 ? '0' : v.toFixed(1).replace('-0.', '-.');
     }
   }
 
   // Active arc
   mapArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
 
-  // Needle
+  // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
+  vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
+  vacLabelEl.textContent = 'VACUUM';
+
+  // Needle (VACUUM ラベルの上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
   mapNeedleEl = svgEl(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` });
@@ -181,39 +194,12 @@ export function createIndicators(panelEl) {
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
-  // MAP icon (intake manifold)
-  const iconSize = 36;
-  const iconY = MAP_CY - 38;
-  const atomG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  atomG.setAttribute('transform', `translate(${MAP_CX - iconSize/2}, ${iconY - iconSize/2}) scale(${iconSize/24})`);
-  atomG.setAttribute('fill', 'none');
-  atomG.setAttribute('stroke', '#333');
-  atomG.setAttribute('stroke-width', '2.5');
-  atomG.setAttribute('stroke-linecap', 'round');
-  atomG.setAttribute('stroke-linejoin', 'round');
-  // マニホールド上部
-  const mr = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  mr.setAttribute('x', '2'); mr.setAttribute('y', '4'); mr.setAttribute('width', '20'); mr.setAttribute('height', '6'); mr.setAttribute('rx', '2');
-  mr.setAttribute('fill', '#333'); mr.setAttribute('fill-opacity', '0.3'); mr.setAttribute('stroke', 'none');
-  atomG.appendChild(mr);
-  const mr2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  mr2.setAttribute('x', '2'); mr2.setAttribute('y', '4'); mr2.setAttribute('width', '20'); mr2.setAttribute('height', '6'); mr2.setAttribute('rx', '2');
-  atomG.appendChild(mr2);
-  // ランナー4本
-  for (const lx of ['5', '9.6', '14.4', '19']) {
-    const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    ln.setAttribute('x1', lx); ln.setAttribute('y1', '10'); ln.setAttribute('x2', lx); ln.setAttribute('y2', '21');
-    atomG.appendChild(ln);
-  }
-  svg.appendChild(atomG);
-  atomGEl = atomG;
-
   // Value
-  mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.52, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
   mapValEl.textContent = '--';
   // Unit
-  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.52 + 32, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
-  mapUnitEl.textContent = 'kPa';
+  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
+  mapUnitEl.textContent = 'Bar';
 
   // === 4行インジケーター ===
   // 区切り線
@@ -257,9 +243,9 @@ const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red
 
 // updateIndicators: APIデータで更新
 export function updateIndicators(dom, d, conf) {
-  // MAP
+  // バキューム (kPa → bar)
   const mapKpa = d.intake_map || 0;
-  mapTgt = mapKpa;
+  mapTgt = (mapKpa - 101.3) / 100;
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
   // ECO (平均燃費の数値、色は瞬間燃費)
@@ -267,9 +253,13 @@ export function updateIndicators(dom, d, conf) {
   const instantEco = d.fuel_economy || 0;
   ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--';
   let ecoCol;
-  if (instantEco < 0) ecoCol = '#29b6f6';          // エンブレ
-  else if (instantEco < 0.1) ecoCol = '#ddd';      // 停車
-  else {
+  if (instantEco < 0 || instantEco < 0.1) {
+    // エンブレ/停車: VACUUM 計と同じ色に同期
+    const vacBar = (mapKpa - 101.3) / 100;
+    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
+    const vacHue = (1 - vacPct / 100) * HUE_MAX;
+    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
+  } else {
     const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
     ecoCol = `hsl(${hue}, 100%, 55%)`;
   }

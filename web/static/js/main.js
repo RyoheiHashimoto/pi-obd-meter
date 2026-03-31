@@ -1,5 +1,5 @@
 // ============================================================
-// Main — エントリポイント + API ポーリング
+// Main — エントリポイント + WebSocket / HTTP ポーリング
 // ============================================================
 
 import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
@@ -11,13 +11,25 @@ const DEFAULTS = {
   eco_gradient_max_kmpl: 15,
   trip_warn_km: 300, trip_danger_km: 500,
 };
+
+// HTTP フォールバック用
 const POLL_INTERVAL_MS = 50;
 const FETCH_TIMEOUT_MS = 3000;
+
+// WebSocket 再接続
+const WS_RECONNECT_BASE_MS = 1000;
+const WS_RECONNECT_MAX_MS = 10000;
+const WS_MAX_RETRIES = 10;
 
 let conf = DEFAULTS;
 let gs;
 let dom;
 let connected = false;
+let ws = null;
+let wsReconnectDelay = WS_RECONNECT_BASE_MS;
+let wsEverConnected = false;
+let wsRetryCount = 0;
+let usingPolling = false;
 
 // --- データ適用 ---
 function applyData(d) {
@@ -29,7 +41,44 @@ function applyData(d) {
   updateIndicators(dom, d, conf);
 }
 
-// --- APIポーリング ---
+// --- WebSocket 接続 ---
+function connectWebSocket() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/ws/realtime`);
+
+  ws.onopen = () => {
+    connected = true;
+    wsEverConnected = true;
+    wsReconnectDelay = WS_RECONNECT_BASE_MS;
+    wsRetryCount = 0;
+  };
+
+  ws.onmessage = (ev) => {
+    connected = true;
+    applyData(JSON.parse(ev.data));
+  };
+
+  ws.onclose = () => {
+    connected = false;
+    ws = null;
+    wsRetryCount++;
+    if (!wsEverConnected || wsRetryCount >= WS_MAX_RETRIES) {
+      // WS 未接続 or 再接続上限超過 → HTTP polling にフォールバック
+      usingPolling = true;
+      startPolling();
+      return;
+    }
+    // Exponential backoff で再接続
+    setTimeout(connectWebSocket, wsReconnectDelay);
+    wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, WS_RECONNECT_MAX_MS);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+// --- HTTP ポーリング（フォールバック用） ---
 async function fetchRealtime() {
   try {
     const ctrl = new AbortController();
@@ -42,6 +91,12 @@ async function fetchRealtime() {
   } catch {
     connected = false;
   }
+}
+
+function startPolling() {
+  (function poll() {
+    fetchRealtime().then(() => setTimeout(poll, POLL_INTERVAL_MS));
+  })();
 }
 
 // --- 初期化 ---
@@ -86,9 +141,8 @@ async function initApp() {
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
-  (function poll() {
-    fetchRealtime().then(() => setTimeout(poll, POLL_INTERVAL_MS));
-  })();
+  // WebSocket 優先、失敗時は HTTP polling にフォールバック
+  connectWebSocket();
 }
 
 initApp();

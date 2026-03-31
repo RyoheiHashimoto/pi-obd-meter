@@ -679,13 +679,13 @@ func TestCalcFuelEconomy_SpeedDensity(t *testing.T) {
 }
 
 func TestCalcFuelEconomy_MAPEngineBraking(t *testing.T) {
-	// MAP < 35kPa（強い負圧）= エンブレ判定
+	// MAP < 30kPa（強い負圧）= エンブレ判定
 	got, _ := calcFuelEconomy(60, 2000, 30, 0, false, 25, true, 1.3, 1.0)
 	if got != -1 {
 		t.Errorf("MAP engine braking (25kPa): got %.1f, want -1", got)
 	}
 
-	// MAP >= 35kPa = 通常走行
+	// MAP >= 30kPa = 通常走行
 	got2, _ := calcFuelEconomy(60, 2000, 30, 0, false, 50, true, 1.3, 1.0)
 	if got2 <= 0 {
 		t.Errorf("MAP normal driving (50kPa): got %.1f, expected positive", got2)

@@ -58,7 +58,7 @@ export function speedColor(v) {
 // --- ArcAnimator: アーク LERP アニメーション ---
 // value → percentage → angle → arcPath → HSL色 → glow の流れで描画する。
 class ArcAnimator {
-  constructor({ cx, cy, r, maxVal, lerpSpeed, arcEl, offColor, activeThreshold, labelEl, readoutVal, readoutUnit, formatVal }) {
+  constructor({ cx, cy, r, maxVal, lerpSpeed, arcEl, offColor, activeThreshold, labelEl, readoutVal, readoutUnit, formatVal, dimZone }) {
     this.cx = cx;
     this.cy = cy;
     this.r = r;
@@ -71,6 +71,7 @@ class ArcAnimator {
     this.readoutVal = readoutVal || null;
     this.readoutUnit = readoutUnit || null;
     this.formatVal = formatVal || (v => String(Math.round(v)));
+    this.dimZone = dimZone || 0; // pct がこの値以下で暗→明グラデーション
     this.cur = 0;
     this.tgt = 0;
     this.rafId = 0;
@@ -90,10 +91,20 @@ class ArcAnimator {
     this.arcEl.setAttribute('d', pct > 0.5 ? arcPath(this.cx, this.cy, this.r, ARC_START, angle) : '');
     const hue = HUE_MAX - (pct / 100) * HUE_MAX;
     const active = this.cur > this.activeThreshold;
-    const col = active ? `hsl(${hue}, 100%, 55%)` : this.offColor;
+    let col;
+    if (!active) {
+      col = this.offColor;
+    } else if (this.dimZone > 0 && pct < this.dimZone) {
+      const dim = pct / this.dimZone; // 0→1
+      const lum = 15 + dim * 40;     // 15%→55%
+      const sat = dim * 100;          // 0%→100%
+      col = `hsl(${hue}, ${sat}%, ${lum}%)`;
+    } else {
+      col = hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`;
+    }
     this.arcEl.setAttribute('stroke', col);
     applyGlow(this.arcEl, col);
-    if (this.labelEl) { this.labelEl.setAttribute('fill', col); this.labelEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : ''; }
+    if (this.labelEl) { this.labelEl.setAttribute('fill', col); this.labelEl.style.filter = active && (!this.dimZone || pct >= this.dimZone) ? `drop-shadow(0 0 6px ${col})` : ''; }
     if (this.readoutVal) {
       const rdCol = active ? col : '#333';
       this.readoutVal.setAttribute('fill', rdCol);
@@ -274,7 +285,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({
     cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
-    arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel,
+    arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel, dimZone: 5,
   });
 
   // RPM ArcAnimator（目盛り数字の上を通過、色はRPMに応じて動的変化）

@@ -9,7 +9,7 @@ const (
 	maxDisplayKmL     = 99.9  // 燃費表示の上限値 (km/L)
 	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 	atmosphericKPa    = 101.3 // 標準大気圧 (kPa)
-	engineBrakeMAPKPa = 35.0  // エンブレ判定MAP閾値 (kPa) — 強い負圧
+	engineBrakeMAPKPa = 30.0  // エンブレ判定MAP閾値 (kPa) — 強い負圧
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
