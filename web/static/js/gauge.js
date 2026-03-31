@@ -90,7 +90,7 @@ class ArcAnimator {
     this.arcEl.setAttribute('d', pct > 0.5 ? arcPath(this.cx, this.cy, this.r, ARC_START, angle) : '');
     const hue = HUE_MAX - (pct / 100) * HUE_MAX;
     const active = this.cur > this.activeThreshold;
-    const col = active ? `hsl(${hue}, 100%, 55%)` : this.offColor;
+    const col = active ? (hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`) : this.offColor;
     this.arcEl.setAttribute('stroke', col);
     applyGlow(this.arcEl, col);
     if (this.labelEl) { this.labelEl.setAttribute('fill', col); this.labelEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : ''; }
