@@ -244,6 +244,7 @@ configs/auto-update.timer     # 2分間隔 (OnBootSec=2min, OnUnitActiveSec=2min
 |---|---|---|
 | `/api/config` | GET | max_speed_kmh, ECO閾値, スロットル設定 等 |
 | `/api/realtime` | GET | 速度・RPM・負荷・スロットル・MAP・燃費・トリップ・接続状態 |
+| `/ws/realtime` | WS | WebSocket リアルタイム配信（HTTP フォールバック: GET /api/realtime） |
 | `/api/maintenance` | GET | メンテナンス全項目の進捗 |
 | `/api/health` | GET | OBD/WiFi接続・キューサイズ・uptime・バージョン |
 | `/api/kiosk/stop` | POST | キオスクモード終了 |

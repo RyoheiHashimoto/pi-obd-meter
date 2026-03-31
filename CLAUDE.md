@@ -110,9 +110,9 @@ web/
     meter.html              メーター画面HTML
     meter.css               CSS Custom Properties でテーマ管理
     js/
-      main.js               エントリポイント + APIポーリング + Toast + キオスク終了
+      main.js               エントリポイント + WebSocket/HTTPポーリング + Toast + キオスク終了
       gauge.js              速度ゲージ(針+アーク) + RPMアーク + スロットルアーク + ギア/レンジ表示 + 下部インジケーター(TEMP/TRIP/ECO) + 60fps LERP補間
-      indicators.js         右パネルインジケーター (GEAR/ECO/TRIP/TEMP/MAP/MAF/O2/TRIM)
+      indicators.js         右パネル バキューム計 + 4行インジケーター (ECO/TEMP/TRIP/OIL)
     fonts/
       Orbitron-*.ttf        速度・数値表示フォント
       ShareTechMono-*.woff2 リードアウト表示フォント
@@ -133,6 +133,8 @@ configs/
 scripts/
   deploy.sh                 開発・デプロイスクリプト
   auto-update.sh            Pi 自動更新スクリプト（GitHub Releases チェック）
+  capture-screenshots.sh    メーター画面の定期スクリーンショット（~/meter-screenshots に保存）
+  drive-test.sh             実走テスト（candump + スクショの開始/停止/回収）
 
 docs/
   setup-guide.md            セットアップガイド
@@ -175,7 +177,7 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 - **MAPセンサー搭載車**: Speed-Density法: MAP/大気圧 × RPM/2 × 排気量 → 吸入空気量 → 燃費
 - **上記なし（DYデミオ等）**: エンジン負荷 × RPM × 排気量から吸入空気量を推定
 - 物理定数: 理論空燃比 14.7、ガソリン密度 750 g/L、空気密度 1.225 g/L
-- エンブレ判定: MAP < 35 kPa（優先） or 負荷 < 5%（フォールバック）
+- エンブレ判定: MAP < 30 kPa（優先） or 負荷 < 5%（フォールバック）
 - 低速域 (<10 km/h) では燃費表示しない（クリープ等でのノイズ回避）
 
 ### SD書き込み低減
@@ -197,20 +199,17 @@ ECU → ELM327 (CAN 2.0B) → Pi (BT rfcomm) → meter.html（車載LCD: 速度/
 - ECUレスポンスが律速（50-100ms/PID）。BT遅延（20-50ms）は支配的でない
 
 ### メーターUI
-- 800×480 全画面、速度の270° SVGアークゲージ
-- 内側にスロットルアーク（HSL連続グラデーション: 青→赤）
+- 800×480 全画面、速度の270° SVGアークゲージ (r=230, cy=270)
+- 内側にスロットルアーク（CAN LOAD 生値対応: idle=1, max=197, dimZone=5）
 - 外側にRPMアーク（レッドゾーン背景付き）
 - ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
-- 下部にTEMP(左)・TRIP(中)・ECO(右) アイコン付きインジケーター
-- 右パネル: 3連二重アークメーター（プロトタイプ: meter-dev-3gauge.html）
-  - メーター1: ギア比(:1) + TCCロック率(LOCK %) — 青→緑、HOLD=黄、R=橙
-  - メーター2: MAP(kPa) + A/F(空燃比) — リッチ=赤、ストイキ=緑、リーン=青
-  - メーター3: 推定PS + トルク(kgf·m) — MAP×RPM×VE推定
-- 警告灯16項目: LINK/NETWORK/CHECK + メンテ13項目（config.jsonのlampフィールドで動的生成）
-  - soft: 消灯→黄(warning_pct)→橙(超過) / hard: 消灯→橙(warning_pct)→赤(超過)
+- 右パネル: バキューム計 + 4行インジケーター
+  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar)。VACUUM ラベルが負圧に応じて暗→明→赤+グロー
+  - 4行インジケーター: ECO / TEMP / TRIP / OIL（縦配置）
 - CSS/JS分離済み（meter.html + meter.css + js/main.js + js/gauge.js + js/indicators.js）
 - CSS Custom Properties で色・レイアウトを一元管理
-- requestAnimationFrame で60fps LERP補間、OBDデータは200msポーリング
+- requestAnimationFrame で60fps LERP補間
+- WebSocket 優先 (/ws/realtime) + HTTP フォールバック（ライブラリ: github.com/coder/websocket）
 - 時刻ベースで自動輝度調整（xrandr --brightness、config で設定可能）
 - 画面3秒長押しでキオスク終了
 
@@ -229,13 +228,14 @@ hdmi_cvt 800 480 60 6 0 0 0
 - **トリップ完了**: Pi → GAS Webhook (type: "trip") → Google Sheets
 - **メンテナンス状態**: Pi → GAS Webhook (type: "maintenance") → Google Sheets（始動時 + 5分間隔）
 - **状態復元**: Pi起動時 → GAS Webhook (type: "restore") → ODO/最終給油距離を取得
-- **リアルタイム表示**: Pi → meter.html（車載LCD、ローカルHTTP API経由）
+- **リアルタイム表示**: Pi → meter.html（車載LCD、WebSocket優先 / HTTP APIフォールバック）
 - **給油記録**: スマホ → GAS doGet/doPost → Google Sheets（手動入力、燃費自動算出）
 - **ODO補正・メンテリセット**: スマホ → GAS → Pi（次回メンテ送信レスポンスで反映）
 
 ### ローカルAPI
 - `GET /api/config` — max_speed_kmh, ECO閾値, スロットル設定, version
 - `GET /api/realtime` — 速度・RPM・負荷・スロットル・MAP・燃費・トリップ・接続状態
+- `WS /ws/realtime` — WebSocket リアルタイム配信（HTTP フォールバック: GET /api/realtime）
 - `GET /api/maintenance` — メンテナンス全項目の進捗
 - `GET /api/health` — OBD/WiFi接続・キューサイズ・uptime・バージョン
 - `POST /api/kiosk/stop` — キオスクモード終了
@@ -271,18 +271,15 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `max_speed_kmh`: 速度メーター最大値 (例: 180)
 - `initial_odometer_km`: 初期ODO値 (km)
 - `web_static_dir`: Web UI配信元（空 = 埋め込みファイル使用、開発時にパス指定可）
-- `throttle_idle_pct`: スロットルアイドル開度 (例: 11.5) — スロットル表示のゼロ基準
-- `throttle_max_pct`: スロットル最大開度 (例: 75) — スロットル表示の100%基準
+- `throttle_idle_pct`: スロットルアイドル開度 (例: 1) — CAN LOAD 生値のゼロ基準
+- `throttle_max_pct`: スロットル最大開度 (例: 197) — CAN LOAD 生値の100%基準
 - `fuel_tank_l`: 燃料タンク容量 (例: 46) — トリップ警告閾値の導出に使用
 - `fuel_rate_correction`: 燃料レート補正係数 (例: 1.3) — 理論値と実燃費の乖離を補正
 - `obd_protocol`: OBDプロトコル (例: "6" = CAN 11bit 500k)
 - `poll_interval_ms`: ポーリング間隔 (例: 500)
 - `local_api_port`: ローカルAPIポート (デフォルト: 9090)
 - `brightness`: 輝度スケジュール設定（`hdmi_output` + `schedule[]`）
-- `max_ps`: メーター最大馬力 (例: 91) — PS メーターのスケール
-- `max_torque_kgfm`: メーター最大トルク (例: 12.6) — トルクメーターのスケール
-- `max_torque_rpm`: 最大トルク回転数 (例: 3500)
-- `max_ps_rpm`: 最高出力回転数 (例: 6000)
+- `websocket`: WebSocket設定（`enabled`, `broadcast_interval_ms`, `max_clients`）
 - `maintenance_reminders`: メンテナンス項目の配列（ID, 名前, lamp, severity, タイプ, 間隔, 警告閾値）
 
 ### 開発元の確認車両
