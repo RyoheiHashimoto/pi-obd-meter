@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"runtime"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -20,28 +21,30 @@ type DataProvider func() GaugeData
 
 // GaugeData は描画に必要なデータ
 type GaugeData struct {
-	SpeedKmh    float64
-	RPM         float64
-	ThrottlePos float64
-	IntakeMAP   float64
-	CoolantTemp float64
-	FuelEconomy float64
-	AvgFuelEco  float64
-	TripKm      float64
-	Gear        int
-	ATRangeStr  string
-	Hold        bool
-	TCLocked    bool
-	OilAlert    string
-	OilRemainKm float64
+	SpeedKmh     float64
+	RPM          float64
+	ThrottlePos  float64
+	IntakeMAP    float64
+	CoolantTemp  float64
+	FuelEconomy  float64
+	AvgFuelEco   float64
+	TripKm       float64
+	Gear         int
+	ATRangeStr   string
+	Hold         bool
+	TCLocked     bool
+	OilAlert     string
+	OilRemainKm  float64
 	OBDConnected bool
 }
 
 // RendererConfig はレンダラー設定
 type RendererConfig struct {
-	MaxSpeed      float64
-	FontDir       string // フォントディレクトリ
-	Demo          bool   // デモモード
+	MaxSpeed        float64
+	ThrottleIdlePct float64
+	ThrottleMaxPct  float64
+	FontDir         string
+	Demo            bool
 }
 
 // Renderer は SDL2 レンダラー
@@ -51,9 +54,14 @@ type Renderer struct {
 	renderer *sdl.Renderer
 	fm       *FontManager
 	gauge    *SpeedGauge
+	panel    *RightPanel
 	provider DataProvider
 	running  bool
 	stopCh   chan struct{}
+
+	// 3秒長押し終了
+	pressStart time.Time
+	pressing   bool
 }
 
 // NewRenderer は新しい SDL2 レンダラーを作成する（まだ開始しない）
@@ -66,7 +74,6 @@ func NewRenderer(cfg RendererConfig, provider DataProvider) *Renderer {
 }
 
 // Run はSDLイベントループを開始する（メイン goroutine から呼ぶこと）
-// ブロッキング。Stop() が呼ばれるか、ウィンドウが閉じられるまで戻らない。
 func (r *Renderer) Run() error {
 	runtime.LockOSThread()
 
@@ -109,48 +116,43 @@ func (r *Renderer) Run() error {
 	orbitronPath := r.cfg.FontDir + "/Orbitron-Black.ttf"
 	shareTechPath := r.cfg.FontDir + "/ShareTechMono-Regular.ttf"
 
-	// Orbitron の各サイズ
-	for _, size := range []int{84, 52, 48, 40, 28} {
+	for _, size := range []int{84, 52, 48, 40, 28, 22} {
 		if err := fm.LoadFont(orbitronPath, size); err != nil {
-			// woff2 は SDL_ttf 非対応の場合あり。Orbitron は TTF を使う
 			slog.Warn("フォント読み込み失敗、継続", "path", orbitronPath, "size", size, "error", err)
 		}
 	}
-	// Share Tech Mono の各サイズ
-	for _, size := range []int{28, 24} {
+	for _, size := range []int{28, 24, 22} {
 		if err := fm.LoadFont(shareTechPath, size); err != nil {
 			slog.Warn("フォント読み込み失敗、継続", "path", shareTechPath, "size", size, "error", err)
 		}
 	}
 
-	// 速度ゲージ作成
+	// 左パネル：速度ゲージ + RPM + スロットル + ギア
 	r.gauge = NewSpeedGauge(renderer, fm, GaugeConfig{
-		CX:            280,
-		CY:            270,
-		Radius:        230,
-		MaxSpeed:      r.cfg.MaxSpeed,
-		OrbitronPath:  orbitronPath,
-		ShareTechPath: shareTechPath,
+		CX:              280,
+		CY:              270,
+		Radius:          230,
+		MaxSpeed:        r.cfg.MaxSpeed,
+		ThrottleIdlePct: r.cfg.ThrottleIdlePct,
+		ThrottleMaxPct:  r.cfg.ThrottleMaxPct,
+		OrbitronPath:    orbitronPath,
+		ShareTechPath:   shareTechPath,
 	})
 	defer r.gauge.Destroy()
 
+	// 右パネル：バキューム計 + インジケーター
+	r.panel = NewRightPanel(renderer, fm, orbitronPath, shareTechPath)
+	defer r.panel.Destroy()
+
 	slog.Info("SDL2メーター起動", "width", WindowWidth, "height", WindowHeight)
 
-	// デモ用
 	var demoT float64
 
 	r.running = true
 	for r.running {
 		// イベント処理
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
-			switch e := event.(type) {
-			case *sdl.QuitEvent:
-				r.running = false
-			case *sdl.KeyboardEvent:
-				if e.Type == sdl.KEYDOWN && e.Keysym.Sym == sdl.K_ESCAPE {
-					r.running = false
-				}
-			}
+			r.handleEvent(event)
 		}
 
 		// stop シグナル確認
@@ -159,6 +161,13 @@ func (r *Renderer) Run() error {
 			r.running = false
 			continue
 		default:
+		}
+
+		// 3秒長押し判定
+		if r.pressing && time.Since(r.pressStart) >= 3*time.Second {
+			slog.Info("3秒長押し検出、終了")
+			r.running = false
+			continue
 		}
 
 		// データ取得
@@ -170,20 +179,59 @@ func (r *Renderer) Run() error {
 			data = r.provider()
 		}
 
-		// LERP 更新
+		// 左パネル更新
 		r.gauge.SetTarget(data.SpeedKmh)
+		r.gauge.SetRPM(data.RPM)
+		r.gauge.SetThrottle(data.ThrottlePos)
+		r.gauge.SetGear(data.Gear, data.ATRangeStr, data.Hold, data.TCLocked)
 		r.gauge.Update()
+
+		// 右パネル更新
+		r.panel.SetData(data)
+		r.panel.Update()
 
 		// 描画
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
 
 		r.gauge.Draw(renderer)
+		r.panel.Draw(renderer)
 
 		renderer.Present()
 	}
 
 	return nil
+}
+
+// handleEvent は SDL イベントを処理する
+func (r *Renderer) handleEvent(event sdl.Event) {
+	switch e := event.(type) {
+	case *sdl.QuitEvent:
+		r.running = false
+	case *sdl.KeyboardEvent:
+		if e.Type == sdl.KEYDOWN && e.Keysym.Sym == sdl.K_ESCAPE {
+			r.running = false
+		}
+	case *sdl.MouseButtonEvent:
+		if e.Type == sdl.MOUSEBUTTONDOWN {
+			r.pressing = true
+			r.pressStart = time.Now()
+		} else if e.Type == sdl.MOUSEBUTTONUP {
+			r.pressing = false
+		}
+	case *sdl.TouchFingerEvent:
+		if e.Type == sdl.FINGERDOWN {
+			r.pressing = true
+			r.pressStart = time.Now()
+		} else if e.Type == sdl.FINGERUP {
+			r.pressing = false
+		}
+	case *sdl.MouseMotionEvent:
+		// マウス移動で長押しキャンセル
+		if r.pressing {
+			r.pressing = false
+		}
+	}
 }
 
 // Stop はレンダリングループを停止する（別 goroutine から呼べる）
@@ -196,7 +244,6 @@ func (r *Renderer) Stop() {
 
 // demoData はデモ用のサイン波データを生成する
 func demoData(t float64) GaugeData {
-	// 速度: 0-140 km/h をゆっくり変動
 	speed := 70 + 70*math.Sin(t*0.3)
 	rpm := 800 + speed*35
 	throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
@@ -230,7 +277,7 @@ func demoData(t float64) GaugeData {
 	}
 }
 
-// RunDemo はデモモードでレンダラーを起動する（テスト用エントリポイント）
+// RunDemo はデモモードでレンダラーを起動する
 func RunDemo(fontDir string, maxSpeed float64) error {
 	r := NewRenderer(RendererConfig{
 		MaxSpeed: maxSpeed,
@@ -239,4 +286,3 @@ func RunDemo(fontDir string, maxSpeed float64) error {
 	}, nil)
 	return r.Run()
 }
-

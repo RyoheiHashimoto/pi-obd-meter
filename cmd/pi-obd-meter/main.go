@@ -113,9 +113,11 @@ func main() {
 	// --- SDL モード: メイン goroutine で SDL ループ実行 ---
 	if *mode == "sdl" {
 		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
-			MaxSpeed: float64(cfg.MaxSpeedKmh),
-			FontDir:  *fontDir,
-			Demo:     *demo,
+			MaxSpeed:        float64(cfg.MaxSpeedKmh),
+			ThrottleIdlePct: cfg.ThrottleIdlePct,
+			ThrottleMaxPct:  cfg.ThrottleMaxPct,
+			FontDir:         *fontDir,
+			Demo:            *demo,
 		}, func() sdlui.GaugeData {
 			d := app.getRealtimeData()
 			return sdlui.GaugeData{
