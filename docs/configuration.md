@@ -16,8 +16,8 @@
   "max_speed_kmh": 180,
   "engine_displacement_l": 1.3,
   "initial_odometer_km": 98000,
-  "throttle_idle_pct": 11.5,
-  "throttle_max_pct": 75,
+  "throttle_idle_pct": 1,
+  "throttle_max_pct": 197,
   "fuel_tank_l": 40,
   "fuel_rate_correction": 1.3,
   "oil_change": {"interval_km": 3000, "warning_km": 2500, "danger_km": 4000},
@@ -55,12 +55,12 @@
 
 | パラメータ | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| `throttle_idle_pct` | float | `11.5` | アイドル時のスロットル開度 (%)。表示のゼロ基準 |
-| `throttle_max_pct` | float | `78` | 全開時のスロットル開度 (%)。表示の100%基準 |
+| `throttle_idle_pct` | float | `1` | CAN LOAD 生値のアイドル基準。表示のゼロ基準 |
+| `throttle_max_pct` | float | `197` | CAN LOAD 生値の全開基準。表示の100%基準 |
+| `throttle_dim_zone` | float | `5` | アイドル付近で暗く表示する範囲 |
 
-> **車種依存度: 高。** ECU によってアイドル時の報告値が 5-20% まで幅がある。
-> 実車でアイドル時の値を読み取って `throttle_idle_pct` を設定する。
-> `pi-obd-scanner` で PID 0x11 の値を確認できる。
+> **車種依存度: 高。** CAN LOAD の生値範囲は車種によって異なる。
+> 実車でアイドル時・全開時の値を読み取って設定する。
 
 ### ファイルパス
 
@@ -157,6 +157,28 @@
 
 ---
 
+## WebSocket 設定
+
+```json
+{
+  "websocket": {
+    "enabled": true,
+    "broadcast_interval_ms": 50,
+    "max_clients": 3
+  }
+}
+```
+
+| フィールド | 型 | デフォルト | 説明 |
+|---|---|---|---|
+| `enabled` | bool | `true` | WebSocket リアルタイム配信の有効/無効 |
+| `broadcast_interval_ms` | int | `50` | ブロードキャスト間隔 (ms) |
+| `max_clients` | int | `3` | 同時接続クライアント数の上限 |
+
+メーター UI は WebSocket (`/ws/realtime`) を優先し、接続失敗時は HTTP (`/api/realtime`) にフォールバックする。
+
+---
+
 ## 車種チューニング
 
 他車種に適用する際にチェックが必要な項目。
@@ -166,8 +188,8 @@
 | 項目 | パラメータ | DYデミオ | 例: 2.0L セダン |
 |---|---|---|---|
 | エンジン排気量 | `engine_displacement_l` | 1.3 | 2.0 |
-| スロットルアイドル開度 | `throttle_idle_pct` | 11.5 | 8.0-15.0 |
-| スロットル最大開度 | `throttle_max_pct` | 75 | 70-85 |
+| スロットルアイドル (CAN LOAD 生値) | `throttle_idle_pct` | 1 | 車種による |
+| スロットル最大 (CAN LOAD 生値) | `throttle_max_pct` | 197 | 車種による |
 | 燃料タンク容量 | `fuel_tank_l` | 40 | 60 |
 | 燃料レート補正係数 | `fuel_rate_correction` | 1.3 | 給油燃費と比較して調整 |
 | メーター最大速度 | `max_speed_kmh` | 180 | 260 |
@@ -204,5 +226,5 @@
 | 水温閾値 | `indicators.js` | 70/105 °C | ほぼ汎用 |
 | RPM閾値 | `indicators.js` | 3000/4500 rpm | 車種による |
 | エンブレ負荷閾値 | `fuel.go` | 5.0% | ほぼ汎用 |
-| エンブレMAP閾値 | `fuel.go` | 35.0 kPa | ほぼ汎用 |
+| エンブレMAP閾値 | `fuel.go` | 30.0 kPa | ほぼ汎用 |
 | 燃費表示最低速度 | `fuel.go` | 10.0 km/h | ほぼ汎用 |
