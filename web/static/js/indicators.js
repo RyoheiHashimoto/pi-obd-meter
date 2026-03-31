@@ -253,9 +253,13 @@ export function updateIndicators(dom, d, conf) {
   const instantEco = d.fuel_economy || 0;
   ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--';
   let ecoCol;
-  if (instantEco < 0) ecoCol = '#29b6f6';          // エンブレ
-  else if (instantEco < 0.1) ecoCol = '#ddd';      // 停車
-  else {
+  if (instantEco < 0 || instantEco < 0.1) {
+    // エンブレ/停車: VACUUM 計と同じ色に同期
+    const vacBar = (mapKpa - 101.3) / 100;
+    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
+    const vacHue = (1 - vacPct / 100) * HUE_MAX;
+    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
+  } else {
     const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
     ecoCol = `hsl(${hue}, 100%, 55%)`;
   }
