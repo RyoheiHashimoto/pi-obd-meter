@@ -17,6 +17,7 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
+	"github.com/hashimoto/pi-obd-meter/internal/sdlui"
 )
 
 var version = "dev"
@@ -36,6 +37,9 @@ func checkWiFi() bool {
 
 func main() {
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
+	mode := flag.String("mode", "browser", "描画モード: browser (Chromium) / sdl (SDL2直描画)")
+	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
+	fontDir := flag.String("font-dir", "web/static/fonts", "フォントディレクトリ")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
@@ -105,6 +109,54 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	slog.Info("データ収集開始")
+
+	// --- SDL モード: メイン goroutine で SDL ループ実行 ---
+	if *mode == "sdl" {
+		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
+			MaxSpeed: float64(cfg.MaxSpeedKmh),
+			FontDir:  *fontDir,
+			Demo:     *demo,
+		}, func() sdlui.GaugeData {
+			d := app.getRealtimeData()
+			return sdlui.GaugeData{
+				SpeedKmh:     d.SpeedKmh,
+				RPM:          d.RPM,
+				ThrottlePos:  d.ThrottlePos,
+				IntakeMAP:    d.IntakeMAP,
+				CoolantTemp:  d.CoolantTemp,
+				FuelEconomy:  d.FuelEconomy,
+				AvgFuelEco:   d.AvgFuelEconomy,
+				TripKm:       d.TripKm,
+				Gear:         d.Gear,
+				ATRangeStr:   d.ATRangeStr,
+				Hold:         d.Hold,
+				TCLocked:     d.TCLocked,
+				OilAlert:     d.OilAlert,
+				OilRemainKm:  d.OilRemainingKm,
+				OBDConnected: d.OBDConnected,
+			}
+		})
+
+		// SIGINT/SIGTERM で SDL ループを停止
+		go func() {
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			<-sigCh
+			slog.Info("シグナル受信、SDLシャットダウン")
+			sdlRenderer.Stop()
+			cancel()
+			app.tracker.SaveState()
+			app.maintMgr.SaveState()
+		}()
+
+		if err := sdlRenderer.Run(); err != nil {
+			slog.Error("SDL描画エラー", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// --- ブラウザモード: 従来のメインループ ---
 
 	// OBDメインループ状態（フィルタリング・燃費計算はメイン側で管理）
 	var (

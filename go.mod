@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/creativeprojects/go-selfupdate v1.5.2
+	github.com/veandco/go-sdl2 v0.4.40
 	go.bug.st/serial v1.6.4
 	golang.org/x/sys v0.42.0
 )
