@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
@@ -49,6 +50,9 @@ type App struct {
 	totalKmMu    sync.Mutex
 	totalKmAccum float64
 	odoApplied   bool
+
+	maintSending atomic.Bool
+	retrySending atomic.Bool
 
 	startedAt time.Time
 }
@@ -120,6 +124,32 @@ func (app *App) getRealtimeData() RealtimeData {
 	app.dataMu.RLock()
 	defer app.dataMu.RUnlock()
 	return app.latestData
+}
+
+// sendMaintenanceStatusAsync はメンテナンス送信をバックグラウンドで実行する。
+// 既に送信中の場合はスキップする（二重実行防止）。
+func (app *App) sendMaintenanceStatusAsync(ctx context.Context) {
+	if !app.maintSending.CompareAndSwap(false, true) {
+		slog.Debug("メンテナンス送信スキップ（前回送信中）")
+		return
+	}
+	go func() {
+		defer app.maintSending.Store(false)
+		app.sendMaintenanceStatus(ctx)
+	}()
+}
+
+// retryPendingAsync はリトライをバックグラウンドで実行する。
+// 既にリトライ中の場合はスキップする（二重実行防止）。
+func (app *App) retryPendingAsync(ctx context.Context) {
+	if !app.retrySending.CompareAndSwap(false, true) {
+		slog.Debug("リトライスキップ（前回リトライ中）")
+		return
+	}
+	go func() {
+		defer app.retrySending.Store(false)
+		app.client.RetryPending(ctx)
+	}()
 }
 
 // sendMaintenanceStatus はメンテナンス状態をGASに送信し、レスポンスを処理する。
