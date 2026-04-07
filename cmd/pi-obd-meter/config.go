@@ -179,11 +179,11 @@ func validateConfig(cfg *Config) {
 		slog.Warn("max_ps_rpm が不正、デフォルト使用", "value", cfg.MaxPSRPM)
 		cfg.MaxPSRPM = 6000
 	}
-	if cfg.ThrottleIdlePct < 0 || cfg.ThrottleIdlePct > 100 {
+	if cfg.ThrottleIdlePct < 0 || cfg.ThrottleIdlePct > 255 {
 		slog.Warn("throttle_idle_pct が不正、デフォルト使用", "value", cfg.ThrottleIdlePct)
 		cfg.ThrottleIdlePct = 11.5
 	}
-	if cfg.ThrottleMaxPct <= cfg.ThrottleIdlePct || cfg.ThrottleMaxPct > 100 {
+	if cfg.ThrottleMaxPct <= cfg.ThrottleIdlePct || cfg.ThrottleMaxPct > 255 {
 		slog.Warn("throttle_max_pct が不正、デフォルト使用", "value", cfg.ThrottleMaxPct)
 		cfg.ThrottleMaxPct = 78
 	}
