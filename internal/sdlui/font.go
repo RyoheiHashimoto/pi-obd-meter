@@ -8,11 +8,14 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 )
 
+const maxCacheSize = 512
+
 // FontManager はフォントの読み込みとテキストテクスチャキャッシュを管理する
 type FontManager struct {
 	renderer *sdl.Renderer
 	fonts    map[fontKey]*ttf.Font
 	cache    map[cacheKey]*TextTexture
+	order    []cacheKey // 挿入順（LRU eviction 用）
 }
 
 type fontKey struct {
@@ -78,6 +81,11 @@ func (fm *FontManager) RenderText(text string, fontPath string, fontSize int, co
 		return nil
 	}
 
+	// キャッシュサイズ制限: 古いエントリを削除
+	if len(fm.cache) >= maxCacheSize {
+		fm.evictOldest(maxCacheSize / 4)
+	}
+
 	surface, err := font.RenderUTF8Blended(text, color.ToSDLColor())
 	if err != nil {
 		slog.Warn("テキストレンダリング失敗", "text", text, "error", err)
@@ -97,7 +105,26 @@ func (fm *FontManager) RenderText(text string, fontPath string, fontSize int, co
 		H:       surface.H,
 	}
 	fm.cache[key] = tt
+	fm.order = append(fm.order, key)
 	return tt
+}
+
+// evictOldest は古いキャッシュエントリを n 件削除する
+func (fm *FontManager) evictOldest(n int) {
+	removed := 0
+	for i := 0; i < len(fm.order) && removed < n; i++ {
+		key := fm.order[i]
+		if v, ok := fm.cache[key]; ok {
+			v.Texture.Destroy()
+			delete(fm.cache, key)
+			removed++
+		}
+	}
+	if removed > 0 && removed < len(fm.order) {
+		fm.order = fm.order[removed:]
+	} else if removed >= len(fm.order) {
+		fm.order = fm.order[:0]
+	}
 }
 
 // DrawTextCentered はテキストを中央揃えで描画する
@@ -128,14 +155,6 @@ func (fm *FontManager) DrawTextRight(text string, fontPath string, fontSize int,
 		H: tt.H,
 	}
 	fm.renderer.Copy(tt.Texture, nil, &dst)
-}
-
-// InvalidateCache はテキストキャッシュをクリアする（値が変わる数値テキスト用）
-func (fm *FontManager) InvalidateCache() {
-	for k, v := range fm.cache {
-		v.Texture.Destroy()
-		delete(fm.cache, k)
-	}
 }
 
 // Destroy は全フォントとテクスチャを解放する

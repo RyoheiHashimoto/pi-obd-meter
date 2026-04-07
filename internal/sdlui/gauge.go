@@ -27,7 +27,6 @@ type SpeedGauge struct {
 	// 速度
 	currentSpeed float64
 	targetSpeed  float64
-	lastColor    RGBA
 
 	// RPM
 	currentRPM   float64
@@ -108,7 +107,7 @@ func (g *SpeedGauge) buildStaticTexture(renderer *sdl.Renderer) {
 	tex, err := renderer.CreateTexture(
 		sdl.PIXELFORMAT_RGBA8888,
 		sdl.TEXTUREACCESS_TARGET,
-		800, 480,
+		560, 480,
 	)
 	if err != nil {
 		return
@@ -221,9 +220,10 @@ func (g *SpeedGauge) Update() {
 
 // Draw は左パネル全体を描画する
 func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
-	// 静的レイヤー
+	// 静的レイヤー（左パネル 560×480）
 	if g.staticTex != nil {
-		renderer.Copy(g.staticTex, nil, nil)
+		dst := sdl.Rect{X: 0, Y: 0, W: 560, H: 480}
+		renderer.Copy(g.staticTex, nil, &dst)
 	}
 
 	cx, cy, r := g.cfg.CX, g.cfg.CY, g.cfg.Radius
@@ -248,7 +248,7 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 	needleTipR := r - needleGap
 	nx1, ny1 := polarToXY(cx, cy, -16, angle)
 	nx2, ny2 := polarToXY(cx, cy, needleTipR, angle)
-	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+8, spdColor.WithAlpha(60))
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+4, spdColor.WithAlpha(40))
 	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth, spdColor)
 
 	// --- 中心ドット ---
@@ -270,10 +270,6 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 
 	// --- 速度数値 ---
 	speedText := fmt.Sprintf("%d", int(math.Round(speed)))
-	if spdColor != g.lastColor {
-		g.fm.InvalidateCache()
-		g.lastColor = spdColor
-	}
 	numY := cy + r*0.35
 	g.fm.DrawTextCentered(speedText, g.cfg.OrbitronPath, 84, spdColor, cx, numY)
 
@@ -305,8 +301,8 @@ func (g *SpeedGauge) drawRPMArc(renderer *sdl.Renderer, cx, cy, rpmR float64) {
 	endAngle := arcStart + pct*arcSweep
 	color := RPMColor(rpm)
 
-	// グロー（太い半透明アーク）
-	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2-2, rpmR+rpmArcWidth/2+2, arcStart, endAngle, color.WithAlpha(40))
+	// グロー（やや太い半透明アーク）
+	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2-1, rpmR+rpmArcWidth/2+1, arcStart, endAngle, color.WithAlpha(30))
 	// 本体
 	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2, rpmR+rpmArcWidth/2, arcStart, endAngle, color)
 }

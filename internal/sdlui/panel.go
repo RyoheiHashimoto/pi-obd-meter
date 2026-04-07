@@ -209,7 +209,7 @@ func (p *RightPanel) drawVacuumArc(renderer *sdl.Renderer, cx, cy float64) {
 	color := p.vacuumColor()
 
 	// グロー
-	DrawArc(renderer, cx, cy, mapR-mapArcW/2-2, mapR+mapArcW/2+2, arcStart, endAngle, color.WithAlpha(40))
+	DrawArc(renderer, cx, cy, mapR-mapArcW/2-1, mapR+mapArcW/2+1, arcStart, endAngle, color.WithAlpha(25))
 	// 本体
 	DrawArc(renderer, cx, cy, mapR-mapArcW/2, mapR+mapArcW/2, arcStart, endAngle, color)
 }
@@ -225,7 +225,7 @@ func (p *RightPanel) drawVacuumNeedle(renderer *sdl.Renderer, cx, cy float64) {
 	nx2, ny2 := polarToXY(cx, cy, tipR, angle)
 
 	color := p.vacuumColor()
-	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+6, color.WithAlpha(40))
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+3, color.WithAlpha(30))
 	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth, color)
 }
 
