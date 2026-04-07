@@ -86,6 +86,16 @@ func DrawThickLine(renderer *sdl.Renderer, x1, y1, x2, y2 float64, width float64
 	renderer.RenderGeometry(nil, verts, indices)
 }
 
+// DrawArcCaps はアーク両端に丸キャップを描画する
+func DrawArcCaps(renderer *sdl.Renderer, cx, cy, r, halfW, startDeg, endDeg float64, color RGBA) {
+	// 開始端
+	sx, sy := polarToXY(cx, cy, r, startDeg)
+	DrawCircleFilled(renderer, sx, sy, halfW, color)
+	// 終了端
+	ex, ey := polarToXY(cx, cy, r, endDeg)
+	DrawCircleFilled(renderer, ex, ey, halfW, color)
+}
+
 // DrawCircleFilled は塗りつぶし円を描画する
 func DrawCircleFilled(renderer *sdl.Renderer, cx, cy, r float64, color RGBA) {
 	renderer.SetDrawColor(color.R, color.G, color.B, color.A)

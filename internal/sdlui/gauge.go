@@ -164,13 +164,6 @@ func (g *SpeedGauge) buildStaticTexture(renderer *sdl.Renderer) {
 	// スロットルトラック
 	DrawArc(renderer, cx, cy, throttleR-throttleArcW/2, throttleR+throttleArcW/2, arcStart, arcEnd, colorThrTrack)
 
-	// ギア/レンジ枠（静的：枠線のみ）
-	rangeX := cx - r - 10
-	gearX := cx + r + 2
-	boxY := 62.0 - gearBoxH + 14
-	drawRoundedRect(renderer, rangeX-gearBoxW/2, boxY, gearBoxW, gearBoxH, colorCenterRim)
-	drawRoundedRect(renderer, gearX-gearBoxW/2, boxY, gearBoxW, gearBoxH, colorCenterRim)
-
 	renderer.SetRenderTarget(nil)
 	g.staticTex = tex
 }
@@ -240,7 +233,12 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 	if speed > 0.5 {
 		pct := speed / g.cfg.MaxSpeed
 		endAngle := arcStart + pct*arcSweep
+		// グロー（3段階: 太→中→本体）
+		DrawArc(renderer, cx, cy, r-trackWidth/2-6, r+trackWidth/2+6, arcStart, endAngle, spdColor.WithAlpha(25))
+		DrawArc(renderer, cx, cy, r-trackWidth/2-3, r+trackWidth/2+3, arcStart, endAngle, spdColor.WithAlpha(50))
 		DrawArc(renderer, cx, cy, r-trackWidth/2, r+trackWidth/2, arcStart, endAngle, spdColor)
+		// 丸キャップ
+		DrawArcCaps(renderer, cx, cy, r, trackWidth/2, arcStart, endAngle, spdColor)
 	}
 
 	// --- 針 ---
@@ -248,7 +246,9 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 	needleTipR := r - needleGap
 	nx1, ny1 := polarToXY(cx, cy, -16, angle)
 	nx2, ny2 := polarToXY(cx, cy, needleTipR, angle)
-	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+4, spdColor.WithAlpha(40))
+	// 針グロー（3段階）
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+12, spdColor.WithAlpha(20))
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+6, spdColor.WithAlpha(50))
 	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth, spdColor)
 
 	// --- 中心ドット ---
@@ -260,7 +260,7 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 	throttleR := r - throttleROffset
 	rpmReadY := cy - throttleR/2 + 5
 	if g.currentRPM > 100 {
-		rpmText := fmt.Sprintf("%d", int(math.Round(g.currentRPM)))
+		rpmText := formatComma(int(math.Round(g.currentRPM)))
 		g.fm.DrawTextCentered(rpmText, g.cfg.OrbitronPath, 48, rpmColor, cx, rpmReadY)
 		g.fm.DrawTextCentered("r/min", g.cfg.ShareTechPath, 24, colorWhite, cx, rpmReadY+34)
 	} else {
@@ -288,7 +288,7 @@ func (g *SpeedGauge) Draw(renderer *sdl.Renderer) {
 	g.fm.DrawTextCentered("THROTTLE", g.cfg.ShareTechPath, 24, thrLabelColor, cx, unitY+64)
 
 	// --- ギア/レンジ ---
-	g.drawGearRange(cx, cy, r)
+	g.drawGearRange(renderer, cx, cy, r)
 }
 
 // drawRPMArc は RPM アークを描画する
@@ -301,10 +301,13 @@ func (g *SpeedGauge) drawRPMArc(renderer *sdl.Renderer, cx, cy, rpmR float64) {
 	endAngle := arcStart + pct*arcSweep
 	color := RPMColor(rpm)
 
-	// グロー（やや太い半透明アーク）
-	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2-1, rpmR+rpmArcWidth/2+1, arcStart, endAngle, color.WithAlpha(30))
+	// グロー（3段階）
+	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2-5, rpmR+rpmArcWidth/2+5, arcStart, endAngle, color.WithAlpha(20))
+	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2-2, rpmR+rpmArcWidth/2+2, arcStart, endAngle, color.WithAlpha(50))
 	// 本体
 	DrawArc(renderer, cx, cy, rpmR-rpmArcWidth/2, rpmR+rpmArcWidth/2, arcStart, endAngle, color)
+	// 丸キャップ
+	DrawArcCaps(renderer, cx, cy, rpmR, rpmArcWidth/2, arcStart, endAngle, color)
 }
 
 // drawThrottleArc はスロットルアークを描画する（HSLグラデーション + dimZone）
@@ -363,15 +366,23 @@ func (g *SpeedGauge) throttleColor(pct float64, active bool) RGBA {
 }
 
 // drawGearRange はギア/レンジ表示を描画する
-func (g *SpeedGauge) drawGearRange(cx, _, r float64) {
+func (g *SpeedGauge) drawGearRange(renderer *sdl.Renderer, cx, _, r float64) {
 	rangeX := cx - r - 10
 	gearX := cx + r + 2
 	rangeY := 62.0
 	holdY := rangeY + gearBoxH - 22
 	lockY := holdY
 
-	// レンジ色
 	color := g.gearColor()
+	boxY := rangeY - gearBoxH + 14
+
+	// レンジ枠（色つき + グロー）
+	drawRoundedRect(renderer, rangeX-gearBoxW/2-1, boxY-1, gearBoxW+2, gearBoxH+2, color.WithAlpha(30))
+	drawRoundedRect(renderer, rangeX-gearBoxW/2, boxY, gearBoxW, gearBoxH, color)
+
+	// ギア枠（色つき + グロー）
+	drawRoundedRect(renderer, gearX-gearBoxW/2-1, boxY-1, gearBoxW+2, gearBoxH+2, color.WithAlpha(30))
+	drawRoundedRect(renderer, gearX-gearBoxW/2, boxY, gearBoxW, gearBoxH, color)
 
 	// レンジ文字
 	if g.atRange != "" {

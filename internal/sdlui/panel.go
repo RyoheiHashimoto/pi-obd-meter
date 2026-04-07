@@ -208,10 +208,13 @@ func (p *RightPanel) drawVacuumArc(renderer *sdl.Renderer, cx, cy float64) {
 	endAngle := arcStart + (pct/100)*arcSweep
 	color := p.vacuumColor()
 
-	// グロー
-	DrawArc(renderer, cx, cy, mapR-mapArcW/2-1, mapR+mapArcW/2+1, arcStart, endAngle, color.WithAlpha(25))
+	// グロー（3段階）
+	DrawArc(renderer, cx, cy, mapR-mapArcW/2-4, mapR+mapArcW/2+4, arcStart, endAngle, color.WithAlpha(20))
+	DrawArc(renderer, cx, cy, mapR-mapArcW/2-2, mapR+mapArcW/2+2, arcStart, endAngle, color.WithAlpha(45))
 	// 本体
 	DrawArc(renderer, cx, cy, mapR-mapArcW/2, mapR+mapArcW/2, arcStart, endAngle, color)
+	// 丸キャップ
+	DrawArcCaps(renderer, cx, cy, mapR, mapArcW/2, arcStart, endAngle, color)
 }
 
 // drawVacuumNeedle はバキューム針を描画する
@@ -225,7 +228,9 @@ func (p *RightPanel) drawVacuumNeedle(renderer *sdl.Renderer, cx, cy float64) {
 	nx2, ny2 := polarToXY(cx, cy, tipR, angle)
 
 	color := p.vacuumColor()
-	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+3, color.WithAlpha(30))
+	// 針グロー（3段階）
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+10, color.WithAlpha(15))
+	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth+5, color.WithAlpha(40))
 	DrawThickLine(renderer, nx1, ny1, nx2, ny2, needleWidth, color)
 }
 

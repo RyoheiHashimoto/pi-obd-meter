@@ -1,6 +1,7 @@
 package sdlui
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -121,4 +122,15 @@ func RPMHueColor(rpm, maxRPM float64) RGBA {
 	ratio := math.Min(rpm/maxRPM, 1.0)
 	hue := 210 - ratio*210 // 210(blue) → 0(red)
 	return HSL(hue, 100, 55)
+}
+
+// formatComma は整数にカンマ区切りを付ける
+func formatComma(n int) string {
+	if n < 0 {
+		return "-" + formatComma(-n)
+	}
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	return fmt.Sprintf("%s,%03d", formatComma(n/1000), n%1000)
 }

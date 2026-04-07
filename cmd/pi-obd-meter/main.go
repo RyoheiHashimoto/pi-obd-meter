@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -159,6 +160,51 @@ func main() {
 	}
 
 	// --- ブラウザモード: 従来のメインループ ---
+
+	// デモモード: ブラウザ向けにサイン波データを生成
+	if *demo {
+		go func() {
+			t := 0.0
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					t += 0.05
+					speed := 70 + 70*math.Sin(t*0.3)
+					rpm := 800 + speed*35
+					throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
+					gear := 1
+					if speed > 100 {
+						gear = 4
+					} else if speed > 60 {
+						gear = 3
+					} else if speed > 30 {
+						gear = 2
+					}
+					app.updateRealtimeData(RealtimeData{
+						SpeedKmh:    speed,
+						RPM:         rpm,
+						ThrottlePos: throttle,
+						IntakeMAP:   30 + throttle*0.7,
+						CoolantTemp: 88,
+						FuelEconomy: 8 + 4*math.Sin(t*0.4),
+						AvgFuelEconomy: 9.5,
+						TripKm:      120.3 + t*0.01,
+						Gear:        gear,
+						ATRangeStr:  "D",
+						TCLocked:    speed > 50,
+						OilAlert:    "green",
+						OilRemainingKm: 2800,
+						OBDConnected: true,
+						WiFiConnected: true,
+					})
+				}
+			}
+		}()
+	}
 
 	// OBDメインループ状態（フィルタリング・燃費計算はメイン側で管理）
 	var (
