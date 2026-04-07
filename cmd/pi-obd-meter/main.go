@@ -243,10 +243,10 @@ func main() {
 			}
 
 		case <-retryTicker.C:
-			app.client.RetryPending(ctx)
+			app.retryPendingAsync(ctx)
 
 		case <-maintTicker.C:
-			app.sendMaintenanceStatus(ctx)
+			app.sendMaintenanceStatusAsync(ctx)
 
 		case sig := <-sigCh:
 			slog.Info("シグナル受信、シャットダウン開始", "signal", sig)
