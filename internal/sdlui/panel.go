@@ -3,6 +3,7 @@ package sdlui
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -30,7 +31,7 @@ type RightPanel struct {
 
 // 右パネル定数（indicators.js と同一）
 const (
-	panelOffsetX = 560.0 // 左パネル幅（右パネル描画開始X）
+	panelOffsetX = 530.0 // 左パネル幅 - 30px overlap（ブラウザ版の margin-left: -30px と同等）
 	mapCX        = 110.0 // バキューム計中心X（パネル内座標）
 	mapCY        = 155.0
 	mapR         = 125.0
@@ -69,7 +70,7 @@ func (p *RightPanel) buildStaticTexture(renderer *sdl.Renderer) {
 	tex, err := renderer.CreateTexture(
 		sdl.PIXELFORMAT_RGBA8888,
 		sdl.TEXTUREACCESS_TARGET,
-		240, 480,
+		270, 480,
 	)
 	if err != nil {
 		return
@@ -114,7 +115,9 @@ func (p *RightPanel) buildStaticTexture(renderer *sdl.Renderer) {
 			if v == 0 {
 				label = "0"
 			} else {
-				label = fmt.Sprintf("%.1f", v)
+				// "-0.6" → "-.6" (ブラウザ版と同一フォーマット)
+				s := fmt.Sprintf("%.1f", v)
+				label = strings.Replace(s, "-0.", "-.", 1)
 			}
 			p.fm.DrawTextCentered(label, p.shareTechPath, 22, colorTickLabel, lx, ly)
 		}
@@ -168,7 +171,7 @@ func (p *RightPanel) Update() {
 func (p *RightPanel) Draw(renderer *sdl.Renderer) {
 	// 静的レイヤー（パネル内座標で描画済み → panelOffsetX にオフセットして表示）
 	if p.staticTex != nil {
-		dst := sdl.Rect{X: int32(panelOffsetX), Y: 0, W: 240, H: 480}
+		dst := sdl.Rect{X: int32(panelOffsetX), Y: 0, W: 270, H: 480}
 		renderer.Copy(p.staticTex, nil, &dst)
 	}
 
