@@ -24,15 +24,16 @@ type RightPanel struct {
 	fuelEconomy float64
 	coolantTemp float64
 	tripKm      float64
-	oilAlert    string
-	oilRemainKm float64
+	oilAlert     string
+	oilCurrentKm float64
 	intakeMAP   float64 // kPa（バキューム色同期用）
 }
 
 // 右パネル定数（indicators.js と同一）
 const (
 	panelOffsetX = 530.0 // 左パネル幅 - 30px overlap（ブラウザ版の margin-left: -30px と同等）
-	mapCX        = 110.0 // バキューム計中心X（パネル内座標）
+	// ブラウザ版の viewBox="-30 0 270 480" に合わせて全X座標に +30 オフセット
+	mapCX        = 140.0 // 110 + 30（バキューム計中心X）
 	mapCY        = 155.0
 	mapR         = 125.0
 	mapArcW      = 10.0
@@ -40,9 +41,9 @@ const (
 	vacMax       = 0.0
 	mapLerpSpeed = 0.35
 
-	indXIcon    = 2.0
-	indXVal     = 110.0
-	indXUnit    = 200.0
+	indXIcon    = 32.0  // 2 + 30
+	indXVal     = 140.0 // 110 + 30
+	indXUnit    = 230.0 // 200 + 30
 	indYStart   = 305.0
 	indSpacing  = 49.0
 
@@ -132,7 +133,7 @@ func (p *RightPanel) buildStaticTexture(renderer *sdl.Renderer) {
 
 	// 区切り線
 	renderer.SetDrawColor(0x22, 0x22, 0x22, 0xff)
-	renderer.DrawLineF(10, float32(indYStart-16), 210, float32(indYStart-16))
+	renderer.DrawLineF(40, float32(indYStart-16), 240, float32(indYStart-16))
 
 	// 固定単位ラベル
 	p.fm.DrawTextRight("km/L", p.shareTechPath, 24, colorWhite, indXUnit, indYStart+4)
@@ -153,7 +154,7 @@ func (p *RightPanel) SetData(data GaugeData) {
 	p.coolantTemp = data.CoolantTemp
 	p.tripKm = data.TripKm
 	p.oilAlert = data.OilAlert
-	p.oilRemainKm = data.OilRemainKm
+	p.oilCurrentKm = data.OilCurrentKm
 	p.intakeMAP = data.IntakeMAP
 }
 
@@ -281,8 +282,7 @@ func (p *RightPanel) drawIndicators(renderer *sdl.Renderer) {
 	} else {
 		p.fm.DrawTextCentered("--", p.orbitronPath, 40, colorDim, baseX+indXVal, ecoY+6)
 	}
-	// ECO アイコン（簡易：丸で代替）
-	DrawCircleFilled(renderer, baseX+indXIcon+16, ecoY-2, 8, ecoCol)
+	DrawLeafIcon(renderer, baseX+indXIcon+16, ecoY-8, 30, ecoCol)
 
 	// TEMP
 	tempY := indYStart + indSpacing
@@ -293,7 +293,7 @@ func (p *RightPanel) drawIndicators(renderer *sdl.Renderer) {
 	} else {
 		p.fm.DrawTextCentered("--", p.orbitronPath, 40, colorDim, baseX+indXVal, tempY+6)
 	}
-	DrawCircleFilled(renderer, baseX+indXIcon+10, tempY-2, 8, tempCol)
+	DrawThermoIcon(renderer, baseX+indXIcon+10, tempY-8, 40, tempCol)
 
 	// TRIP
 	tripY := indYStart + indSpacing*2
@@ -303,18 +303,18 @@ func (p *RightPanel) drawIndicators(renderer *sdl.Renderer) {
 		tripText = fmt.Sprintf("%.1f", p.tripKm)
 	}
 	p.fm.DrawTextCentered(tripText, p.orbitronPath, 40, tripCol, baseX+indXVal, tripY+6)
-	DrawCircleFilled(renderer, baseX+indXIcon+10, tripY-2, 8, tripCol)
+	DrawRoadIcon(renderer, baseX+indXIcon+10, tripY-8, 40, tripCol)
 
 	// OIL
 	oilY := indYStart + indSpacing*3
 	oilCol := p.oilColor()
-	if p.oilRemainKm > 0 {
-		oilText := fmt.Sprintf("%d", int(math.Round(p.oilRemainKm)))
+	if p.oilCurrentKm > 0 {
+		oilText := formatComma(int(math.Round(p.oilCurrentKm)))
 		p.fm.DrawTextCentered(oilText, p.orbitronPath, 40, oilCol, baseX+indXVal, oilY+6)
 	} else {
 		p.fm.DrawTextCentered("--", p.orbitronPath, 40, colorDim, baseX+indXVal, oilY+6)
 	}
-	DrawCircleFilled(renderer, baseX+indXIcon+10, oilY-2, 8, oilCol)
+	DrawDropletIcon(renderer, baseX+indXIcon+10, oilY-8, 40, oilCol)
 }
 
 // ecoColor は瞬間燃費に応じた色を返す（エンブレ/停車時はバキューム同期）
