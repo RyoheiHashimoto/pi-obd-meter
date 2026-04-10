@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"os/signal"
@@ -17,6 +18,7 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
+	"github.com/hashimoto/pi-obd-meter/internal/sdlui"
 )
 
 var version = "dev"
@@ -36,6 +38,9 @@ func checkWiFi() bool {
 
 func main() {
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
+	mode := flag.String("mode", "browser", "描画モード: browser (Chromium) / sdl (SDL2直描画)")
+	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
+	fontDir := flag.String("font-dir", "web/static/fonts", "フォントディレクトリ")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
@@ -106,7 +111,109 @@ func main() {
 
 	slog.Info("データ収集開始")
 
-	// OBDメインループ状態（フィルタリング・燃費計算はメイン側で管理）
+	// --- SDL モード: OBDデータ処理をバックグラウンドで実行し、メインスレッドでSDL描画 ---
+	if *mode == "sdl" {
+		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
+			MaxSpeed:        float64(cfg.MaxSpeedKmh),
+			ThrottleIdlePct: cfg.ThrottleIdlePct,
+			ThrottleMaxPct:  cfg.ThrottleMaxPct,
+			FontDir:         *fontDir,
+			Demo:            *demo,
+		}, func() sdlui.GaugeData {
+			d := app.getRealtimeData()
+			return sdlui.GaugeData{
+				SpeedKmh:     d.SpeedKmh,
+				RPM:          d.RPM,
+				ThrottlePos:  d.ThrottlePos,
+				IntakeMAP:    d.IntakeMAP,
+				CoolantTemp:  d.CoolantTemp,
+				FuelEconomy:  d.FuelEconomy,
+				AvgFuelEco:   d.AvgFuelEconomy,
+				TripKm:       d.TripKm,
+				Gear:         d.Gear,
+				ATRangeStr:   d.ATRangeStr,
+				Hold:         d.Hold,
+				TCLocked:     d.TCLocked,
+				OilAlert:     d.OilAlert,
+				OilRemainKm:  d.OilRemainingKm,
+				OBDConnected: d.OBDConnected,
+			}
+		})
+
+		// OBDデータ処理ループをバックグラウンドで実行（距離積算・メンテ更新・GAS送信）
+		// SDLモードではシグナル処理はSDL側が担当するのでnilを渡す
+		go app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, nil)
+
+		// SIGINT/SIGTERM で SDL ループを停止 + 状態保存
+		go func() {
+			<-sigCh
+			slog.Info("シグナル受信、SDLシャットダウン")
+			sdlRenderer.Stop()
+			cancel()
+			app.tracker.SaveState()
+			app.maintMgr.SaveState()
+		}()
+
+		if err := sdlRenderer.Run(); err != nil {
+			slog.Error("SDL描画エラー", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// --- ブラウザモード: 従来のメインループ ---
+
+	// デモモード: ブラウザ向けにサイン波データを生成
+	if *demo {
+		go func() {
+			t := 0.0
+			ticker := time.NewTicker(50 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					t += 0.05
+					speed := 70 + 70*math.Sin(t*0.3)
+					rpm := 800 + speed*35
+					throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
+					gear := 1
+					if speed > 100 {
+						gear = 4
+					} else if speed > 60 {
+						gear = 3
+					} else if speed > 30 {
+						gear = 2
+					}
+					app.updateRealtimeData(RealtimeData{
+						SpeedKmh:    speed,
+						RPM:         rpm,
+						ThrottlePos: throttle,
+						IntakeMAP:   30 + throttle*0.7,
+						CoolantTemp: 88,
+						FuelEconomy: 8 + 4*math.Sin(t*0.4),
+						AvgFuelEconomy: 9.5,
+						TripKm:      120.3 + t*0.01,
+						Gear:        gear,
+						ATRangeStr:  "D",
+						TCLocked:    speed > 50,
+						OilAlert:    "green",
+						OilRemainingKm: 2800,
+						OBDConnected: true,
+						WiFiConnected: true,
+					})
+				}
+			}
+		}()
+	}
+
+	app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, sigCh)
+}
+
+// obdProcessingLoop はOBDデータの処理ループ。距離積算・メンテナンス更新・GAS送信を行う。
+// SDLモード・ブラウザモード共通で使用する。
+func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc, obdCh <-chan OBDEvent, fastIntervalMs int, cfg Config, retryTicker, maintTicker *time.Ticker, sigCh <-chan os.Signal) {
 	var (
 		filters        = newOBDFilters()
 		lastCoolant    float64
@@ -124,7 +231,6 @@ func main() {
 		select {
 		case ev, ok := <-obdCh:
 			if !ok {
-				// goroutine が終了した（ctx キャンセル時）
 				return
 			}
 
