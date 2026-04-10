@@ -135,7 +135,7 @@ func main() {
 				Hold:         d.Hold,
 				TCLocked:     d.TCLocked,
 				OilAlert:     d.OilAlert,
-				OilRemainKm:  d.OilRemainingKm,
+				OilCurrentKm: d.OilCurrentKm,
 				OBDConnected: d.OBDConnected,
 			}
 		})

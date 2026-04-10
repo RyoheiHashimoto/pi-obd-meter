@@ -290,10 +290,10 @@ export function updateIndicators(dom, d, conf) {
 
   // OIL
   const oilAlert = d.oil_alert || 'green';
-  const oilRemaining = d.oil_remaining_km;
+  const oilCurrent = d.oil_current_km;
   const oilCol = OIL_COLORS[oilAlert] || OIL_COLORS.green;
-  if (oilRemaining != null) {
-    oilValEl.textContent = Math.round(oilRemaining).toLocaleString();
+  if (oilCurrent != null) {
+    oilValEl.textContent = Math.round(oilCurrent).toLocaleString();
   } else {
     oilValEl.textContent = '--';
   }
