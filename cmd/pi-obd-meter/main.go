@@ -111,7 +111,7 @@ func main() {
 
 	slog.Info("データ収集開始")
 
-	// --- SDL モード: メイン goroutine で SDL ループ実行 ---
+	// --- SDL モード: OBDデータ処理をバックグラウンドで実行し、メインスレッドでSDL描画 ---
 	if *mode == "sdl" {
 		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
 			MaxSpeed:        float64(cfg.MaxSpeedKmh),
@@ -140,10 +140,12 @@ func main() {
 			}
 		})
 
-		// SIGINT/SIGTERM で SDL ループを停止
+		// OBDデータ処理ループをバックグラウンドで実行（距離積算・メンテ更新・GAS送信）
+		// SDLモードではシグナル処理はSDL側が担当するのでnilを渡す
+		go app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, nil)
+
+		// SIGINT/SIGTERM で SDL ループを停止 + 状態保存
 		go func() {
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 			<-sigCh
 			slog.Info("シグナル受信、SDLシャットダウン")
 			sdlRenderer.Stop()
@@ -206,7 +208,12 @@ func main() {
 		}()
 	}
 
-	// OBDメインループ状態（フィルタリング・燃費計算はメイン側で管理）
+	app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, sigCh)
+}
+
+// obdProcessingLoop はOBDデータの処理ループ。距離積算・メンテナンス更新・GAS送信を行う。
+// SDLモード・ブラウザモード共通で使用する。
+func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc, obdCh <-chan OBDEvent, fastIntervalMs int, cfg Config, retryTicker, maintTicker *time.Ticker, sigCh <-chan os.Signal) {
 	var (
 		filters        = newOBDFilters()
 		lastCoolant    float64
@@ -224,7 +231,6 @@ func main() {
 		select {
 		case ev, ok := <-obdCh:
 			if !ok {
-				// goroutine が終了した（ctx キャンセル時）
 				return
 			}
 
