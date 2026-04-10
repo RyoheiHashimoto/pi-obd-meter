@@ -34,7 +34,7 @@ type GaugeData struct {
 	Hold         bool
 	TCLocked     bool
 	OilAlert     string
-	OilRemainKm  float64
+	OilCurrentKm  float64
 	OBDConnected bool
 }
 
@@ -272,7 +272,7 @@ func demoData(t float64) GaugeData {
 		Hold:         false,
 		TCLocked:     speed > 50,
 		OilAlert:     "green",
-		OilRemainKm:  2800,
+		OilCurrentKm:  2800,
 		OBDConnected: true,
 	}
 }
