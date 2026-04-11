@@ -56,6 +56,16 @@ func (f *CanvasFonts) drawTextBaseline(ctx *canvas.Context, fam *canvas.FontFami
 	ctx.DrawText(x, yUp, txt)
 }
 
+// drawTextBaselineShadow はドロップシャドウ付きのベースラインテキスト
+// (C) 大きい数字を浮き上がらせる
+func (f *CanvasFonts) drawTextBaselineShadow(ctx *canvas.Context, fam *canvas.FontFamily, sizePx float64, col color.RGBA, x, screenY float64, text string) {
+	// 影 (黒 60%)
+	shadowCol := color.RGBA{0, 0, 0, 153}
+	f.drawTextBaseline(ctx, fam, sizePx, shadowCol, x+2, screenY+3, text)
+	// 本体
+	f.drawTextBaseline(ctx, fam, sizePx, col, x, screenY, text)
+}
+
 // drawTextRight はテキストを右揃え・ベースライン基準で描画
 func (f *CanvasFonts) drawTextRight(ctx *canvas.Context, fam *canvas.FontFamily, sizePx float64, col color.RGBA, rx, screenY float64, text string) {
 	face := f.face(fam, sizePx, col)

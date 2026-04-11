@@ -17,6 +17,10 @@ func (s *CanvasScene) renderBackground() error {
 	// 画面全体に radial gradient を描いて奥行き感を出す
 	drawScreenBackgroundGradient(ctx)
 
+	// 同心円ガイドライン (F: 階層感)
+	drawArcAt(ctx, cxScreen, cyScreen, 200, 1, arcStart, arcEnd, Hex("#1a1a24"))
+	drawArcAt(ctx, cxScreen, cyScreen, 175, 1, arcStart, arcEnd, Hex("#1a1a24"))
+
 	// RPM トラック（強めグラデ）
 	rpmR := gaugeR + rpmROffset
 	drawGradientTrackAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, arcStart, arcEnd,
@@ -25,7 +29,6 @@ func (s *CanvasScene) renderBackground() error {
 	redStart := arcStart + (6500.0/rpmMaxVal)*arcSweep
 	drawGradientTrackAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, redStart, arcEnd,
 		Hex("#200000"), Hex("#7a0000"), Hex("#200000"))
-
 	// 速度トラック
 	drawGradientTrackAt(ctx, cxScreen, cyScreen, gaugeR, trackWidth, arcStart, arcEnd,
 		Hex("#040408"), Hex("#34344a"), Hex("#040408"))
@@ -193,7 +196,7 @@ func (s *CanvasScene) renderSpeedNumber() error {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 84, colDim, cxScreen, numYScreen, "0")
 	} else {
 		spdColor := s.fadeColor(SpeedColor(s.curSpeed))
-		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 84, spdColor, cxScreen, numYScreen, fmt.Sprintf("%d", int(math.Round(s.curSpeed))))
+		s.fonts.drawTextBaselineShadow(ctx, s.fonts.Orbitron, 84, spdColor, cxScreen, numYScreen, fmt.Sprintf("%d", int(math.Round(s.curSpeed))))
 	}
 	return s.speedNumEl.commit(c)
 }
@@ -221,7 +224,7 @@ func (s *CanvasScene) renderRPMNumber() error {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, cxScreen, rpmReadYScreen, "0")
 	case s.curRPM > 100:
 		rpmColor := s.fadeColor(RPMColor(s.curRPM))
-		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, rpmColor, cxScreen, rpmReadYScreen, formatComma(int(math.Round(s.curRPM))))
+		s.fonts.drawTextBaselineShadow(ctx, s.fonts.Orbitron, 48, rpmColor, cxScreen, rpmReadYScreen, formatComma(int(math.Round(s.curRPM))))
 	default:
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, cxScreen, rpmReadYScreen, "0")
 	}
@@ -377,7 +380,7 @@ func (s *CanvasScene) renderVacuumValue() error {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, vcx, vcy+mapR*0.38, "-1.00")
 	case s.curBar < -0.01:
 		col := s.fadeColor(s.vacColor())
-		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, col, vcx, vcy+mapR*0.38, fmt.Sprintf("%.2f", s.curBar))
+		s.fonts.drawTextBaselineShadow(ctx, s.fonts.Orbitron, 48, col, vcx, vcy+mapR*0.38, fmt.Sprintf("%.2f", s.curBar))
 	default:
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, vcx, vcy+mapR*0.38, "-1.00")
 	}

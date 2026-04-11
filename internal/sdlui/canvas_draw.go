@@ -255,7 +255,6 @@ func drawScreenBackgroundGradient(ctx *canvas.Context) {
 	ctx.Pop()
 
 	// --- 速度計中心のグラデ ---
-	// 画面座標 (cxScreen, cyScreen) を canvas Y-up に
 	cxu1 := cxScreen
 	cyu1 := canvasScreenH - cyScreen
 	grad1 := canvas.NewGradient()
@@ -284,6 +283,7 @@ func drawScreenBackgroundGradient(ctx *canvas.Context) {
 	ctx.Style.Stroke = canvas.Paint{Color: canvas.Transparent}
 	ctx.DrawPath(0, 0, canvas.Rectangle(canvasScreenW, canvasScreenH))
 	ctx.Pop()
+
 }
 
 // drawGradientTrackAt は半径方向の radial gradient でアークトラックを描画
