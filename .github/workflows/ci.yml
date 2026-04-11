@@ -16,6 +16,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install SDL2 dev libs (CGo 依存)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
+
       - name: Check go.mod tidy
         run: |
           go mod tidy
@@ -36,12 +41,26 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total: | awk '{print $3}' | tr -d '%')
           echo "**Total: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
-      - name: Build (host)
+      - name: Build (host, CGo 有効)
         run: |
-          go build -o pi-obd-meter ./cmd/pi-obd-meter
-          go build -o pi-obd-scanner ./cmd/pi-obd-scanner
+          CGO_ENABLED=1 go build -o pi-obd-meter ./cmd/pi-obd-meter
+          CGO_ENABLED=1 go build -o pi-obd-scanner ./cmd/pi-obd-scanner
 
-      - name: Build (ARM64 cross-compile)
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install SDL2 dev libs (arm64)
         run: |
-          GOOS=linux GOARCH=arm64 go build -o pi-obd-meter-arm64 ./cmd/pi-obd-meter
-          GOOS=linux GOARCH=arm64 go build -o pi-obd-scanner-arm64 ./cmd/pi-obd-scanner
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
+
+      - name: Build (ARM64 native)
+        run: |
+          CGO_ENABLED=1 go build -o pi-obd-meter-arm64 ./cmd/pi-obd-meter
+          CGO_ENABLED=1 go build -o pi-obd-scanner-arm64 ./cmd/pi-obd-scanner
