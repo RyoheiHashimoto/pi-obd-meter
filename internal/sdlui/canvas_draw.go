@@ -50,7 +50,7 @@ const (
 	mapCX        = 130.0
 	mapCY        = 162.0
 	mapR         = 125.0
-	mapArcW      = 10.0
+	mapArcW      = 9.0 // 10→9 少し細く
 
 	indXIcon   = 22.0
 	indXVal    = 130.0
@@ -242,6 +242,93 @@ func drawGlowLineAt(ctx *canvas.Context, x1, y1, x2, y2, mainW float64, col colo
 		drawLineAt(ctx, x1, y1, x2, y2, mainW+l.widthAdd, WithAlpha(col, l.alpha))
 	}
 	drawLineAt(ctx, x1, y1, x2, y2, mainW, col)
+}
+
+// drawScreenBackgroundGradient は 2 つのゲージ中心を起点にした radial gradient を描く
+// 各メーターが「スポットライトで照らされている」ような奥行き感
+func drawScreenBackgroundGradient(ctx *canvas.Context) {
+	// まず全面黒
+	ctx.Push()
+	ctx.Style.Fill = canvas.Paint{Color: color.RGBA{0, 0, 0, 255}}
+	ctx.Style.Stroke = canvas.Paint{Color: canvas.Transparent}
+	ctx.DrawPath(0, 0, canvas.Rectangle(canvasScreenW, canvasScreenH))
+	ctx.Pop()
+
+	// --- 速度計中心のグラデ ---
+	// 画面座標 (cxScreen, cyScreen) を canvas Y-up に
+	cxu1 := cxScreen
+	cyu1 := canvasScreenH - cyScreen
+	grad1 := canvas.NewGradient()
+	grad1.Add(0, Hex("#2c2c42"))
+	grad1.Add(0.5, Hex("#10101a"))
+	grad1.Add(1, color.RGBA{0, 0, 0, 0})
+	radGrad1 := grad1.ToRadial(canvas.Point{X: cxu1, Y: cyu1}, 0, canvas.Point{X: cxu1, Y: cyu1}, 380)
+
+	ctx.Push()
+	ctx.Style.Fill = canvas.Paint{Gradient: radGrad1}
+	ctx.Style.Stroke = canvas.Paint{Color: canvas.Transparent}
+	ctx.DrawPath(0, 0, canvas.Rectangle(canvasScreenW, canvasScreenH))
+	ctx.Pop()
+
+	// --- バキューム計中心のグラデ ---
+	cxu2 := panelOffsetX + mapCX
+	cyu2 := canvasScreenH - mapCY
+	grad2 := canvas.NewGradient()
+	grad2.Add(0, Hex("#2c2c42"))
+	grad2.Add(0.5, Hex("#10101a"))
+	grad2.Add(1, color.RGBA{0, 0, 0, 0})
+	radGrad2 := grad2.ToRadial(canvas.Point{X: cxu2, Y: cyu2}, 0, canvas.Point{X: cxu2, Y: cyu2}, 220)
+
+	ctx.Push()
+	ctx.Style.Fill = canvas.Paint{Gradient: radGrad2}
+	ctx.Style.Stroke = canvas.Paint{Color: canvas.Transparent}
+	ctx.DrawPath(0, 0, canvas.Rectangle(canvasScreenW, canvasScreenH))
+	ctx.Pop()
+}
+
+// drawGradientTrackAt は半径方向の radial gradient でアークトラックを描画
+// 内側から外側へのグラデで立体感（凹/凸）を出す
+func drawGradientTrackAt(ctx *canvas.Context, cxs, cys, radius, strokeW float64, startDeg, endDeg float64, innerCol, midCol, outerCol color.RGBA) {
+	if endDeg <= startDeg {
+		return
+	}
+	cxu, cyu := screenToUp(cxs, cys)
+
+	p := &canvas.Path{}
+	steps := int(math.Ceil((endDeg - startDeg) * 1.5))
+	if steps < 4 {
+		steps = 4
+	}
+	for i := 0; i <= steps; i++ {
+		t := float64(i) / float64(steps)
+		deg := startDeg + t*(endDeg-startDeg)
+		rad := deg * math.Pi / 180
+		x := cxu + radius*math.Sin(rad)
+		y := cyu + radius*math.Cos(rad)
+		if i == 0 {
+			p.MoveTo(x, y)
+		} else {
+			p.LineTo(x, y)
+		}
+	}
+
+	// 3-stop radial gradient
+	grad := canvas.NewGradient()
+	grad.Add(0, innerCol)
+	grad.Add(0.5, midCol)
+	grad.Add(1, outerCol)
+	innerR := radius - strokeW/2
+	outerR := radius + strokeW/2
+	radGrad := grad.ToRadial(canvas.Point{X: cxu, Y: cyu}, innerR, canvas.Point{X: cxu, Y: cyu}, outerR)
+
+	ctx.Push()
+	ctx.Style.Fill = canvas.Paint{Color: canvas.Transparent}
+	ctx.Style.Stroke = canvas.Paint{Gradient: radGrad}
+	ctx.SetStrokeWidth(strokeW)
+	ctx.SetStrokeCapper(canvas.RoundCap)
+	ctx.SetStrokeJoiner(canvas.RoundJoin)
+	ctx.DrawPath(0, 0, p)
+	ctx.Pop()
 }
 
 // drawGlowLineSubtleAt はグロー付き直線（バキューム計針）

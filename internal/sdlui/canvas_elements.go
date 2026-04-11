@@ -14,15 +14,26 @@ import (
 func (s *CanvasScene) renderBackground() error {
 	c, ctx := s.bgEl.newCanvas()
 
-	// RPM トラック
+	// 画面全体に radial gradient を描いて奥行き感を出す
+	drawScreenBackgroundGradient(ctx)
+
+	// RPM トラック（強めグラデ）
 	rpmR := gaugeR + rpmROffset
-	drawArcAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, arcStart, arcEnd, colRPMTrack)
+	drawGradientTrackAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, arcStart, arcEnd,
+		Hex("#040408"), Hex("#3a3a48"), Hex("#040408"))
 	// RPM レッドゾーン
 	redStart := arcStart + (6500.0/rpmMaxVal)*arcSweep
-	drawArcAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, redStart, arcEnd, colRedzone)
+	drawGradientTrackAt(ctx, cxScreen, cyScreen, rpmR, rpmArcWidth, redStart, arcEnd,
+		Hex("#200000"), Hex("#7a0000"), Hex("#200000"))
 
 	// 速度トラック
-	drawArcAt(ctx, cxScreen, cyScreen, gaugeR, trackWidth, arcStart, arcEnd, colTrack)
+	drawGradientTrackAt(ctx, cxScreen, cyScreen, gaugeR, trackWidth, arcStart, arcEnd,
+		Hex("#040408"), Hex("#34344a"), Hex("#040408"))
+
+	// 目盛り最内端に黒いリング（バキューム計と同じスタイル）
+	speedInnerRingR := gaugeR + tickOuterGap - tickMajorLen
+	drawGradientTrackAt(ctx, cxScreen, cyScreen, speedInnerRingR, thrArcW, arcStart, arcEnd,
+		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
 
 	// 速度目盛り（線のみ、ラベルは labelsEl に）
 	maxSpd := s.cfg.MaxSpeed
@@ -52,12 +63,14 @@ func (s *CanvasScene) renderBackground() error {
 
 	// スロットルトラック
 	thrR := gaugeR - thrROffset
-	drawArcAt(ctx, cxScreen, cyScreen, thrR, thrArcW, arcStart, arcEnd, colThrTrack)
+	drawGradientTrackAt(ctx, cxScreen, cyScreen, thrR, thrArcW, arcStart, arcEnd,
+		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
 
-	// --- 右パネル：バキューム計（トラック + 目盛り線のみ）---
+	// --- 右パネル：バキューム計 ---
 	vcx := panelOffsetX + mapCX
 	vcy := mapCY
-	drawArcAt(ctx, vcx, vcy, mapR, mapArcW, arcStart, arcEnd, colTrack)
+	drawGradientTrackAt(ctx, vcx, vcy, mapR, mapArcW, arcStart, arcEnd,
+		Hex("#040408"), Hex("#34344a"), Hex("#040408"))
 	vacTotal := 20
 	for i := 0; i <= vacTotal; i++ {
 		angle := arcStart + (float64(i)/float64(vacTotal))*arcSweep
@@ -75,12 +88,15 @@ func (s *CanvasScene) renderBackground() error {
 		drawLineAt(ctx, ix, iy, ox, oy, w, col)
 	}
 
+	// バキューム目盛り最内端を縁取る黒いアーク（スロットルトラックと同じ style）
+	innerRingR := mapR - 16.0
+	drawGradientTrackAt(ctx, vcx, vcy, innerRingR, thrArcW, arcStart, arcEnd,
+		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
+
 	// バキューム中心ドット
 	drawCircleAt(ctx, vcx, vcy, 5, colCenterRim)
 	drawCircleAt(ctx, vcx, vcy, 3, colCenterDot)
 
-	// 区切り線（インジケーターとバキューム値の間）
-	drawLineAt(ctx, panelOffsetX+40, indYStart-16, panelOffsetX+240, indYStart-16, 1, Hex("#222222"))
 
 	return s.bgEl.commit(c)
 }
@@ -170,9 +186,13 @@ func (s *CanvasScene) renderSpeedNeedle() error {
 // --- 速度数値（整数値変化時のみ）---
 func (s *CanvasScene) renderSpeedNumber() error {
 	c, ctx := s.speedNumEl.newCanvas()
-	spdColor := s.fadeColor(SpeedColor(s.curSpeed))
 	numYScreen := cyScreen + gaugeR*0.42
-	s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 84, spdColor, cxScreen, numYScreen, fmt.Sprintf("%d", int(math.Round(s.curSpeed))))
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 84, colDim, cxScreen, numYScreen, "0")
+	} else {
+		spdColor := s.fadeColor(SpeedColor(s.curSpeed))
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 84, spdColor, cxScreen, numYScreen, fmt.Sprintf("%d", int(math.Round(s.curSpeed))))
+	}
 	return s.speedNumEl.commit(c)
 }
 
@@ -194,11 +214,14 @@ func (s *CanvasScene) renderRPMNumber() error {
 	c, ctx := s.rpmNumEl.newCanvas()
 	throttleR := gaugeR - thrROffset
 	rpmReadYScreen := cyScreen - throttleR/2 + 5
-	if s.curRPM > 100 {
+	switch {
+	case s.fadeFactor <= 0:
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, cxScreen, rpmReadYScreen, "0")
+	case s.curRPM > 100:
 		rpmColor := s.fadeColor(RPMColor(s.curRPM))
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, rpmColor, cxScreen, rpmReadYScreen, formatComma(int(math.Round(s.curRPM))))
-	} else {
-		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, cxScreen, rpmReadYScreen, "--")
+	default:
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, cxScreen, rpmReadYScreen, "0")
 	}
 	return s.rpmNumEl.commit(c)
 }
@@ -253,7 +276,9 @@ func (s *CanvasScene) renderRangeBox() error {
 	col := s.fadeColor(s.gearColor())
 
 	drawRoundedRectAt(ctx, rangeX-gearBoxW/2, boxY, gearBoxW, gearBoxH, 8, 3, col)
-	if s.atRange != "" {
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 52, colDim, rangeX, rangeY, "-")
+	} else if s.atRange != "" {
 		s.fonts.drawGlowTextBaseline(ctx, s.fonts.Orbitron, 52, col, rangeX, rangeY, s.atRange)
 	}
 	// HOLD ラベル（active 時のみ点灯、起動中は常に消灯）
@@ -273,14 +298,18 @@ func (s *CanvasScene) renderGearBox() error {
 	col := s.fadeColor(s.gearColor())
 
 	drawRoundedRectAt(ctx, gearX-gearBoxW/2, boxY, gearBoxW, gearBoxH, 8, 3, col)
-	gearText := "-"
-	switch {
-	case s.atRange == "P" || s.atRange == "N" || s.atRange == "R":
-		gearText = "--"
-	case s.gear >= 1 && s.gear <= 4:
-		gearText = fmt.Sprintf("%d", s.gear)
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 52, colDim, gearX, rangeY, "-")
+	} else {
+		gearText := "-"
+		switch {
+		case s.atRange == "P" || s.atRange == "N" || s.atRange == "R":
+			gearText = "--"
+		case s.gear >= 1 && s.gear <= 4:
+			gearText = fmt.Sprintf("%d", s.gear)
+		}
+		s.fonts.drawGlowTextBaseline(ctx, s.fonts.Orbitron, 52, col, gearX, rangeY, gearText)
 	}
-	s.fonts.drawGlowTextBaseline(ctx, s.fonts.Orbitron, 52, col, gearX, rangeY, gearText)
 
 	// LOCK ラベル（active 時のみ点灯、起動中は常に消灯）
 	if s.tcLocked && s.fadeFactor > 0.01 {
@@ -341,11 +370,14 @@ func (s *CanvasScene) renderVacuumValue() error {
 	c, ctx := s.vacValueEl.newCanvas()
 	vcx := panelOffsetX + mapCX
 	vcy := mapCY
-	col := s.fadeColor(s.vacColor())
-	if s.curBar < -0.01 && s.fadeFactor > 0.01 {
+	switch {
+	case s.fadeFactor <= 0:
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, vcx, vcy+mapR*0.38, "-1.00")
+	case s.curBar < -0.01:
+		col := s.fadeColor(s.vacColor())
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, col, vcx, vcy+mapR*0.38, fmt.Sprintf("%.2f", s.curBar))
-	} else {
-		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, vcx, vcy+mapR*0.38, "--")
+	default:
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 48, colDim, vcx, vcy+mapR*0.38, "-1.00")
 	}
 	return s.vacValueEl.commit(c)
 }
@@ -397,8 +429,9 @@ func (s *CanvasScene) renderIndEco() error {
 	baseX := panelOffsetX
 	ecoY := indYStart
 	col := s.fadeColor(s.ecoColor())
-	text := s.ecoDisplayText()
-	if text == "--" {
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, ecoY+6, "--")
+	} else if text := s.ecoDisplayText(); text == "--" {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, ecoY+6, "--")
 	} else {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, ecoY+6, text)
@@ -437,8 +470,9 @@ func (s *CanvasScene) renderIndTemp() error {
 	baseX := panelOffsetX
 	tempY := indYStart + indSpacing
 	col := s.fadeColor(s.tempColor())
-	text := s.tempDisplayText()
-	if text == "--" {
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, tempY+6, "--")
+	} else if text := s.tempDisplayText(); text == "--" {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, tempY+6, "--")
 	} else {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, tempY+6, text)
@@ -474,7 +508,11 @@ func (s *CanvasScene) renderIndTrip() error {
 	baseX := panelOffsetX
 	tripY := indYStart + indSpacing*2
 	col := s.fadeColor(s.tripColor())
-	s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, tripY+6, s.tripDisplayText())
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, tripY+6, "--")
+	} else {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, tripY+6, s.tripDisplayText())
+	}
 	drawRoadIconAt(ctx, baseX+indXIcon+10, tripY-8, 40, col)
 	return s.indTripEl.commit(c)
 }
@@ -505,8 +543,9 @@ func (s *CanvasScene) renderIndOil() error {
 	baseX := panelOffsetX
 	oilY := indYStart + indSpacing*3
 	col := s.fadeColor(s.oilColor())
-	text := s.oilDisplayText()
-	if text == "--" {
+	if s.fadeFactor <= 0 {
+		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, oilY+6, "--")
+	} else if text := s.oilDisplayText(); text == "--" {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, oilY+6, "--")
 	} else {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, oilY+6, text)
