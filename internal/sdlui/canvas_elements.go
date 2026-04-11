@@ -30,7 +30,7 @@ func (s *CanvasScene) renderBackground() error {
 	drawGradientTrackAt(ctx, cxScreen, cyScreen, gaugeR, trackWidth, arcStart, arcEnd,
 		Hex("#040408"), Hex("#34344a"), Hex("#040408"))
 
-	// 目盛り最内端に黒いリング（バキューム計と同じスタイル）
+	// 目盛り最内端のインナーリング（スロットルリングと同じスタイル）
 	speedInnerRingR := gaugeR + tickOuterGap - tickMajorLen
 	drawGradientTrackAt(ctx, cxScreen, cyScreen, speedInnerRingR, thrArcW, arcStart, arcEnd,
 		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
@@ -71,6 +71,13 @@ func (s *CanvasScene) renderBackground() error {
 	vcy := mapCY
 	drawGradientTrackAt(ctx, vcx, vcy, mapR, mapArcW, arcStart, arcEnd,
 		Hex("#040408"), Hex("#34344a"), Hex("#040408"))
+
+	// インナーリング先描画（目盛りを上に）
+	innerRingR := mapR - 16.0
+	drawGradientTrackAt(ctx, vcx, vcy, innerRingR, thrArcW, arcStart, arcEnd,
+		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
+
+	// 目盛り（インナーリングの上）
 	vacTotal := 20
 	for i := 0; i <= vacTotal; i++ {
 		angle := arcStart + (float64(i)/float64(vacTotal))*arcSweep
@@ -87,11 +94,6 @@ func (s *CanvasScene) renderBackground() error {
 		}
 		drawLineAt(ctx, ix, iy, ox, oy, w, col)
 	}
-
-	// バキューム目盛り最内端を縁取る黒いアーク（スロットルトラックと同じ style）
-	innerRingR := mapR - 16.0
-	drawGradientTrackAt(ctx, vcx, vcy, innerRingR, thrArcW, arcStart, arcEnd,
-		Hex("#020204"), Hex("#22222e"), Hex("#020204"))
 
 	// バキューム中心ドット
 	drawCircleAt(ctx, vcx, vcy, 5, colCenterRim)
