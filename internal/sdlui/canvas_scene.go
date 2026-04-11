@@ -302,27 +302,10 @@ func (s *CanvasScene) Update() {
 			s.curRPM = 0
 			s.curThr = 0
 			s.curBar = -1.0
-		case elapsed < bootTotalDur+2.0:
-			// 通常動作を 2 秒だけ見せる
-			s.fadeFactor = 1.0
-			// 通常LERPを走らせる（デモ値が反映される）
-			s.curSpeed = Lerp(s.curSpeed, s.tgtSpeed, LerpSpeed)
-			s.curRPM = Lerp(s.curRPM, s.tgtRPM, 0.4)
-			s.curThr = Lerp(s.curThr, s.tgtThr, 0.4)
-			db := s.tgtBar - s.curBar
-			if math.Abs(db) > LerpThreshold*0.01 {
-				s.curBar += db * 0.35
-			} else {
-				s.curBar = s.tgtBar
-			}
 		default:
-			// デモ: 起動アニメをループさせる
-			s.startTime = time.Now()
-			s.fadeFactor = 0
-			s.curSpeed = 0
-			s.curRPM = 0
-			s.curThr = 0
-			s.curBar = -1.0
+			// 起動アニメ完了 → 通常動作へ
+			s.bootDone = true
+			s.fadeFactor = 1.0
 		}
 
 		// 起動中は全 dynamic 要素を強制再描画

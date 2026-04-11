@@ -81,36 +81,48 @@ func hexNibble(b byte) uint8 {
 }
 
 // SpeedColor は速度に応じたゲージ色を返す
+// < 10 km/h は燃費 MAP 表示閾値 (fuel.go: minDisplaySpeedKm) と同じ
 func SpeedColor(v float64) color.RGBA {
 	switch {
+	case v >= 130:
+		return Hex("#f44336") // 赤
 	case v >= 120:
-		return Hex("#f44336")
+		return Hex("#ff9800") // 橙
 	case v >= 100:
-		return Hex("#ff9800")
+		return Hex("#ffeb3b") // 黄
 	case v >= 80:
-		return Hex("#ffeb3b")
+		return Hex("#76ff03") // 黄緑（高速）
 	case v >= 60:
-		return Hex("#69f0ae")
+		return Hex("#69f0ae") // 緑（巡航）
 	case v >= 30:
-		return Hex("#42a5f5")
+		return Hex("#26c6da") // 水色（市街地）
+	case v >= 10:
+		return Hex("#42a5f5") // 青（低速）
 	default:
-		return Hex("#78909c")
+		return Hex("#78909c") // 停車・非アクティブ
 	}
 }
 
 // RPMColor は回転数に応じた色を返す
+// ZJ-VE 1.3L (91PS/6000rpm, 124Nm/3500rpm) の実用域に合わせた段階的閾値
 func RPMColor(rpm float64) color.RGBA {
 	switch {
-	case rpm >= 6500:
-		return Hex("#f44336")
-	case rpm >= 4500:
-		return Hex("#ff9800")
+	case rpm >= 5000:
+		return Hex("#f44336") // 赤
+	case rpm >= 4000:
+		return Hex("#ff9800") // 橙
+	case rpm >= 3500:
+		return Hex("#fdd835") // 黄
 	case rpm >= 3000:
-		return Hex("#fdd835")
+		return Hex("#76ff03") // 黄緑（パワーバンド突入）
+	case rpm >= 2000:
+		return Hex("#69f0ae") // 緑（通常走行）
 	case rpm >= 1500:
-		return Hex("#69f0ae")
+		return Hex("#26c6da") // 水色（街中走行・低速ギア）
+	case rpm >= 1000:
+		return Hex("#42a5f5") // 青（アイドル付近）
 	default:
-		return Hex("#42a5f5")
+		return Hex("#78909c") // < 1000 RPM は非アクティブ
 	}
 }
 
