@@ -5,6 +5,8 @@ import (
 	"image/color"
 	"math"
 	"strings"
+
+	"github.com/tdewolff/canvas"
 )
 
 // 各要素の描画関数。全て画面座標（Y-down）で描く。
@@ -394,7 +396,7 @@ func (s *CanvasScene) renderVacuumLabel() error {
 	vcy := mapCY
 	pct := clamp((s.curBar-vacMin)/(vacMax-vacMin)*100, 0, 100)
 	hue := (1 - pct/100) * 210
-	lum := 10 + (pct/100)*45
+	lum := 20 + (pct/100)*35
 	sat := math.Min(100, pct*1.5)
 	var vacCol color.RGBA
 	if hue < 5 && sat > 80 {
@@ -408,6 +410,17 @@ func (s *CanvasScene) renderVacuumLabel() error {
 		s.fonts.drawTextCentered(ctx, s.fonts.ShareTech, 24, colDim, vcx, vcy-30, "VACUUM")
 	}
 	return s.vacLabelEl.commit(c)
+}
+
+// drawIndPanel はインジケーター行の背景パネル（薄い塗り + 色付きボーダー）
+func drawIndPanel(ctx *canvas.Context, baseX, rowY float64, col color.RGBA) {
+	px := baseX + 8
+	py := rowY - 34
+	pw := 264.0
+	ph := 44.0
+	fillCol := color.RGBA{255, 255, 255, 20}
+	borderCol := WithAlpha(col, 35)
+	drawFilledRoundedRectAt(ctx, px, py, pw, ph, 6, fillCol, borderCol, 1.5)
 }
 
 // --- インジケーター: ECO ---
@@ -434,6 +447,7 @@ func (s *CanvasScene) renderIndEco() error {
 	baseX := panelOffsetX
 	ecoY := indYStart
 	col := s.fadeColor(s.ecoColor())
+	drawIndPanel(ctx, baseX, ecoY, col)
 	if s.fadeFactor <= 0 {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, ecoY+6, "--")
 	} else if text := s.ecoDisplayText(); text == "--" {
@@ -441,7 +455,7 @@ func (s *CanvasScene) renderIndEco() error {
 	} else {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, col, baseX+indXVal, ecoY+6, text)
 	}
-	drawLeafIconAt(ctx, baseX+indXIcon+16, ecoY-8, 30, col)
+	drawLeafIconAt(ctx, baseX+indXIcon+16, ecoY-12, 30, col)
 	return s.indEcoEl.commit(c)
 }
 
@@ -475,6 +489,7 @@ func (s *CanvasScene) renderIndTemp() error {
 	baseX := panelOffsetX
 	tempY := indYStart + indSpacing
 	col := s.fadeColor(s.tempColor())
+	drawIndPanel(ctx, baseX, tempY, col)
 	if s.fadeFactor <= 0 {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, tempY+6, "--")
 	} else if text := s.tempDisplayText(); text == "--" {
@@ -513,6 +528,7 @@ func (s *CanvasScene) renderIndTrip() error {
 	baseX := panelOffsetX
 	tripY := indYStart + indSpacing*2
 	col := s.fadeColor(s.tripColor())
+	drawIndPanel(ctx, baseX, tripY, col)
 	if s.fadeFactor <= 0 {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, tripY+6, "--")
 	} else {
@@ -548,6 +564,7 @@ func (s *CanvasScene) renderIndOil() error {
 	baseX := panelOffsetX
 	oilY := indYStart + indSpacing*3
 	col := s.fadeColor(s.oilColor())
+	drawIndPanel(ctx, baseX, oilY, col)
 	if s.fadeFactor <= 0 {
 		s.fonts.drawTextBaseline(ctx, s.fonts.Orbitron, 40, colDim, baseX+indXVal, oilY+6, "--")
 	} else if text := s.oilDisplayText(); text == "--" {

@@ -193,6 +193,20 @@ func drawRoundedRectAt(ctx *canvas.Context, sx, sy, w, h, rx, strokeW float64, c
 	ctx.Pop()
 }
 
+// drawFilledRoundedRectAt は塗り+ボーダーの角丸矩形
+func drawFilledRoundedRectAt(ctx *canvas.Context, sx, sy, w, h, rx float64, fillCol, strokeCol color.RGBA, strokeW float64) {
+	yUp := canvasScreenH - sy - h
+	p := canvas.RoundedRectangle(w, h, rx)
+
+	ctx.Push()
+	ctx.SetFillColor(fillCol)
+	ctx.SetStrokeColor(strokeCol)
+	ctx.SetStrokeWidth(strokeW)
+	ctx.SetStrokeJoiner(canvas.RoundJoin)
+	ctx.DrawPath(sx, yUp, p)
+	ctx.Pop()
+}
+
 // drawGlowArcAt はグロー付きアーク（速度計・RPM 用、しっかりした光）
 func drawGlowArcAt(ctx *canvas.Context, cxs, cys, radius, mainW float64, startDeg, endDeg float64, col color.RGBA) {
 	glows := []struct {
@@ -273,7 +287,7 @@ func drawScreenBackgroundGradient(ctx *canvas.Context) {
 	cxu2 := panelOffsetX + mapCX
 	cyu2 := canvasScreenH - mapCY
 	grad2 := canvas.NewGradient()
-	grad2.Add(0, Hex("#2c2c42"))
+	grad2.Add(0, Hex("#3a3a52"))
 	grad2.Add(0.5, Hex("#10101a"))
 	grad2.Add(1, color.RGBA{0, 0, 0, 0})
 	radGrad2 := grad2.ToRadial(canvas.Point{X: cxu2, Y: cyu2}, 0, canvas.Point{X: cxu2, Y: cyu2}, 220)
