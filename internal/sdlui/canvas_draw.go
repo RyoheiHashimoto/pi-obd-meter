@@ -19,8 +19,7 @@ const (
 	// 座標定数（ブラウザ版 gauge.js と同一）
 	cxScreen = 275.0
 	cyScreen = 275.0
-	gaugeR   = 230.0
-	maxSpdW  = 180.0
+	gaugeR = 230.0
 
 	arcStart = -135.0
 	arcEnd   = 135.0
@@ -71,15 +70,11 @@ const pxToPt = 72.0 / 25.4
 
 // 色定数
 var (
-	colTrack     = Hex("#181820")
 	colTickMajor = Hex("#aaaaaa")
 	colTickMinor = Hex("#444444")
 	colTickLabel = Hex("#ffffff")
 	colCenterDot = Hex("#1a1a22")
 	colCenterRim = Hex("#444444")
-	colRedzone   = Hex("#3d0000")
-	colThrTrack  = Hex("#0a0a0f")
-	colRPMTrack  = Hex("#1a1a24")
 	colWhite     = Hex("#ffffff")
 	colDim       = Hex("#333333")
 	colHoldYel   = Hex("#fdd835")
