@@ -1,3 +1,4 @@
+// Package sdlui は SDL2 + canvas ベースのメーター UI を提供する。
 package sdlui
 
 import (
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
-	"github.com/veandco/go-sdl2/ttf"
 )
 
 const (
@@ -34,7 +34,7 @@ type GaugeData struct {
 	Hold         bool
 	TCLocked     bool
 	OilAlert     string
-	OilCurrentKm  float64
+	OilCurrentKm float64
 	OBDConnected bool
 }
 
@@ -47,14 +47,12 @@ type RendererConfig struct {
 	Demo            bool
 }
 
-// Renderer は SDL2 レンダラー
+// Renderer は SDL2 + canvas 合成レンダラー
 type Renderer struct {
 	cfg      RendererConfig
 	window   *sdl.Window
 	renderer *sdl.Renderer
-	fm       *FontManager
-	gauge    *SpeedGauge
-	panel    *RightPanel
+	scene    *CanvasScene
 	provider DataProvider
 	running  bool
 	stopCh   chan struct{}
@@ -64,16 +62,16 @@ type Renderer struct {
 	pressing   bool
 }
 
-// NewRenderer は新しい SDL2 レンダラーを作成する（まだ開始しない）
+// NewRenderer は新しいレンダラーを作成する
 func NewRenderer(cfg RendererConfig, provider DataProvider) *Renderer {
 	return &Renderer{
 		cfg:      cfg,
 		provider: provider,
-		stopCh:   make(chan struct{}),
+		stopCh:   make(chan struct{}, 1),
 	}
 }
 
-// Run はSDLイベントループを開始する（メイン goroutine から呼ぶこと）
+// Run は SDL イベントループを開始する（メイン goroutine から呼ぶこと）
 func (r *Renderer) Run() error {
 	runtime.LockOSThread()
 
@@ -81,11 +79,6 @@ func (r *Renderer) Run() error {
 		return fmt.Errorf("SDL初期化失敗: %w", err)
 	}
 	defer sdl.Quit()
-
-	if err := ttf.Init(); err != nil {
-		return fmt.Errorf("SDL_ttf初期化失敗: %w", err)
-	}
-	defer ttf.Quit()
 
 	window, err := sdl.CreateWindow(
 		"DYデミオ メーター",
@@ -96,55 +89,32 @@ func (r *Renderer) Run() error {
 	if err != nil {
 		return fmt.Errorf("ウィンドウ作成失敗: %w", err)
 	}
-	defer window.Destroy()
+	defer func() { _ = window.Destroy() }()
 	r.window = window
 
 	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
 	if err != nil {
 		return fmt.Errorf("レンダラー作成失敗: %w", err)
 	}
-	defer renderer.Destroy()
+	defer func() { _ = renderer.Destroy() }()
 	r.renderer = renderer
 
-	renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
+	_ = renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
-	// フォント読み込み
-	fm := NewFontManager(renderer)
-	defer fm.Destroy()
-	r.fm = fm
-
-	orbitronPath := r.cfg.FontDir + "/Orbitron-Black.ttf"
-	shareTechPath := r.cfg.FontDir + "/ShareTechMono-Regular.ttf"
-
-	for _, size := range []int{84, 52, 48, 40, 28, 22} {
-		if err := fm.LoadFont(orbitronPath, size); err != nil {
-			slog.Warn("フォント読み込み失敗、継続", "path", orbitronPath, "size", size, "error", err)
-		}
-	}
-	for _, size := range []int{28, 24, 22} {
-		if err := fm.LoadFont(shareTechPath, size); err != nil {
-			slog.Warn("フォント読み込み失敗、継続", "path", shareTechPath, "size", size, "error", err)
-		}
-	}
-
-	// 左パネル：速度ゲージ + RPM + スロットル + ギア
-	r.gauge = NewSpeedGauge(renderer, fm, GaugeConfig{
-		CX:              280,
-		CY:              270,
-		Radius:          230,
+	// canvas シーンを作成
+	scene, err := NewCanvasScene(renderer, SceneConfig{
 		MaxSpeed:        r.cfg.MaxSpeed,
 		ThrottleIdlePct: r.cfg.ThrottleIdlePct,
 		ThrottleMaxPct:  r.cfg.ThrottleMaxPct,
-		OrbitronPath:    orbitronPath,
-		ShareTechPath:   shareTechPath,
+		FontDir:         r.cfg.FontDir,
 	})
-	defer r.gauge.Destroy()
+	if err != nil {
+		return fmt.Errorf("canvas シーン作成失敗: %w", err)
+	}
+	defer scene.Destroy()
+	r.scene = scene
 
-	// 右パネル：バキューム計 + インジケーター
-	r.panel = NewRightPanel(renderer, fm, orbitronPath, shareTechPath)
-	defer r.panel.Destroy()
-
-	slog.Info("SDL2メーター起動", "width", WindowWidth, "height", WindowHeight)
+	slog.Info("SDL2 + canvas メーター起動", "width", WindowWidth, "height", WindowHeight)
 
 	var demoT float64
 
@@ -179,23 +149,10 @@ func (r *Renderer) Run() error {
 			data = r.provider()
 		}
 
-		// 左パネル更新
-		r.gauge.SetTarget(data.SpeedKmh)
-		r.gauge.SetRPM(data.RPM)
-		r.gauge.SetThrottle(data.ThrottlePos)
-		r.gauge.SetGear(data.Gear, data.ATRangeStr, data.Hold, data.TCLocked)
-		r.gauge.Update()
-
-		// 右パネル更新
-		r.panel.SetData(data)
-		r.panel.Update()
-
-		// 描画
-		renderer.SetDrawColor(0, 0, 0, 255)
-		renderer.Clear()
-
-		r.gauge.Draw(renderer)
-		r.panel.Draw(renderer)
+		// シーン更新 + 描画
+		scene.SetTargets(data)
+		scene.Update()
+		scene.Draw(renderer)
 
 		renderer.Present()
 	}
@@ -227,7 +184,6 @@ func (r *Renderer) handleEvent(event sdl.Event) {
 			r.pressing = false
 		}
 	case *sdl.MouseMotionEvent:
-		// マウス移動で長押しキャンセル
 		if r.pressing {
 			r.pressing = false
 		}
@@ -244,7 +200,7 @@ func (r *Renderer) Stop() {
 
 // demoData はデモ用のサイン波データを生成する
 func demoData(t float64) GaugeData {
-	speed := 70 + 70*math.Sin(t*0.3)
+	speed := 90 + 90*math.Sin(t*0.3) // 0〜180 km/h をスイープ
 	rpm := 800 + speed*35
 	throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
 
@@ -262,7 +218,7 @@ func demoData(t float64) GaugeData {
 		SpeedKmh:     speed,
 		RPM:          rpm,
 		ThrottlePos:  throttle,
-		IntakeMAP:    30 + throttle*0.7,
+		IntakeMAP:    50 + 50*math.Sin(t*0.25), // フル範囲スイープ 0〜100 kPa (bar: -1.0〜0)
 		CoolantTemp:  88,
 		FuelEconomy:  8 + 4*math.Sin(t*0.4),
 		AvgFuelEco:   9.5,
@@ -272,7 +228,7 @@ func demoData(t float64) GaugeData {
 		Hold:         false,
 		TCLocked:     speed > 50,
 		OilAlert:     "green",
-		OilCurrentKm:  2800,
+		OilCurrentKm: 2800,
 		OBDConnected: true,
 	}
 }
