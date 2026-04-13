@@ -101,7 +101,7 @@ func drawArcAt(ctx *canvas.Context, cxs, cys, radius, strokeW float64, startDeg,
 	cxu, cyu := screenToUp(cxs, cys)
 
 	p := &canvas.Path{}
-	steps := int(math.Ceil((endDeg - startDeg) * 1.5))
+	steps := int(math.Ceil((endDeg - startDeg) * 0.5))
 	if steps < 4 {
 		steps = 4
 	}
@@ -304,7 +304,7 @@ func drawGradientTrackAt(ctx *canvas.Context, cxs, cys, radius, strokeW float64,
 	cxu, cyu := screenToUp(cxs, cys)
 
 	p := &canvas.Path{}
-	steps := int(math.Ceil((endDeg - startDeg) * 1.5))
+	steps := int(math.Ceil((endDeg - startDeg) * 0.5))
 	if steps < 4 {
 		steps = 4
 	}
