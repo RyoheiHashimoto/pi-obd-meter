@@ -128,48 +128,48 @@ type CanvasScene struct {
 	intakeMAP    float64
 
 	// 起動アニメ
-	startTime    time.Time
-	bootDone     bool
-	fadeFactor   float64 // 0=消灯, 1=通常
+	startTime  time.Time
+	bootDone   bool
+	fadeFactor float64 // 0=消灯, 1=通常
 
 	// 前回の state（dirty 判定用）
-	lastSpdInt     int
-	lastRPMInt     int
-	lastGear       int
-	lastRange      string
-	lastHold       bool
-	lastTCLock     bool
-	lastBarStr     string
-	lastEcoStr     string
-	lastTempStr    string
-	lastTripStr    string
-	lastOilStr     string
-	lastEcoCol     color.RGBA
-	lastTempCol    color.RGBA
-	lastTripCol    color.RGBA
-	lastOilCol     color.RGBA
-	initialized    bool
+	lastSpdInt  int
+	lastRPMInt  int
+	lastGear    int
+	lastRange   string
+	lastHold    bool
+	lastTCLock  bool
+	lastBarStr  string
+	lastEcoStr  string
+	lastTempStr string
+	lastTripStr string
+	lastOilStr  string
+	lastEcoCol  color.RGBA
+	lastTempCol color.RGBA
+	lastTripCol color.RGBA
+	lastOilCol  color.RGBA
+	initialized bool
 
 	// Elements
-	bgEl            *element
-	labelsEl        *element  // 目盛り数字・単位ラベル（静的、起動中は ColorMod で暗く）
-	speedArcEl      *element
-	speedNeedleEl   *element
-	speedNumEl      *element
-	rpmArcEl        *element
-	rpmNumEl        *element
-	thrArcEl        *element
-	thrLabelEl      *element
-	rangeBoxEl      *element
-	gearBoxEl       *element
-	vacArcEl        *element
-	vacNeedleEl     *element
-	vacValueEl      *element
-	vacLabelEl      *element
-	indEcoEl        *element
-	indTempEl       *element
-	indTripEl       *element
-	indOilEl        *element
+	bgEl          *element
+	labelsEl      *element // 目盛り数字・単位ラベル（静的、起動中は ColorMod で暗く）
+	speedArcEl    *element
+	speedNeedleEl *element
+	speedNumEl    *element
+	rpmArcEl      *element
+	rpmNumEl      *element
+	thrArcEl      *element
+	thrLabelEl    *element
+	rangeBoxEl    *element
+	gearBoxEl     *element
+	vacArcEl      *element
+	vacNeedleEl   *element
+	vacValueEl    *element
+	vacLabelEl    *element
+	indEcoEl      *element
+	indTempEl     *element
+	indTripEl     *element
+	indOilEl      *element
 }
 
 // NewCanvasScene は新しい scene を初期化（背景のベイクまで完了）
@@ -187,9 +187,9 @@ func NewCanvasScene(renderer *sdl.Renderer, cfg SceneConfig) (*CanvasScene, erro
 
 	// --- 要素を作成 ---
 	type elemDef struct {
-		name          string
-		x, y, w, h    int32
-		dest          **element
+		name       string
+		x, y, w, h int32
+		dest       **element
 	}
 	defs := []elemDef{
 		// 静的背景（トラックのみ、常に表示）
