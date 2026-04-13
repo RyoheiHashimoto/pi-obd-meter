@@ -18,7 +18,6 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
-	"github.com/hashimoto/pi-obd-meter/internal/sdlui"
 )
 
 var version = "dev"
@@ -38,9 +37,7 @@ func checkWiFi() bool {
 
 func main() {
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
-	mode := flag.String("mode", "browser", "描画モード: browser (Chromium) / sdl (SDL2直描画)")
 	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
-	fontDir := flag.String("font-dir", "web/static/fonts", "フォントディレクトリ")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
@@ -111,57 +108,7 @@ func main() {
 
 	slog.Info("データ収集開始")
 
-	// --- SDL モード: OBDデータ処理をバックグラウンドで実行し、メインスレッドでSDL描画 ---
-	if *mode == "sdl" {
-		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
-			MaxSpeed:        float64(cfg.MaxSpeedKmh),
-			ThrottleIdlePct: cfg.ThrottleIdlePct,
-			ThrottleMaxPct:  cfg.ThrottleMaxPct,
-			FontDir:         *fontDir,
-			Demo:            *demo,
-		}, func() sdlui.GaugeData {
-			d := app.getRealtimeData()
-			return sdlui.GaugeData{
-				SpeedKmh:     d.SpeedKmh,
-				RPM:          d.RPM,
-				ThrottlePos:  d.ThrottlePos,
-				IntakeMAP:    d.IntakeMAP,
-				CoolantTemp:  d.CoolantTemp,
-				FuelEconomy:  d.FuelEconomy,
-				AvgFuelEco:   d.AvgFuelEconomy,
-				TripKm:       d.TripKm,
-				Gear:         d.Gear,
-				ATRangeStr:   d.ATRangeStr,
-				Hold:         d.Hold,
-				TCLocked:     d.TCLocked,
-				OilAlert:     d.OilAlert,
-				OilCurrentKm: d.OilCurrentKm,
-				OBDConnected: d.OBDConnected,
-			}
-		})
-
-		// OBDデータ処理ループをバックグラウンドで実行（距離積算・メンテ更新・GAS送信）
-		// SDLモードではシグナル処理はSDL側が担当するのでnilを渡す
-		go app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, nil)
-
-		// SIGINT/SIGTERM で SDL ループを停止 + 状態保存
-		go func() {
-			<-sigCh
-			slog.Info("シグナル受信、SDLシャットダウン")
-			sdlRenderer.Stop()
-			cancel()
-			app.tracker.SaveState()
-			app.maintMgr.SaveState()
-		}()
-
-		if err := sdlRenderer.Run(); err != nil {
-			slog.Error("SDL描画エラー", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// --- ブラウザモード: 従来のメインループ ---
+	// --- メインループ ---
 
 	// デモモード: ブラウザ向けにサイン波データを生成
 	if *demo {
