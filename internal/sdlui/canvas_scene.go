@@ -132,6 +132,10 @@ type CanvasScene struct {
 	bootDone   bool
 	fadeFactor float64 // 0=消灯, 1=通常
 
+	// フレーム時間
+	lastFrame time.Time
+	dt        float64 // 前フレームからの経過秒
+
 	// 前回の state（dirty 判定用）
 	lastSpdInt  int
 	lastRPMInt  int
@@ -233,6 +237,7 @@ func NewCanvasScene(renderer *sdl.Renderer, cfg SceneConfig) (*CanvasScene, erro
 	s.lastSpdInt = -1
 	s.lastRPMInt = -1
 	s.startTime = time.Now()
+	s.lastFrame = s.startTime
 	s.fadeFactor = 0
 
 	// 静的背景 + ラベルをベイク
@@ -274,6 +279,13 @@ func (s *CanvasScene) SetTargets(data GaugeData) {
 
 // Update は LERP 補間 + 変更された要素を再描画
 func (s *CanvasScene) Update() {
+	now := time.Now()
+	s.dt = now.Sub(s.lastFrame).Seconds()
+	if s.dt > 0.1 { // 100ms 以上は異常、cap
+		s.dt = 0.1
+	}
+	s.lastFrame = now
+
 	// --- 起動アニメーション ---
 	if !s.bootDone {
 		elapsed := time.Since(s.startTime).Seconds()
@@ -331,17 +343,11 @@ func (s *CanvasScene) Update() {
 		return
 	}
 
-	// --- 通常 LERP ---
-	s.curSpeed = Lerp(s.curSpeed, s.tgtSpeed, LerpSpeed)
-	s.curRPM = Lerp(s.curRPM, s.tgtRPM, 0.4)
-	s.curThr = Lerp(s.curThr, s.tgtThr, 0.4)
-	// バキュームは専用 speed
-	delta := s.tgtBar - s.curBar
-	if math.Abs(delta) > LerpThreshold*0.01 {
-		s.curBar = s.curBar + delta*0.35
-	} else {
-		s.curBar = s.tgtBar
-	}
+	// --- 通常 LERP (delta time ベース) ---
+	s.curSpeed = LerpDt(s.curSpeed, s.tgtSpeed, LerpSpeed, s.dt)
+	s.curRPM = LerpDt(s.curRPM, s.tgtRPM, 0.4, s.dt)
+	s.curThr = LerpDt(s.curThr, s.tgtThr, 0.4, s.dt)
+	s.curBar = LerpDt(s.curBar, s.tgtBar, 0.35, s.dt)
 
 	// 毎フレーム更新される dynamic 要素
 	_ = s.renderSpeedArc()
