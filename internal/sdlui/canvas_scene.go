@@ -361,32 +361,13 @@ func (s *CanvasScene) Update() {
 	s.curThr = LerpDt(s.curThr, s.tgtThr, 0.4, s.dt)
 	s.curBar = LerpDt(s.curBar, s.tgtBar, 0.35, s.dt)
 
-	// アーク・針は角度が変わった時のみ再描画（CPU ラスタライズ削減）
-	const angleTh = 0.5 // 度単位の閾値
-	spdAngle := (s.curSpeed / s.cfg.MaxSpeed) * arcSweep
-	if !s.initialized || math.Abs(spdAngle-s.lastSpdAngle) > angleTh {
-		_ = s.renderSpeedArc()
-		_ = s.renderSpeedNeedle()
-		s.lastSpdAngle = spdAngle
-		s.lastNdlAngle = spdAngle
-	}
-	rpmAngle := (s.curRPM / rpmMaxVal) * arcSweep
-	if !s.initialized || math.Abs(rpmAngle-s.lastRPMAngle) > angleTh {
-		_ = s.renderRPMArc()
-		s.lastRPMAngle = rpmAngle
-	}
-	thrAngle := (s.curThr / 100) * arcSweep
-	if !s.initialized || math.Abs(thrAngle-s.lastThrAngle) > angleTh {
-		_ = s.renderThrottleArc()
-		s.lastThrAngle = thrAngle
-	}
-	vacAngle := (clamp((s.curBar-vacMin)/(vacMax-vacMin), 0, 1)) * arcSweep
-	if !s.initialized || math.Abs(vacAngle-s.lastVacAngle) > angleTh {
-		_ = s.renderVacuumArc()
-		_ = s.renderVacuumNeedle()
-		s.lastVacAngle = vacAngle
-		s.lastVNdAngle = vacAngle
-	}
+	// アーク・針は毎フレーム更新（グロー軽量化で 60fps 対応）
+	_ = s.renderSpeedArc()
+	_ = s.renderSpeedNeedle()
+	_ = s.renderRPMArc()
+	_ = s.renderThrottleArc()
+	_ = s.renderVacuumArc()
+	_ = s.renderVacuumNeedle()
 
 	// 整数値が変わった時のみ
 	spdInt := int(math.Round(s.curSpeed))
@@ -404,15 +385,9 @@ func (s *CanvasScene) Update() {
 		_ = s.renderVacuumValue()
 		s.lastBarStr = barStr
 	}
-	// VACUUM / THROTTLE ラベル（値が変わった時のみ）
-	if !s.initialized || math.Abs(s.curBar-s.lastVacBar) > 0.005 {
-		_ = s.renderVacuumLabel()
-		s.lastVacBar = s.curBar
-	}
-	if !s.initialized || math.Abs(s.curThr-s.lastThrPct) > 0.5 {
-		_ = s.renderThrottleLabel()
-		s.lastThrPct = s.curThr
-	}
+	// VACUUM / THROTTLE ラベル
+	_ = s.renderVacuumLabel()
+	_ = s.renderThrottleLabel()
 
 	// ギア/レンジ枠（変化時のみ）
 	if !s.initialized || s.gear != s.lastGear || s.atRange != s.lastRange || s.hold != s.lastHold {

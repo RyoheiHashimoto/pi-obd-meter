@@ -202,54 +202,22 @@ func drawFilledRoundedRectAt(ctx *canvas.Context, sx, sy, w, h, rx float64, fill
 	ctx.Pop()
 }
 
-// drawGlowArcAt はグロー付きアーク（速度計・RPM 用、しっかりした光）
+// drawGlowArcAt はグロー付きアーク（速度計・RPM 用）
+// Pi 4 のCPUラスタライズ負荷軽減のため、グロー1層 + 本体の2パスに簡略化
 func drawGlowArcAt(ctx *canvas.Context, cxs, cys, radius, mainW float64, startDeg, endDeg float64, col color.RGBA) {
-	glows := []struct {
-		widthAdd float64
-		alpha    uint8
-	}{
-		{18, 10},
-		{13, 22},
-		{9, 40},
-		{5, 75},
-	}
-	for _, l := range glows {
-		drawArcAt(ctx, cxs, cys, radius, mainW+l.widthAdd, startDeg, endDeg, WithAlpha(col, l.alpha))
-	}
+	drawArcAt(ctx, cxs, cys, radius, mainW+8, startDeg, endDeg, WithAlpha(col, 50))
 	drawArcAt(ctx, cxs, cys, radius, mainW, startDeg, endDeg, col)
 }
 
 // drawGlowArcSubtleAt はグロー付きアーク（バキューム計用、控えめ）
 func drawGlowArcSubtleAt(ctx *canvas.Context, cxs, cys, radius, mainW float64, startDeg, endDeg float64, col color.RGBA) {
-	glows := []struct {
-		widthAdd float64
-		alpha    uint8
-	}{
-		{14, 8},
-		{10, 18},
-		{6, 35},
-		{3, 65},
-	}
-	for _, l := range glows {
-		drawArcAt(ctx, cxs, cys, radius, mainW+l.widthAdd, startDeg, endDeg, WithAlpha(col, l.alpha))
-	}
+	drawArcAt(ctx, cxs, cys, radius, mainW+5, startDeg, endDeg, WithAlpha(col, 40))
 	drawArcAt(ctx, cxs, cys, radius, mainW, startDeg, endDeg, col)
 }
 
 // drawGlowLineAt はグロー付き直線（速度計針）
 func drawGlowLineAt(ctx *canvas.Context, x1, y1, x2, y2, mainW float64, col color.RGBA) {
-	glows := []struct {
-		widthAdd float64
-		alpha    uint8
-	}{
-		{20, 10},
-		{14, 22},
-		{10, 40},
-		{6, 75},
-	}
-	for _, l := range glows {
-		drawLineAt(ctx, x1, y1, x2, y2, mainW+l.widthAdd, WithAlpha(col, l.alpha))
-	}
+	drawLineAt(ctx, x1, y1, x2, y2, mainW+8, WithAlpha(col, 50))
 	drawLineAt(ctx, x1, y1, x2, y2, mainW, col)
 }
 
@@ -342,17 +310,6 @@ func drawGradientTrackAt(ctx *canvas.Context, cxs, cys, radius, strokeW float64,
 
 // drawGlowLineSubtleAt はグロー付き直線（バキューム計針）
 func drawGlowLineSubtleAt(ctx *canvas.Context, x1, y1, x2, y2, mainW float64, col color.RGBA) {
-	glows := []struct {
-		widthAdd float64
-		alpha    uint8
-	}{
-		{14, 8},
-		{10, 18},
-		{6, 35},
-		{3, 65},
-	}
-	for _, l := range glows {
-		drawLineAt(ctx, x1, y1, x2, y2, mainW+l.widthAdd, WithAlpha(col, l.alpha))
-	}
+	drawLineAt(ctx, x1, y1, x2, y2, mainW+5, WithAlpha(col, 40))
 	drawLineAt(ctx, x1, y1, x2, y2, mainW, col)
 }
