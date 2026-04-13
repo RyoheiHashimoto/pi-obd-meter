@@ -136,6 +136,16 @@ type CanvasScene struct {
 	lastFrame time.Time
 	dt        float64 // 前フレームからの経過秒
 
+	// パフォーマンス計測
+	perfFrames int
+	perfSpdArc time.Duration
+	perfSpdNdl time.Duration
+	perfRpmArc time.Duration
+	perfThrArc time.Duration
+	perfVacArc time.Duration
+	perfVacNdl time.Duration
+	perfTotal  time.Duration
+
 	// 前回の state（dirty 判定用）
 	lastSpdInt  int
 	lastRPMInt  int
@@ -352,13 +362,50 @@ func (s *CanvasScene) Update() {
 	s.curThr = LerpDt(s.curThr, s.tgtThr, 0.4, s.dt)
 	s.curBar = LerpDt(s.curBar, s.tgtBar, 0.35, s.dt)
 
-	// アーク・針は毎フレーム更新
+	// アーク・針は毎フレーム更新（計測付き）
+	t0 := time.Now()
 	_ = s.renderSpeedArc()
+	t1 := time.Now()
 	_ = s.renderSpeedNeedle()
+	t2 := time.Now()
 	_ = s.renderRPMArc()
+	t3 := time.Now()
 	_ = s.renderThrottleArc()
+	t4 := time.Now()
 	_ = s.renderVacuumArc()
+	t5 := time.Now()
 	_ = s.renderVacuumNeedle()
+	t6 := time.Now()
+
+	s.perfFrames++
+	s.perfSpdArc += t1.Sub(t0)
+	s.perfSpdNdl += t2.Sub(t1)
+	s.perfRpmArc += t3.Sub(t2)
+	s.perfThrArc += t4.Sub(t3)
+	s.perfVacArc += t5.Sub(t4)
+	s.perfVacNdl += t6.Sub(t5)
+	s.perfTotal += t6.Sub(t0)
+	if s.perfFrames%60 == 0 {
+		n := float64(s.perfFrames)
+		slog.Info("render perf (avg ms)",
+			"spdArc", fmt.Sprintf("%.1f", float64(s.perfSpdArc.Milliseconds())/n),
+			"spdNdl", fmt.Sprintf("%.1f", float64(s.perfSpdNdl.Milliseconds())/n),
+			"rpmArc", fmt.Sprintf("%.1f", float64(s.perfRpmArc.Milliseconds())/n),
+			"thrArc", fmt.Sprintf("%.1f", float64(s.perfThrArc.Milliseconds())/n),
+			"vacArc", fmt.Sprintf("%.1f", float64(s.perfVacArc.Milliseconds())/n),
+			"vacNdl", fmt.Sprintf("%.1f", float64(s.perfVacNdl.Milliseconds())/n),
+			"total", fmt.Sprintf("%.1f", float64(s.perfTotal.Milliseconds())/n),
+			"dt", fmt.Sprintf("%.1f", s.dt*1000),
+		)
+		s.perfFrames = 0
+		s.perfSpdArc = 0
+		s.perfSpdNdl = 0
+		s.perfRpmArc = 0
+		s.perfThrArc = 0
+		s.perfVacArc = 0
+		s.perfVacNdl = 0
+		s.perfTotal = 0
+	}
 
 	// 整数値が変わった時のみ
 	spdInt := int(math.Round(s.curSpeed))
