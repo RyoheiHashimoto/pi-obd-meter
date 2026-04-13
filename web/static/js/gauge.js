@@ -45,14 +45,16 @@ function applyGlow(el, color) {
   el.style.filter = `drop-shadow(0 0 6px ${color})`;
 }
 
-// 速度→ゲージ色（寒色→暖色）
+// 速度→ゲージ色（ZJ-VE / DYデミオ実用域に合わせた8段階）
 export function speedColor(v) {
-  if (v >= 120) return '#f44336';
-  if (v >= 100) return '#ff9800';
-  if (v >= 80)  return '#ffeb3b';
-  if (v >= 60)  return '#69f0ae';
-  if (v >= 30)  return '#42a5f5';
-  return '#78909c';
+  if (v >= 130) return '#f44336'; // 赤
+  if (v >= 120) return '#ff9800'; // 橙
+  if (v >= 100) return '#ffeb3b'; // 黄
+  if (v >= 80)  return '#76ff03'; // 黄緑（高速）
+  if (v >= 60)  return '#69f0ae'; // 緑（巡航）
+  if (v >= 30)  return '#26c6da'; // 水色（市街地）
+  if (v >= 10)  return '#42a5f5'; // 青（低速）
+  return '#78909c'; // 停車・非アクティブ
 }
 
 // --- ArcAnimator: アーク LERP アニメーション ---
@@ -154,12 +156,16 @@ export function updateGear(gear, range, hold, tcLocked) {
 }
 
 // --- RPM色: 回転数に応じた色 ---
+// RPM→色（ZJ-VE 91PS/6000rpm, 124Nm/3500rpm に合わせた8段階）
 function rpmColor(rpm) {
-  if (rpm >= 6500) return '#f44336';  // レッドゾーン
-  if (rpm >= 4500) return '#ff9800';  // 高回転
-  if (rpm >= 3000) return '#fdd835';  // パワーバンド
-  if (rpm >= 1500) return '#69f0ae';  // 通常
-  return '#42a5f5';                    // アイドル〜低回転
+  if (rpm >= 5000) return '#f44336';  // 赤
+  if (rpm >= 4000) return '#ff9800';  // 橙
+  if (rpm >= 3500) return '#fdd835';  // 黄
+  if (rpm >= 3000) return '#76ff03';  // 黄緑（パワーバンド突入）
+  if (rpm >= 2000) return '#69f0ae';  // 緑（通常走行）
+  if (rpm >= 1500) return '#26c6da';  // 水色（街中走行）
+  if (rpm >= 1000) return '#42a5f5';  // 青（アイドル付近）
+  return '#78909c';                    // 非アクティブ
 }
 
 // --- RPM アニメーター ---
@@ -188,16 +194,24 @@ export function buildSpeedGauge(svgId, cfg) {
   const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
   const throttleR = r - THROTTLE_R_OFFSET;
 
-  // RPM arc (outermost)
+  // 同心円ガイドライン（階層感）
+  svgEl(svg, 'path', { d: arcPath(cx, cy, 200, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, 175, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
+
+  // RPM トラック（グラデ風: 内暗→中明→外暗）
   const rpmR = r + RPM_R_OFFSET;
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 12, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR - 4, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#3a3a48', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR + 4, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
   // Redzone background (6500-8000)
   const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, redStart, ARC_END), fill: 'none', stroke: '#3d0000', 'stroke-width': 12, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, redStart, ARC_END), fill: 'none', stroke: '#7a0000', 'stroke-width': 12, 'stroke-linecap': 'round' });
   const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' });
 
-  // Track (thick bezel)
-  svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': 16, 'stroke-linecap': 'round' });
+  // 速度トラック（グラデ風: 内暗→中明→外暗）
+  svgEl(svg, 'path', { d: arcPath(cx, cy, r - 6, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#34344a', 'stroke-width': 8, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, r + 6, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
 
   // Ticks
   const total = mj * mn;
@@ -217,13 +231,22 @@ export function buildSpeedGauge(svgId, cfg) {
     }
   }
 
-  // Throttle arc (track)
-  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#0a0a0f', 'stroke-width': 10, 'stroke-linecap': 'round' });
+  // 目盛り最内端のインナーリング（グラデ風）
+  const innerRingR = r + 4 - 30; // tickOuterGap - tickMajorLen
+  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR - 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR, ARC_START, ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR + 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+
+  // スロットルトラック（グラデ風）
+  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR - 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR + 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
   const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
 
   // RPM readout (upper area inside gauge, centered)
   const rpmReadY = cy - Math.round(throttleR / 2) + 5;
   const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  rpmValEl.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
   rpmValEl.textContent = '--';
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
@@ -268,9 +291,10 @@ export function buildSpeedGauge(svgId, cfg) {
   // Center dot
   svgEl(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
-  // Number display
+  // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
   const nm = svgEl(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
+  nm.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
   nm.textContent = '0';
 
   // Unit label

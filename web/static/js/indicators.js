@@ -99,7 +99,7 @@ function lerpMap() {
   mapNeedleEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
   // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
   if (vacLabelEl) {
-    const lum = 10 + (pct / 100) * 45; // 10%(暗い) → 55%(明るい)
+    const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
     const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
     const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
     vacLabelEl.setAttribute('fill', vacCol);
@@ -158,8 +158,15 @@ export function createIndicators(panelEl) {
   const VAC_MN = 4;    // 主目盛り間の副目盛り数
   const VAC_TOTAL = VAC_MJ * VAC_MN;
 
-  // Track
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
+  // バキュームトラック（グラデ風: 内暗→中明→外暗）
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R - 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#34344a', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R + 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  // バキュームインナーリング
+  const vacInnerR = MAP_R - 16;
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR - 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR + 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
 
   // Ticks
   for (let i = 0; i <= VAC_TOTAL; i++) {
@@ -194,19 +201,23 @@ export function createIndicators(panelEl) {
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
-  // Value
+  // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  mapValEl.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
   mapValEl.textContent = '--';
   // Unit
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
   // === 4行インジケーター ===
-  // 区切り線
-  svgEl(svg, 'line', { x1: 10, y1: IND_Y_START - 16, x2: 210, y2: IND_Y_START - 16, stroke: '#222', 'stroke-width': 1 });
+  // ガラスパネル（各行に角丸背景 + 色付きボーダー）
+  function addIndPanel(y) {
+    svgEl(svg, 'rect', { x: -22, y: y - 34, width: 244, height: 44, rx: 6, fill: 'rgba(255,255,255,0.08)', stroke: 'rgba(255,255,255,0.14)', 'stroke-width': 1.5 });
+  }
 
   // Row 0: ECO
   const ecoY = IND_Y_START;
+  addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 8, 30);
   ecoIconEls = leafIcons;
   ecoValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: ecoY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
@@ -215,6 +226,7 @@ export function createIndicators(panelEl) {
 
   // Row 1: TEMP
   const tempY = IND_Y_START + IND_SPACING;
+  addIndPanel(tempY);
   tempIconEl = createIconPath(svg, IND_X_ICON + 10, tempY - 8, ICON_THERMO, 40);
   tempValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tempY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tempValEl.textContent = '--';
@@ -222,6 +234,7 @@ export function createIndicators(panelEl) {
 
   // Row 2: TRIP
   const tripY = IND_Y_START + IND_SPACING * 2;
+  addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
   tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
@@ -229,6 +242,7 @@ export function createIndicators(panelEl) {
 
   // Row 3: OIL
   const oilY = IND_Y_START + IND_SPACING * 3;
+  addIndPanel(oilY);
   oilIconEl = createIconPath(svg, IND_X_ICON + 10, oilY - 8, ICON_OIL, 40);
   oilValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: oilY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   oilValEl.textContent = '--';
