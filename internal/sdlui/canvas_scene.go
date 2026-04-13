@@ -352,7 +352,7 @@ func (s *CanvasScene) Update() {
 	s.curThr = LerpDt(s.curThr, s.tgtThr, 0.4, s.dt)
 	s.curBar = LerpDt(s.curBar, s.tgtBar, 0.35, s.dt)
 
-	// アーク・針は毎フレーム更新（グロー軽量化で 60fps 対応）
+	// アーク・針は毎フレーム更新
 	_ = s.renderSpeedArc()
 	_ = s.renderSpeedNeedle()
 	_ = s.renderRPMArc()
