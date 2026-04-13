@@ -137,31 +137,22 @@ type CanvasScene struct {
 	dt        float64 // 前フレームからの経過秒
 
 	// 前回の state（dirty 判定用）
-	lastSpdInt int
-	lastRPMInt int
-	lastGear   int
-	lastRange  string
-	lastHold   bool
-	lastTCLock bool
-	// アーク・針の dirty 判定用（角度ベース）
-	lastSpdAngle float64
-	lastRPMAngle float64
-	lastThrAngle float64
-	lastVacAngle float64
-	lastNdlAngle float64 // speed needle
-	lastVNdAngle float64 // vacuum needle
-	lastThrPct   float64 // throttle label
-	lastVacBar   float64 // vacuum label
-	lastBarStr   string
-	lastEcoStr   string
-	lastTempStr  string
-	lastTripStr  string
-	lastOilStr   string
-	lastEcoCol   color.RGBA
-	lastTempCol  color.RGBA
-	lastTripCol  color.RGBA
-	lastOilCol   color.RGBA
-	initialized  bool
+	lastSpdInt  int
+	lastRPMInt  int
+	lastGear    int
+	lastRange   string
+	lastHold    bool
+	lastTCLock  bool
+	lastBarStr  string
+	lastEcoStr  string
+	lastTempStr string
+	lastTripStr string
+	lastOilStr  string
+	lastEcoCol  color.RGBA
+	lastTempCol color.RGBA
+	lastTripCol color.RGBA
+	lastOilCol  color.RGBA
+	initialized bool
 
 	// Elements
 	bgEl          *element
