@@ -1,3 +1,4 @@
+// Package sdlui は SDL2 + canvas ベースのメーター UI を提供する。
 package sdlui
 
 import (

@@ -9,7 +9,7 @@ import (
 // Color ヘルパー関数群（image/color.RGBA ベース）
 // canvas ライブラリと直接互換
 
-// HSL→RGB 変換（h: 0-360, s: 0-100, l: 0-100）
+// HSL は HSL→RGB 変換を行う（h: 0-360, s: 0-100, l: 0-100）
 func HSL(h, s, l float64) color.RGBA {
 	s /= 100
 	l /= 100

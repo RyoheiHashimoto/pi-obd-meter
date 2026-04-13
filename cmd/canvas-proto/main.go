@@ -372,29 +372,6 @@ func drawGlowArc(ctx *canvas.Context, radius, mainW float64, startGauge, endGaug
 
 // drawGradientArc はスロットルのような開度毎に色が変わるアークを描画する
 // 1°刻みで色を変えながらセグメント描画
-func drawGradientArc(ctx *canvas.Context, cxU, cyU, radius, strokeW float64, startGauge, endGauge float64, maxPct float64) {
-	if endGauge <= startGauge {
-		return
-	}
-	steps := int(math.Ceil(endGauge - startGauge))
-	if steps < 1 {
-		return
-	}
-	for i := 0; i < steps; i++ {
-		d0 := startGauge + float64(i)
-		d1 := d0 + 1
-		if d1 > endGauge {
-			d1 = endGauge
-		}
-		segPct := float64(i+1) / float64(steps) * maxPct
-		col := throttleColor(segPct, true)
-		// drawArcAt は screen 座標系、cxU/cyU は Y-up なので変換
-		cxs := cxU
-		cys := screenH - cyU
-		drawArcAt(ctx, cxs, cys, radius, strokeW, d0, d1, col)
-	}
-}
-
 // throttleColor はスロットル開度に応じた色を返す（HSL グラデーション、dimZone 対応）
 func throttleColor(pct float64, active bool) color.RGBA {
 	const dimZone = 5.0
@@ -923,11 +900,6 @@ func drawLineScreen(ctx *canvas.Context, x1, y1, x2, y2, width float64, col colo
 }
 
 // drawCircleScreen は画面座標で塗りつぶし円を描画する
-func drawCircleScreen(ctx *canvas.Context, cxs, cys, radius float64, col color.RGBA) {
-	drawCircle(ctx, cxs, screenH-cys, radius, col)
-}
-
-// drawArc2 は指定中心点でアークを描画する（既存 drawArc を任意中心対応に拡張）
 // gearColor はレンジとHOLD状態からギア枠の色を返す
 func gearColor(atRange string, hold bool) color.RGBA {
 	switch atRange {

@@ -104,7 +104,6 @@ func (s *CanvasScene) renderBackground() error {
 	drawCircleAt(ctx, vcx, vcy, 5, colCenterRim)
 	drawCircleAt(ctx, vcx, vcy, 3, colCenterDot)
 
-
 	return s.bgEl.commit(c)
 }
 
@@ -362,7 +361,7 @@ func (s *CanvasScene) renderVacuumNeedle() error {
 	needleAngle := arcStart + (pct/100)*arcSweep
 	col := s.vacColor()
 
-	nx1, ny1 := polarToScreen(vcx, vcy, -6, needleAngle)      // 尻ほんの少し戻す（-4→-6）
+	nx1, ny1 := polarToScreen(vcx, vcy, -6, needleAngle) // 尻ほんの少し戻す（-4→-6）
 	nx2, ny2 := polarToScreen(vcx, vcy, mapR-14, needleAngle)
 	drawGlowLineSubtleAt(ctx, nx1, ny1, nx2, ny2, 4.5, col)
 
