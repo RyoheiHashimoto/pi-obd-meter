@@ -187,21 +187,21 @@ func main() {
 						gear = 2
 					}
 					app.updateRealtimeData(RealtimeData{
-						SpeedKmh:    speed,
-						RPM:         rpm,
-						ThrottlePos: throttle,
-						IntakeMAP:   30 + throttle*0.7,
-						CoolantTemp: 88,
-						FuelEconomy: 8 + 4*math.Sin(t*0.4),
+						SpeedKmh:       speed,
+						RPM:            rpm,
+						ThrottlePos:    throttle,
+						IntakeMAP:      30 + throttle*0.7,
+						CoolantTemp:    88,
+						FuelEconomy:    8 + 4*math.Sin(t*0.4),
 						AvgFuelEconomy: 9.5,
-						TripKm:      120.3 + t*0.01,
-						Gear:        gear,
-						ATRangeStr:  "D",
-						TCLocked:    speed > 50,
-						OilAlert:    "green",
+						TripKm:         120.3 + t*0.01,
+						Gear:           gear,
+						ATRangeStr:     "D",
+						TCLocked:       speed > 50,
+						OilAlert:       "green",
 						OilRemainingKm: 2800,
-						OBDConnected: true,
-						WiFiConnected: true,
+						OBDConnected:   true,
+						WiFiConnected:  true,
 					})
 				}
 			}

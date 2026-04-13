@@ -74,7 +74,7 @@ func newElement(ren *sdl.Renderer, name string, x, y, w, h int32) (*element, err
 
 func (e *element) destroy() {
 	if e.tex != nil {
-		e.tex.Destroy()
+		_ = e.tex.Destroy()
 	}
 }
 
@@ -420,8 +420,8 @@ func (s *CanvasScene) Update() {
 
 // Draw は全要素を画面に転送
 func (s *CanvasScene) Draw(renderer *sdl.Renderer) {
-	renderer.SetDrawColor(0, 0, 0, 255)
-	renderer.Clear()
+	_ = renderer.SetDrawColor(0, 0, 0, 255)
+	_ = renderer.Clear()
 
 	// ラベルのフェード: ColorMod で #333 (51) → #fff (255) へ
 	labelMod := uint8(51 + float64(255-51)*s.fadeFactor)
@@ -442,7 +442,7 @@ func (s *CanvasScene) Draw(renderer *sdl.Renderer) {
 		s.indEcoEl, s.indTempEl, s.indTripEl, s.indOilEl,
 	}
 	for _, e := range all {
-		renderer.Copy(e.tex, nil, &e.bounds)
+		_ = renderer.Copy(e.tex, nil, &e.bounds)
 	}
 }
 

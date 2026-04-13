@@ -19,7 +19,7 @@ const (
 	// 座標定数（ブラウザ版 gauge.js と同一）
 	cxScreen = 275.0
 	cyScreen = 275.0
-	gaugeR = 230.0
+	gaugeR   = 230.0
 
 	arcStart = -135.0
 	arcEnd   = 135.0
