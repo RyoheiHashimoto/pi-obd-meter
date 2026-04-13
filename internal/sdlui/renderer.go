@@ -88,17 +88,17 @@ func (r *Renderer) Run() error {
 	if err != nil {
 		return fmt.Errorf("ウィンドウ作成失敗: %w", err)
 	}
-	defer window.Destroy()
+	defer func() { _ = window.Destroy() }()
 	r.window = window
 
 	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
 	if err != nil {
 		return fmt.Errorf("レンダラー作成失敗: %w", err)
 	}
-	defer renderer.Destroy()
+	defer func() { _ = renderer.Destroy() }()
 	r.renderer = renderer
 
-	renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
+	_ = renderer.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
 	// canvas シーンを作成
 	scene, err := NewCanvasScene(renderer, SceneConfig{

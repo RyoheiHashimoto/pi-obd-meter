@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	fontOrbitron *canvas.FontFamily
+	fontOrbitron  *canvas.FontFamily
 	fontShareTech *canvas.FontFamily
 )
 
