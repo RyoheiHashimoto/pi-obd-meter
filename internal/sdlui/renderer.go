@@ -92,7 +92,7 @@ func (r *Renderer) Run() error {
 	defer func() { _ = window.Destroy() }()
 	r.window = window
 
-	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED)
+	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED|sdl.RENDERER_PRESENTVSYNC)
 	if err != nil {
 		return fmt.Errorf("レンダラー作成失敗: %w", err)
 	}
@@ -116,14 +116,10 @@ func (r *Renderer) Run() error {
 
 	slog.Info("SDL2 + canvas メーター起動", "width", WindowWidth, "height", WindowHeight)
 
-	const targetFPS = 30
-	const frameDur = time.Second / targetFPS
 	var demoT float64
 
 	r.running = true
 	for r.running {
-		frameStart := time.Now()
-
 		// イベント処理
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			r.handleEvent(event)
@@ -159,11 +155,6 @@ func (r *Renderer) Run() error {
 		scene.Draw(renderer)
 
 		renderer.Present()
-
-		// 30fps フレームレート制限
-		if elapsed := time.Since(frameStart); elapsed < frameDur {
-			sdl.Delay(uint32((frameDur - elapsed).Milliseconds()))
-		}
 	}
 
 	return nil
