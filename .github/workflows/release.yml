@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -26,36 +26,38 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install SDL2 dev libs (arm64 native)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
+
       - name: Test
         run: go test -v -race ./...
 
-      - name: Build ARM64 binaries
+      - name: Build ARM64 binaries (native)
         run: |
-          GOOS=linux GOARCH=arm64 go build \
+          CGO_ENABLED=1 go build \
             -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o pi-obd-meter-arm64 \
             ./cmd/pi-obd-meter
-          GOOS=linux GOARCH=arm64 go build \
+          CGO_ENABLED=1 go build \
             -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o pi-obd-scanner-arm64 \
             ./cmd/pi-obd-scanner
 
-      - name: Smoke test (host build)
+      - name: Smoke test
         run: |
-          go build -ldflags "-X main.version=${{ github.ref_name }}" \
-            -o pi-obd-meter-host ./cmd/pi-obd-meter
           # バージョン文字列がバイナリに埋め込まれているか確認
-          if ! strings pi-obd-meter-host | grep -q "${{ github.ref_name }}"; then
+          if ! strings pi-obd-meter-arm64 | grep -q "${{ github.ref_name }}"; then
             echo "::error::Version ${{ github.ref_name }} not found in binary"
             exit 1
           fi
           # go:embed の静的ファイルが埋め込まれているか確認
-          if ! strings pi-obd-meter-host | grep -q "meter.html"; then
+          if ! strings pi-obd-meter-arm64 | grep -q "meter.html"; then
             echo "::error::Embedded web files not found in binary"
             exit 1
           fi
           echo "✓ Smoke test passed: version=${{ github.ref_name }}, embed=ok"
-          rm pi-obd-meter-host
 
       - name: Package release
         run: |

@@ -31,3 +31,7 @@ package-lock.json
 
 # Secrets (実際のURLが入ったconfig)
 configs/config.local.json
+
+# Canvas prototype build output
+/canvas-proto
+/canvas-proto.png
