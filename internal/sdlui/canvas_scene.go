@@ -252,6 +252,9 @@ func NewCanvasScene(renderer *sdl.Renderer, cfg SceneConfig) (*CanvasScene, erro
 	return s, nil
 }
 
+// Dt は前フレームからの経過秒を返す
+func (s *CanvasScene) Dt() float64 { return s.dt }
+
 // SetTargets は OBD データから目標値を設定（次の Update() で反映）
 func (s *CanvasScene) SetTargets(data GaugeData) {
 	s.tgtSpeed = clamp(data.SpeedKmh, 0, s.cfg.MaxSpeed)
