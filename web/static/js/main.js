@@ -3,7 +3,7 @@
 // ============================================================
 
 import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
-import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax } from './indicators.js';
+import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax, setMapDirect, restoreMapTransition } from './indicators.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180,
@@ -141,8 +141,57 @@ async function initApp() {
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
+  // --- 起動アニメーション（針スイープ + フェードイン）---
+  await bootAnimation(gs);
+
   // WebSocket 優先、失敗時は HTTP polling にフォールバック
   connectWebSocket();
+}
+
+// 起動アニメーション: 針スイープ out(1.2s) → back(0.8s) → 待機
+function bootAnimation(gauge) {
+  return new Promise(resolve => {
+    const SWEEP_OUT = 1200;
+    const SWEEP_BACK = 800;
+    const spdCol = '#69f0ae';
+    const rpmCol = '#42a5f5';
+    const thrCol = '#26c6da';
+    const mapCol = '#42a5f5';
+    const start = performance.now();
+
+    function easeInOut(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }
+
+    function frame(now) {
+      const elapsed = now - start;
+      if (elapsed < SWEEP_OUT) {
+        // Phase 1: 針 0 → MAX
+        const t = easeInOut(elapsed / SWEEP_OUT);
+        gauge.setDirect(t, spdCol);
+        gauge.setRPMDirect(t, rpmCol);
+        gauge.setThrDirect(t, thrCol);
+        setMapDirect(t, mapCol);
+        requestAnimationFrame(frame);
+      } else if (elapsed < SWEEP_OUT + SWEEP_BACK) {
+        // Phase 2: 針 MAX → 0
+        const t = easeInOut((elapsed - SWEEP_OUT) / SWEEP_BACK);
+        gauge.setDirect(1 - t, spdCol);
+        gauge.setRPMDirect(1 - t, rpmCol);
+        gauge.setThrDirect(1 - t, thrCol);
+        setMapDirect(1 - t, mapCol);
+        requestAnimationFrame(frame);
+      } else {
+        // 完了: ゼロ位置に戻す
+        gauge.setDirect(0, '#78909c');
+        gauge.setRPMDirect(0, '#222');
+        gauge.setThrDirect(0, '#333');
+        setMapDirect(0, '#333');
+        gauge.restoreTransition();
+        restoreMapTransition();
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  });
 }
 
 initApp();
