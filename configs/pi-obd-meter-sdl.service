@@ -1,0 +1,29 @@
+[Unit]
+Description=DY Demio Fuel Economy Meter (SDL + canvas)
+After=network.target bluetooth.target local-fs.target
+Wants=network-online.target
+# kiosk.service と排他（どちらか一方だけを有効化）
+Conflicts=kiosk.service pi-obd-meter.service
+
+[Service]
+Type=simple
+User=root
+# SDL2 を KMSDRM 直接モードで起動（X11 不要）
+Environment=SDL_VIDEODRIVER=KMSDRM
+Environment=SDL_KMSDRM_REQUIRE_DRM_MASTER=1
+# CAN インターフェース起動
+ExecStartPre=-/sbin/ip link set can0 down
+ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100
+ExecStartPre=-/sbin/ip link set can0 up
+# メーター本体 (SDL + canvas モード)
+ExecStart=/opt/pi-obd-meter/pi-obd-meter \
+    -mode sdl \
+    -config /opt/pi-obd-meter/configs/config.json \
+    -font-dir /opt/pi-obd-meter/web/static/fonts
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
