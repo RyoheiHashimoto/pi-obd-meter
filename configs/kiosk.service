@@ -1,17 +1,20 @@
 [Unit]
-Description=OBD Meter Kiosk Display
-After=pi-obd-meter.service graphical.target
+Description=OBD Meter Kiosk Display (cage + Chromium)
+After=pi-obd-meter.service
 Wants=pi-obd-meter.service
 
 [Service]
 Type=simple
 User=laurel
-Environment=DISPLAY=:0
+PAMName=login
+TTYPath=/dev/tty7
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 ExecStart=/bin/bash /opt/pi-obd-meter/configs/kiosk.sh
 Restart=always
-RestartSec=10
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 
 [Install]
-WantedBy=graphical.target
+WantedBy=multi-user.target

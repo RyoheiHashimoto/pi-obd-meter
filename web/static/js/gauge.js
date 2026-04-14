@@ -57,6 +57,31 @@ export function speedColor(v) {
   return '#78909c'; // 停車・非アクティブ
 }
 
+// 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
+let trackGradCount = 0;
+function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
+  const id = `trkGrad${trackGradCount++}`;
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(defs, svg.firstChild); }
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  grad.setAttribute('id', id);
+  grad.setAttribute('cx', cx); grad.setAttribute('cy', cy);
+  grad.setAttribute('r', r + strokeW / 2);
+  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  const innerR = (r - strokeW / 2) / (r + strokeW / 2);
+  [
+    [innerR.toFixed(3), innerCol],
+    [((innerR + 1) / 2).toFixed(3), midCol],
+    ['1', outerCol],
+  ].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    grad.appendChild(s);
+  });
+  defs.appendChild(grad);
+  return svgEl(svg, 'path', { d: arcPath(cx, cy, r, startDeg, endDeg), fill: 'none', stroke: `url(#${id})`, 'stroke-width': strokeW, 'stroke-linecap': 'round' });
+}
+
 // --- ArcAnimator: アーク LERP アニメーション ---
 // value → percentage → angle → arcPath → HSL色 → glow の流れで描画する。
 class ArcAnimator {
@@ -194,24 +219,38 @@ export function buildSpeedGauge(svgId, cfg) {
   const { cx, cy, r, min, max, unit, mj, mn, numSz, tkSz } = cfg;
   const throttleR = r - THROTTLE_R_OFFSET;
 
+  // 速度計中心グラデーション
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(defs, svg.firstChild); }
+  const spdGrad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  spdGrad.setAttribute('id', 'spdGlow');
+  spdGrad.setAttribute('cx', cx); spdGrad.setAttribute('cy', cy); spdGrad.setAttribute('r', r);
+  spdGrad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  [['0%', '#3a3a58'], ['50%', '#14141e'], ['100%', '#000000']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    spdGrad.appendChild(s);
+  });
+  defs.appendChild(spdGrad);
+  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r);
+  bg.setAttribute('fill', 'url(#spdGlow)');
+  svg.insertBefore(bg, defs.nextSibling);
+
   // 同心円ガイドライン（階層感）
   svgEl(svg, 'path', { d: arcPath(cx, cy, 200, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
   svgEl(svg, 'path', { d: arcPath(cx, cy, 175, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
 
-  // RPM トラック（グラデ風: 内暗→中明→外暗）
+  // RPM トラック（radialGradient ストローク）
   const rpmR = r + RPM_R_OFFSET;
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR - 4, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, ARC_START, ARC_END), fill: 'none', stroke: '#3a3a48', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR + 4, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  createGradientTrack(svg, cx, cy, rpmR, 12, ARC_START, ARC_END, '#040408', '#3a3a48', '#040408');
   // Redzone background (6500-8000)
   const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
-  svgEl(svg, 'path', { d: arcPath(cx, cy, rpmR, redStart, ARC_END), fill: 'none', stroke: '#7a0000', 'stroke-width': 12, 'stroke-linecap': 'round' });
-  const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' });
+  createGradientTrack(svg, cx, cy, rpmR, 12, redStart, ARC_END, '#200000', '#7a0000', '#200000');
+  const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 14, 'stroke-linecap': 'round' });
 
-  // 速度トラック（グラデ風: 内暗→中明→外暗）
-  svgEl(svg, 'path', { d: arcPath(cx, cy, r - 6, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, r, ARC_START, ARC_END), fill: 'none', stroke: '#34344a', 'stroke-width': 8, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, r + 6, ARC_START, ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 4, 'stroke-linecap': 'round' });
+  // 速度トラック（radialGradient ストローク）
+  createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
 
   // Ticks
   const total = mj * mn;
@@ -231,25 +270,13 @@ export function buildSpeedGauge(svgId, cfg) {
     }
   }
 
-  // 目盛り最内端のインナーリング（グラデ風）
-  const innerRingR = r + 4 - 30; // tickOuterGap - tickMajorLen
-  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR - 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR, ARC_START, ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, innerRingR + 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  // 目盛り最内端のインナーリング
+  const innerRingR = r + 4 - 30;
+  createGradientTrack(svg, cx, cy, innerRingR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
 
-  // スロットルトラック（グラデ風）
-  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR - 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR, ARC_START, ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(cx, cy, throttleR + 3, ARC_START, ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' });
-
-  // RPM readout (upper area inside gauge, centered)
-  const rpmReadY = cy - Math.round(throttleR / 2) + 5;
-  const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
-  rpmValEl.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
-  rpmValEl.textContent = '--';
-  const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
-  rpmUnitEl.textContent = 'r/min';
+  // スロットルトラック
+  createGradientTrack(svg, cx, cy, throttleR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
+  const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' });
 
   // THROTTLE label は unitY 確定後に配置
   let thrLabel;
@@ -258,14 +285,14 @@ export function buildSpeedGauge(svgId, cfg) {
   const rangeX = cx - r - 10;
   const rangeY = 62;
   const boxW = 64, boxH = 62, boxR = 8;
-  const rangeBox = svgEl(svg, 'rect', { x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: 'none', stroke: '#444', 'stroke-width': 3 });
+  const rangeBox = svgEl(svg, 'rect', { x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
   gearSubEl = svgEl(svg, 'text', { x: rangeX, y: rangeY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearSubEl.textContent = '';
   gearSubEl._box = rangeBox;
   // Gear number (右上、アークの外) — 枠付き
   const gearNumX = cx + r + 2;
   const gearNumY = 62;
-  const gearBox = svgEl(svg, 'rect', { x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: 'none', stroke: '#444', 'stroke-width': 3 });
+  const gearBox = svgEl(svg, 'rect', { x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
   gearEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearEl._box = gearBox;
 
@@ -278,7 +305,7 @@ export function buildSpeedGauge(svgId, cfg) {
   gearEl.textContent = '-';
 
   // Value arc
-  const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 16, 'stroke-linecap': 'round' });
+  const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 18, 'stroke-linecap': 'round' });
   applyGlow(va, cfg.color);
 
   // Needle
@@ -286,10 +313,17 @@ export function buildSpeedGauge(svgId, cfg) {
   const [tx0, ty0] = polarToXY(cx, cy, -16, ARC_START);
   const nd = svgEl(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` });
   applyGlow(nd, cfg.color);
-  nd.style.transition = 'transform 0.15s ease-out';
 
   // Center dot
   svgEl(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
+
+  // RPM readout (針の上に表示)
+  const rpmReadY = cy - Math.round(throttleR / 2) + 5;
+  const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  rpmValEl.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
+  rpmValEl.textContent = '--';
+  const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
+  rpmUnitEl.textContent = 'r/min';
 
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
@@ -345,6 +379,31 @@ export function buildSpeedGauge(svgId, cfg) {
     rafId = Math.abs(curVal - tgtVal) > LERP_STOP ? requestAnimationFrame(lerp) : 0;
   }
 
+  // 直接アニメーション（LERP なし、起動アニメ用）
+  function setDirect(pct, col) {
+    const angle = ARC_START + pct * ARC_SWEEP;
+    va.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, r, ARC_START, angle) : '');
+    nd.style.transition = 'none';
+    nd.style.transform = `rotate(${angle - ARC_START}deg)`;
+    if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); applyGlow(nd, col); applyGlow(va, col); }
+  }
+
+  function setRPMDirect(pct, col) {
+    const angle = ARC_START + pct * ARC_SWEEP;
+    rpmArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, rpmR, ARC_START, angle) : '');
+    if (col) { rpmArcEl.setAttribute('stroke', col); applyGlow(rpmArcEl, col); }
+  }
+
+  function setThrDirect(pct, col) {
+    const angle = ARC_START + pct * ARC_SWEEP;
+    thrArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, throttleR, ARC_START, angle) : '');
+    if (col) { thrArcEl.setAttribute('stroke', col); applyGlow(thrArcEl, col); }
+  }
+
+  function restoreTransition() {
+    nd.style.transition = 'transform 0.15s ease-out';
+  }
+
   return {
     update(value, col) {
       tgtVal = value;
@@ -353,6 +412,8 @@ export function buildSpeedGauge(svgId, cfg) {
       nd.style.transform = `rotate(${angle - ARC_START}deg)`;
       if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); applyGlow(nd, col); applyGlow(va, col); }
       if (!rafId) rafId = requestAnimationFrame(lerp);
-    }
+    },
+    setDirect, setRPMDirect, setThrDirect, restoreTransition,
+    getElements() { return { nm, rpmValEl, rpmUnitEl, thrLabel }; }
   };
 }

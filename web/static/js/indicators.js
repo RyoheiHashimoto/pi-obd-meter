@@ -51,6 +51,31 @@ const ICON_THERMO = 'M12 2C10.34 2 9 3.34 9 5v8.59c-1.22.73-2 2.05-2 3.41 0 2.76
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
 
+// 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
+let trackGradCount = 100;
+function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
+  const id = `trkGrad${trackGradCount++}`;
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(defs, svg.firstChild); }
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  grad.setAttribute('id', id);
+  grad.setAttribute('cx', cx); grad.setAttribute('cy', cy);
+  grad.setAttribute('r', r + strokeW / 2);
+  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  const innerR = (r - strokeW / 2) / (r + strokeW / 2);
+  [
+    [innerR.toFixed(3), innerCol],
+    [((innerR + 1) / 2).toFixed(3), midCol],
+    ['1', outerCol],
+  ].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    grad.appendChild(s);
+  });
+  defs.appendChild(grad);
+  return svgEl(svg, 'path', { d: arcPath(cx, cy, r, startDeg, endDeg), fill: 'none', stroke: `url(#${id})`, 'stroke-width': strokeW, 'stroke-linecap': 'round' });
+}
+
 // --- Module state ---
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
@@ -158,15 +183,29 @@ export function createIndicators(panelEl) {
   const VAC_MN = 4;    // 主目盛り間の副目盛り数
   const VAC_TOTAL = VAC_MJ * VAC_MN;
 
-  // バキュームトラック（グラデ風: 内暗→中明→外暗）
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R - 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#34344a', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R + 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#040408', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  // バキューム計中心グラデーション
+  let vDefs = svg.querySelector('defs');
+  if (!vDefs) { vDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(vDefs, svg.firstChild); }
+  const vrg = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  vrg.setAttribute('id', 'vacGlow');
+  vrg.setAttribute('cx', MAP_CX); vrg.setAttribute('cy', MAP_CY); vrg.setAttribute('r', MAP_R);
+  vrg.setAttribute('gradientUnits', 'userSpaceOnUse');
+  [['0%', '#484868'], ['50%', '#14141e'], ['100%', '#000000']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vrg.appendChild(s);
+  });
+  vDefs.appendChild(vrg);
+  const vBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  vBg.setAttribute('cx', MAP_CX); vBg.setAttribute('cy', MAP_CY); vBg.setAttribute('r', MAP_R);
+  vBg.setAttribute('fill', 'url(#vacGlow)');
+  svg.insertBefore(vBg, vDefs.nextSibling);
+
+  // バキュームトラック（radialGradient ストローク）
+  createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
   // バキュームインナーリング
   const vacInnerR = MAP_R - 16;
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR - 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#22222e', 'stroke-width': 4, 'stroke-linecap': 'round' });
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, vacInnerR + 3, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#020204', 'stroke-width': 3, 'stroke-linecap': 'round' });
+  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#22222e', '#020204');
 
   // Ticks
   for (let i = 0; i <= VAC_TOTAL; i++) {
@@ -195,9 +234,7 @@ export function createIndicators(panelEl) {
   // Needle (VACUUM ラベルの上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
-  mapNeedleEl = svgEl(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` });
-  mapNeedleEl.style.transition = 'transform 0.15s ease-out';
-
+  mapNeedleEl = svgEl(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` });
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
@@ -212,13 +249,13 @@ export function createIndicators(panelEl) {
   // === 4行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
-    svgEl(svg, 'rect', { x: -22, y: y - 34, width: 244, height: 44, rx: 6, fill: 'rgba(255,255,255,0.08)', stroke: 'rgba(255,255,255,0.14)', 'stroke-width': 1.5 });
+    svgEl(svg, 'rect', { x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.10)', stroke: 'rgba(255,255,255,0.18)', 'stroke-width': 1.5 });
   }
 
   // Row 0: ECO
   const ecoY = IND_Y_START;
   addIndPanel(ecoY);
-  const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 8, 30);
+  const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
   ecoIconEls = leafIcons;
   ecoValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: ecoY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   ecoValEl.textContent = '--';
@@ -252,6 +289,20 @@ export function createIndicators(panelEl) {
   return {};
 }
 
+// MAP 直接アニメーション（起動アニメ用）
+export function setMapDirect(pct, col) {
+  if (!mapArcEl) return;
+  const angle = MG_ARC_START + pct * MG_ARC_SWEEP;
+  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapNeedleEl.style.transition = 'none';
+  mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
+  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.style.filter = `drop-shadow(0 0 6px ${col})`; mapNeedleEl.setAttribute('stroke', col); }
+}
+
+export function restoreMapTransition() {
+  if (mapNeedleEl) mapNeedleEl.style.transition = 'transform 0.15s ease-out';
+}
+
 // OIL lamp colors
 const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
 
@@ -281,6 +332,7 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
+  ecoIconEls.outline.parentNode.style.filter = `drop-shadow(0 0 4px ${ecoCol})`;
 
   // TEMP
   const coolant = d.coolant_temp || 0;
@@ -289,10 +341,12 @@ export function updateIndicators(dom, d, conf) {
     const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
     tempValEl.setAttribute('fill', col);
     tempIconEl.setAttribute('fill', col);
+    tempIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${col})`;
   } else {
     tempValEl.textContent = '--';
     tempValEl.setAttribute('fill', '#333');
     tempIconEl.setAttribute('fill', '#333');
+    tempIconEl.parentNode.style.filter = '';
   }
 
   // TRIP
@@ -301,6 +355,7 @@ export function updateIndicators(dom, d, conf) {
   const tripCol = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
+  tripIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${tripCol})`;
 
   // OIL
   const oilAlert = d.oil_alert || 'green';
@@ -313,4 +368,5 @@ export function updateIndicators(dom, d, conf) {
   }
   oilValEl.setAttribute('fill', oilCol);
   oilIconEl.setAttribute('fill', oilCol);
+  oilIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${oilCol})`;
 }

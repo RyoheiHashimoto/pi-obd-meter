@@ -1,7 +1,6 @@
 #!/bin/bash
 # LCD キオスクモード起動スクリプト
 # kiosk.service (systemd) から自動起動される
-# 手動実行: bash /opt/pi-obd-meter/configs/kiosk.sh
 
 # 画面設定
 export DISPLAY=:0
@@ -19,13 +18,6 @@ CONFIG="/opt/pi-obd-meter/configs/config.json"
 PORT=$(grep -o '"local_api_port":[[:space:]]*[0-9]*' "$CONFIG" | grep -o '[0-9]*')
 PORT="${PORT:-9090}"
 
-# WiFi接続を待つ（未接続ならデスクトップ操作可能 — 新規WiFi設定用）
-echo "Waiting for WiFi connection..."
-until ip addr show wlan0 2>/dev/null | grep -q 'inet '; do
-    sleep 5
-done
-echo "WiFi connected."
-
 # pi-obd-meterの起動を待つ
 echo "Waiting for pi-obd-meter API on port ${PORT}..."
 until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do
@@ -33,7 +25,6 @@ until curl -s "http://localhost:${PORT}/api/realtime" > /dev/null 2>&1; do
 done
 
 # Chromiumをキオスクモードで起動（800x480 フルスクリーン）
-# Chromium翻訳無効化の設定を配置
 KIOSK_PROFILE="/tmp/chromium-kiosk"
 mkdir -p "${KIOSK_PROFILE}/Default"
 cat > "${KIOSK_PROFILE}/Default/Preferences" << 'EOF'
@@ -47,6 +38,9 @@ chromium \
     --disable-translate \
     --no-first-run \
     --disable-features=Translate,TranslateUI \
+    --disable-background-networking \
+    --disable-sync \
+    --disable-default-apps \
     --password-store=basic \
     --disable-extensions \
     --user-data-dir="${KIOSK_PROFILE}" \
