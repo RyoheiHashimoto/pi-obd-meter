@@ -2,12 +2,68 @@
 // Indicators — 右パネル MAP メーター + 4行インジケーター
 // ============================================================
 
-// 同値 setAttribute を避ける (WPE WebKit の filter 領域再計算によるフリーズ対策)
-function setFilter(el, v) {
-  if (el._filter !== v) {
-    if (v) el.setAttribute('filter', v); else el.removeAttribute('filter');
-    el._filter = v;
+// SVG filter glow 無効化 (fake bloom で代替)
+function setFilter(_el, _v) { /* no-op */ }
+
+// テキスト bloom (stroke で外縁発光)
+function bloomText(textEl, strokeWidth = 3, opacity = 0.4) {
+  const bloom = textEl.cloneNode(true);
+  bloom.removeAttribute('id');
+  const c = textEl.getAttribute('fill') || '#fff';
+  bloom.setAttribute('fill', c);
+  bloom.setAttribute('stroke', c);
+  bloom.setAttribute('stroke-width', strokeWidth);
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', opacity);
+  textEl.parentNode.insertBefore(bloom, textEl);
+  textEl._bloom = bloom;
+  const origSet = textEl.setAttribute.bind(textEl);
+  textEl.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'fill') { bloom.setAttribute('fill', v); bloom.setAttribute('stroke', v); }
+  };
+  new MutationObserver(() => { bloom.textContent = textEl.textContent; })
+    .observe(textEl, { childList: true, characterData: true, subtree: true });
+  return textEl;
+}
+
+// fake bloom: transform-origin 有りは clone 方式、他は <use> 方式
+let _bloomId2 = 0;
+function createBloom(parent, tag, attrs, bloomExtra = 10, bloomOpacity = 0.3) {
+  const sw = parseFloat(attrs['stroke-width'] || '1');
+  const useClone = !!attrs['transform-origin'];
+  let bloom, main;
+  const mkEl = (t, a) => {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', t);
+    for (const [k, v] of Object.entries(a)) e.setAttribute(k, v);
+    parent.appendChild(e);
+    return e;
+  };
+  if (useClone) {
+    bloom = mkEl(tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+    main = mkEl(tag, attrs);
+  } else {
+    const id = 'bi' + (++_bloomId2);
+    bloom = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    bloom.setAttribute('href', '#' + id);
+    bloom.setAttribute('stroke-width', sw + bloomExtra);
+    bloom.setAttribute('opacity', bloomOpacity);
+    parent.appendChild(bloom);
+    main = mkEl(tag, { ...attrs, id });
   }
+  main._bloom = bloom;
+  if (useClone) {
+    const origSet = main.setAttribute.bind(main);
+    main.setAttribute = (k, v) => {
+      origSet(k, v);
+      if (k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
+    };
+  }
+  return main;
+}
+function rotateWithBloom(el, t) {
+  el.style.transform = t;
+  if (el._bloom) el._bloom.style.transform = t;
 }
 
 const DEG = Math.PI / 180;
@@ -121,7 +177,7 @@ function lerpMap() {
   const pct = Math.max(0, Math.min(100, (mapCur - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
   const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
   mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
-  mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
+  rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   const active = mapCur < 0.01;
   // 色: 0 bar(大気圧/全開)=赤, -1 bar(深い負圧)=青
   const hue = (1 - pct / 100) * HUE_MAX;
@@ -147,23 +203,53 @@ function lerpMap() {
 function createIconPath(svg, x, y, pathD, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.setAttribute('transform', `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`);
+  // bloom outline (下敷き、fill色を stroke として太く縁取り)
+  const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  bloom.setAttribute('d', pathD);
+  bloom.setAttribute('fill', 'none');
+  bloom.setAttribute('stroke', '#444');
+  bloom.setAttribute('stroke-width', '3');
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', '0.45');
+  g.appendChild(bloom);
   const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   p.setAttribute('d', pathD);
   p.setAttribute('fill', '#444');
   g.appendChild(p);
   svg.appendChild(g);
+  // fill 変更 → bloom stroke 同期
+  const origSet = p.setAttribute.bind(p);
+  p.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'fill') bloom.setAttribute('stroke', v);
+  };
   return p;
 }
 
 function createLeafIcon(svg, x, y, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.setAttribute('transform', `translate(${x}, ${y}) rotate(60) scale(${size/20})`);
+  // bloom outline (下敷き)
+  const outlineBloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  outlineBloom.setAttribute('d', ICON_LEAF);
+  outlineBloom.setAttribute('fill', 'none');
+  outlineBloom.setAttribute('stroke', '#444');
+  outlineBloom.setAttribute('stroke-width', '3.5');
+  outlineBloom.setAttribute('opacity', '0.4');
+  outlineBloom.setAttribute('stroke-linejoin', 'round');
+  g.appendChild(outlineBloom);
   const outline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   outline.setAttribute('d', ICON_LEAF);
   outline.setAttribute('fill', 'none');
   outline.setAttribute('stroke', '#444');
   outline.setAttribute('stroke-width', '1.5');
   g.appendChild(outline);
+  // outline stroke 変更を bloom に同期
+  const origSet = outline.setAttribute.bind(outline);
+  outline.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'stroke') outlineBloom.setAttribute('stroke', v);
+  };
   const vein = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   vein.setAttribute('x1', '0'); vein.setAttribute('y1', '-8');
   vein.setAttribute('x2', '0'); vein.setAttribute('y2', '10');
@@ -204,10 +290,39 @@ export function createIndicators(panelEl) {
     vrg.appendChild(s);
   });
   vDefs.appendChild(vrg);
+  // メタリックベゼル用 linearGradient (速度計と同じ)
+  const vBezel = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  vBezel.setAttribute('id', 'vacBezelOuter');
+  vBezel.setAttribute('x1', '0%'); vBezel.setAttribute('y1', '0%');
+  vBezel.setAttribute('x2', '0%'); vBezel.setAttribute('y2', '100%');
+  [['0%', '#3a3d44'], ['50%', '#5a5f68'], ['100%', '#4a4d54']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vBezel.appendChild(s);
+  });
+  vDefs.appendChild(vBezel);
+  const vBezelInner = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  vBezelInner.setAttribute('id', 'vacBezelInner');
+  vBezelInner.setAttribute('x1', '0%'); vBezelInner.setAttribute('y1', '0%');
+  vBezelInner.setAttribute('x2', '0%'); vBezelInner.setAttribute('y2', '100%');
+  [['0%', '#0a0a0e'], ['50%', '#1c1e24'], ['100%', '#04040a']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vBezelInner.appendChild(s);
+  });
+  vDefs.appendChild(vBezelInner);
+
   const vBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
   vBg.setAttribute('cx', MAP_CX); vBg.setAttribute('cy', MAP_CY); vBg.setAttribute('r', MAP_R);
   vBg.setAttribute('fill', 'url(#vacGlow)');
   svg.insertBefore(vBg, vDefs.nextSibling);
+
+  // ベゼル: 多層 fake bloom でぼやけた拡散感
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 24, opacity: 0.12 });
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 16, opacity: 0.22 });
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 10, opacity: 0.55 });
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 4,  opacity: 0.9  });
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 11, fill: 'none', stroke: 'url(#vacBezelInner)', 'stroke-width': 2, opacity: 0.7 });
 
   // バキュームトラック（radialGradient ストローク）
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
@@ -233,22 +348,22 @@ export function createIndicators(panelEl) {
   }
 
   // Active arc
-  mapArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
+  mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' }, 10, 0.3);
 
   // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
   vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
   vacLabelEl.textContent = 'VACUUM';
+  bloomText(vacLabelEl, 2.5, 0.45);
 
   // Needle (VACUUM ラベルの上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
-  mapNeedleEl = svgEl(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` });
+  mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
   // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
-  mapValEl.setAttribute('filter', 'url(#text-shadow)');
   mapValEl.textContent = '--';
   // Unit
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
@@ -303,8 +418,8 @@ export function setMapDirect(pct, col) {
   const angle = MG_ARC_START + pct * MG_ARC_SWEEP;
   mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transition = 'none';
-  mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
-  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.setAttribute('filter', 'url(#glow-strong)'); mapNeedleEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('filter', 'url(#glow-strong)'); }
+  rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
+  if (col) { mapArcEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('stroke', col); }
 }
 
 export function restoreMapTransition() {
@@ -340,7 +455,7 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
-  setFilter(ecoIconEls.outline.parentNode, 'url(#glow-mid)');
+  // アイコン glow は Pi 4 軽量化のため廃止（色だけで表現）
 
   // TEMP
   const coolant = d.coolant_temp || 0;
@@ -349,7 +464,6 @@ export function updateIndicators(dom, d, conf) {
     const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
     tempValEl.setAttribute('fill', col);
     tempIconEl.setAttribute('fill', col);
-    setFilter(tempIconEl.parentNode, 'url(#glow-mid)');
   } else {
     tempValEl.textContent = '--';
     tempValEl.setAttribute('fill', '#333');

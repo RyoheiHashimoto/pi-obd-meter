@@ -40,17 +40,71 @@ function svgEl(parent, tag, attrs) {
   return e;
 }
 
-// グロー効果: SVG filter (WebKit Bug 246106 対策: CSS filter は SVG 子要素に効かない)
-// 色は要素自身の stroke/fill から取る
-// パフォーマンス: 同じ filter が既に設定されていれば setAttribute を呼ばない
-// (setAttribute は同値でも WPE WebKit の filter 領域を再計算させフリーズ原因)
-function applyGlow(el, color, strength = 'strong') {
-  const want = `url(#glow-${strength})`;
-  if (el._glow !== want) { el.setAttribute('filter', want); el._glow = want; }
+// グロー: SVG <use> で同じパスを幅広・半透明で下敷き (fake bloom)
+// feGaussianBlur より遥かに軽く、Pi 4 WPE でも 60fps 維持可能
+let _bloomId = 0;
+function createBloom(parent, tag, attrs, bloomExtra = 12, bloomOpacity = 0.28) {
+  const sw = parseFloat(attrs['stroke-width'] || '1');
+  // needle 等 (transform-origin 持ち) は実要素クローン方式 (<use> の座標系問題回避)
+  // それ以外は <use> 方式 (d属性が同期されるため軽い)
+  const useClone = !!attrs['transform-origin'];
+  let bloom, main;
+  if (useClone) {
+    bloom = svgEl(parent, tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+    main = svgEl(parent, tag, attrs);
+  } else {
+    const id = 'b' + (++_bloomId);
+    bloom = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    bloom.setAttribute('href', '#' + id);
+    bloom.setAttribute('stroke-width', sw + bloomExtra);
+    bloom.setAttribute('opacity', bloomOpacity);
+    parent.appendChild(bloom);
+    main = svgEl(parent, tag, { ...attrs, id });
+  }
+  main._bloom = bloom;
+  main._isCloneBloom = useClone;
+  // stroke 変化を bloom にも自動反映 (clone 方式用)
+  if (useClone) {
+    const origSet = main.setAttribute.bind(main);
+    main.setAttribute = (k, v) => {
+      origSet(k, v);
+      if (k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
+    };
+  }
+  return main;
 }
-function removeGlow(el) {
-  if (el._glow !== '') { el.removeAttribute('filter'); el._glow = ''; }
+// 針 rotate ヘルパー: main と bloom 両方に transform 適用
+function rotateWithBloom(el, transformStr) {
+  el.style.transform = transformStr;
+  if (el._bloom) el._bloom.style.transform = transformStr;
 }
+
+// テキスト用 bloom: 同じ text 要素を stroke 付きで下敷きに
+function bloomText(textEl, strokeWidth = 3, opacity = 0.4) {
+  const bloom = textEl.cloneNode(true);
+  bloom.removeAttribute('id');
+  const c = textEl.getAttribute('fill') || '#fff';
+  bloom.setAttribute('fill', c);
+  bloom.setAttribute('stroke', c);
+  bloom.setAttribute('stroke-width', strokeWidth);
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', opacity);
+  textEl.parentNode.insertBefore(bloom, textEl);
+  textEl._bloom = bloom;
+  // fill 変更を bloom に同期
+  const origSet = textEl.setAttribute.bind(textEl);
+  textEl.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'fill') { bloom.setAttribute('fill', v); bloom.setAttribute('stroke', v); }
+  };
+  // textContent 変更を bloom に同期 (MutationObserver)
+  new MutationObserver(() => { bloom.textContent = textEl.textContent; })
+    .observe(textEl, { childList: true, characterData: true, subtree: true });
+  return textEl;
+}
+// 後方互換 stub (既存コード用)
+function applyGlow(_el, _color, _strength) { /* no-op (use bloom is declarative) */ }
+function removeGlow(_el) { /* no-op */ }
 
 // 速度→ゲージ色（ZJ-VE / DYデミオ実用域に合わせた8段階）
 export function speedColor(v) {
@@ -258,7 +312,7 @@ export function buildSpeedGauge(svgId, cfg) {
     });
     defs.appendChild(g);
   };
-  mkGrad('bezelOuter', [['0%', '#6a6f78'], ['45%', '#2a2d33'], ['55%', '#1a1c20'], ['100%', '#3a3d44']]);
+  mkGrad('bezelOuter', [['0%', '#3a3d44'], ['50%', '#5a5f68'], ['100%', '#4a4d54']]);
   mkGrad('bezelInner', [['0%', '#0a0a0e'], ['50%', '#1c1e24'], ['100%', '#04040a']]);
   // ハブキャップ用 (needle center 用)
   const hubGrad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
@@ -296,9 +350,14 @@ export function buildSpeedGauge(svgId, cfg) {
   bg.setAttribute('fill', 'url(#spdGlow)');
   svg.insertBefore(bg, defs.nextSibling);
 
-  // メタリック外周ベゼル (2層)
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 10 });
-  svgEl(svg, 'circle', { cx, cy, r: r + 22, fill: 'none', stroke: 'url(#bezelInner)', 'stroke-width': 4 });
+  // ベゼル: 多層 fake bloom でぼやけた拡散感 (速度計用、大径なので広めに展開)
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 60, opacity: 0.06 });
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 44, opacity: 0.12 });
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 30, opacity: 0.22 });
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 18, opacity: 0.4  });
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 10, opacity: 0.7  });
+  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 4,  opacity: 1.0  });
+  svgEl(svg, 'circle', { cx, cy, r: r + 22, fill: 'none', stroke: 'url(#bezelInner)', 'stroke-width': 3, opacity: 0.6 });
 
   // 同心円ガイドライン（階層感）
   svgEl(svg, 'path', { d: arcPath(cx, cy, 200, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
@@ -310,7 +369,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // Redzone background (6500-8000)
   const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
   createGradientTrack(svg, cx, cy, rpmR, 12, redStart, ARC_END, '#200000', '#7a0000', '#200000');
-  const rpmArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 14, 'stroke-linecap': 'round' });
+  const rpmArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 14, 'stroke-linecap': 'round' }, 10, 0.3);
 
   // 速度トラック（radialGradient ストローク）
   createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
@@ -339,7 +398,7 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // スロットルトラック
   createGradientTrack(svg, cx, cy, throttleR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
-  const thrArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' });
+  const thrArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' }, 8, 0.25);
 
   // THROTTLE label は unitY 確定後に配置
   let thrLabel;
@@ -366,25 +425,28 @@ export function buildSpeedGauge(svgId, cfg) {
   lockLabelEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY + boxH - 22, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   lockLabelEl.textContent = 'LOCK';
   gearEl.textContent = '-';
+  // テキスト bloom 適用
+  bloomText(gearSubEl, 4, 0.35);
+  bloomText(gearEl, 4, 0.35);
+  bloomText(holdLabelEl, 2.5, 0.4);
+  bloomText(lockLabelEl, 2.5, 0.4);
 
   // Value arc
-  const va = svgEl(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 18, 'stroke-linecap': 'round' });
+  const va = createBloom(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 18, 'stroke-linecap': 'round' }, 14, 0.32);
   applyGlow(va, cfg.color);
 
   // Needle
   const [nx0, ny0] = polarToXY(cx, cy, r - 24, ARC_START);
   const [tx0, ty0] = polarToXY(cx, cy, -16, ARC_START);
-  const nd = svgEl(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` });
+  const nd = createBloom(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` }, 10, 0.3);
   applyGlow(nd, cfg.color);
 
-  // ハブキャップ (立体感のある中心: リング + 光沢)
-  svgEl(svg, 'circle', { cx, cy, r: 14, fill: 'url(#hubGrad)', stroke: '#000', 'stroke-width': 1 });
-  svgEl(svg, 'circle', { cx: cx - 3, cy: cy - 4, r: 3, fill: 'rgba(255,255,255,0.25)' });
+  // Center dot
+  svgEl(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
   // RPM readout (針の上に表示)
   const rpmReadY = cy - Math.round(throttleR / 2) + 5;
   const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
-  rpmValEl.setAttribute('filter', 'url(#text-shadow)');
   rpmValEl.textContent = '--';
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
@@ -392,7 +454,6 @@ export function buildSpeedGauge(svgId, cfg) {
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
   const nm = svgEl(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
-  nm.setAttribute('filter', 'url(#text-shadow)');
   nm.textContent = '0';
 
   // Unit label
@@ -403,14 +464,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // THROTTLE label (km/hの下)
   thrLabel = svgEl(svg, 'text', { x: cx, y: unitY + 64, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   thrLabel.textContent = 'THROTTLE';
-
-  // === ガラス反射オーバーレイ (「ガラス越し」の質感) ===
-  // ※ mix-blend-mode: screen で下層を明るくするだけの非破壊ハイライト
-  const glass = svgEl(svg, 'ellipse', {
-    cx, cy: cy - 30, rx: r + 20, ry: r * 0.55,
-    fill: 'url(#glassHL)',
-    style: 'mix-blend-mode: screen; pointer-events: none;'
-  });
+  bloomText(thrLabel, 2.5, 0.4);
 
   // ArcAnimator インスタンス生成
   thrAnimator = new ArcAnimator({
@@ -452,28 +506,31 @@ export function buildSpeedGauge(svgId, cfg) {
   }
 
   // 直接アニメーション（LERP なし、起動アニメ用）
+  // 起動アニメ中は glow 無し (Pi 4 WPE で feGaussianBlur x 4 が重い)
   function setDirect(pct, col) {
     const angle = ARC_START + pct * ARC_SWEEP;
     va.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, r, ARC_START, angle) : '');
     nd.style.transition = 'none';
-    nd.style.transform = `rotate(${angle - ARC_START}deg)`;
-    if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); applyGlow(nd, col); applyGlow(va, col); }
+    if (nd._bloom) nd._bloom.style.transition = 'none';
+    rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
+    if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); }
   }
 
   function setRPMDirect(pct, col) {
     const angle = ARC_START + pct * ARC_SWEEP;
     rpmArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, rpmR, ARC_START, angle) : '');
-    if (col) { rpmArcEl.setAttribute('stroke', col); applyGlow(rpmArcEl, col); }
+    if (col) rpmArcEl.setAttribute('stroke', col);
   }
 
   function setThrDirect(pct, col) {
     const angle = ARC_START + pct * ARC_SWEEP;
     thrArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, throttleR, ARC_START, angle) : '');
-    if (col) { thrArcEl.setAttribute('stroke', col); applyGlow(thrArcEl, col); }
+    if (col) thrArcEl.setAttribute('stroke', col);
   }
 
   function restoreTransition() {
     nd.style.transition = 'transform 0.15s ease-out';
+    if (nd._bloom) nd._bloom.style.transition = 'transform 0.15s ease-out';
   }
 
   return {
@@ -481,8 +538,8 @@ export function buildSpeedGauge(svgId, cfg) {
       tgtVal = value;
       const clamped = Math.max(min, Math.min(max, value));
       const angle = ARC_START + ((clamped - min) / (max - min)) * ARC_SWEEP;
-      nd.style.transform = `rotate(${angle - ARC_START}deg)`;
-      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); applyGlow(nd, col); applyGlow(va, col); }
+      rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
+      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); }
       if (!rafId) rafId = requestAnimationFrame(lerp);
     },
     setDirect, setRPMDirect, setThrDirect, restoreTransition,
