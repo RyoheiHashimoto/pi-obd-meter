@@ -119,9 +119,9 @@ function lerpMap() {
   const hue = (1 - pct / 100) * HUE_MAX;
   const col = active ? (hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`) : '#333';
   mapArcEl.setAttribute('stroke', col);
-  mapArcEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
+  mapArcEl.style.filter = active ? `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})` : '';
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
-  mapNeedleEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
+  mapNeedleEl.style.filter = active ? `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})` : '';
   // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
   if (vacLabelEl) {
     const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
@@ -296,7 +296,7 @@ export function setMapDirect(pct, col) {
   mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transition = 'none';
   mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
-  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.style.filter = `drop-shadow(0 0 6px ${col})`; mapNeedleEl.setAttribute('stroke', col); }
+  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.style.filter = `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})`; mapNeedleEl.setAttribute('stroke', col); }
 }
 
 export function restoreMapTransition() {
@@ -332,7 +332,7 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
-  ecoIconEls.outline.parentNode.style.filter = `drop-shadow(0 0 4px ${ecoCol})`;
+  ecoIconEls.outline.parentNode.style.filter = `drop-shadow(0 0 3px ${ecoCol}) drop-shadow(0 0 6px ${ecoCol})`;
 
   // TEMP
   const coolant = d.coolant_temp || 0;
@@ -341,7 +341,7 @@ export function updateIndicators(dom, d, conf) {
     const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
     tempValEl.setAttribute('fill', col);
     tempIconEl.setAttribute('fill', col);
-    tempIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${col})`;
+    tempIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${col}) drop-shadow(0 0 6px ${col})`;
   } else {
     tempValEl.textContent = '--';
     tempValEl.setAttribute('fill', '#333');
@@ -355,7 +355,7 @@ export function updateIndicators(dom, d, conf) {
   const tripCol = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
-  tripIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${tripCol})`;
+  tripIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${tripCol}) drop-shadow(0 0 6px ${tripCol})`;
 
   // OIL
   const oilAlert = d.oil_alert || 'green';
@@ -368,5 +368,5 @@ export function updateIndicators(dom, d, conf) {
   }
   oilValEl.setAttribute('fill', oilCol);
   oilIconEl.setAttribute('fill', oilCol);
-  oilIconEl.parentNode.style.filter = `drop-shadow(0 0 4px ${oilCol})`;
+  oilIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${oilCol}) drop-shadow(0 0 6px ${oilCol})`;
 }

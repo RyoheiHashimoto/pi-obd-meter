@@ -27,7 +27,7 @@
   /* --- Indicator --- */
   --ind-dot-size: 30px;
   --ind-font-size: 26px;
-  --ind-glow-radius: 14px;
+  --ind-glow-radius: 20px;
 }
 
 @font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/Orbitron-Regular.ttf') format('truetype'); }
@@ -35,7 +35,8 @@
 @font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 900; font-display: swap; src: url('fonts/Orbitron-Black.ttf') format('truetype'); }
 @font-face { font-family: 'Share Tech Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/ShareTechMono-Regular.woff2') format('woff2'); }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
+html, body { cursor: none !important; }
 
 body {
   background: var(--color-bg);

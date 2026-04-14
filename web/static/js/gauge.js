@@ -42,7 +42,7 @@ function svgEl(parent, tag, attrs) {
 
 // グロー効果（CSS drop-shadow）をSVG要素に適用
 function applyGlow(el, color) {
-  el.style.filter = `drop-shadow(0 0 6px ${color})`;
+  el.style.filter = `drop-shadow(0 0 5px ${color}) drop-shadow(0 0 10px ${color})`;
 }
 
 // 速度→ゲージ色（ZJ-VE / DYデミオ実用域に合わせた8段階）
@@ -131,7 +131,7 @@ class ArcAnimator {
     }
     this.arcEl.setAttribute('stroke', col);
     applyGlow(this.arcEl, col);
-    if (this.labelEl) { this.labelEl.setAttribute('fill', col); this.labelEl.style.filter = active && (!this.dimZone || pct >= this.dimZone) ? `drop-shadow(0 0 6px ${col})` : ''; }
+    if (this.labelEl) { this.labelEl.setAttribute('fill', col); this.labelEl.style.filter = active && (!this.dimZone || pct >= this.dimZone) ? `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})` : ''; }
     if (this.readoutVal) {
       const rdCol = active ? col : '#333';
       this.readoutVal.setAttribute('fill', rdCol);
@@ -159,24 +159,24 @@ export function updateGear(gear, range, hold, tcLocked) {
     gearEl.textContent = '-';
   }
   gearEl.setAttribute('fill', color);
-  gearEl.style.filter = `drop-shadow(0 0 6px ${color})`;
+  gearEl.style.filter = `drop-shadow(0 0 5px ${color}) drop-shadow(0 0 10px ${color})`;
   gearEl._box.setAttribute('stroke', color);
 
   // 左上: レンジ
   gearSubEl.textContent = range || '';
   gearSubEl.setAttribute('fill', color);
-  gearSubEl.style.filter = `drop-shadow(0 0 6px ${color})`;
+  gearSubEl.style.filter = `drop-shadow(0 0 5px ${color}) drop-shadow(0 0 10px ${color})`;
   gearSubEl._box.setAttribute('stroke', color);
 
   // HOLD label
   if (holdLabelEl) {
     holdLabelEl.setAttribute('fill', hold ? '#fdd835' : '#333');
-    holdLabelEl.style.filter = hold ? 'drop-shadow(0 0 6px #fdd835)' : '';
+    holdLabelEl.style.filter = hold ? 'drop-shadow(0 0 5px #fdd835) drop-shadow(0 0 10px #fdd835)' : '';
   }
   // LOCK label
   if (lockLabelEl) {
     lockLabelEl.setAttribute('fill', tcLocked ? '#69f0ae' : '#333');
-    lockLabelEl.style.filter = tcLocked ? 'drop-shadow(0 0 6px #69f0ae)' : '';
+    lockLabelEl.style.filter = tcLocked ? 'drop-shadow(0 0 5px #69f0ae) drop-shadow(0 0 10px #69f0ae)' : '';
   }
 }
 
