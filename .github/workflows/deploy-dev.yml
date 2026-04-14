@@ -22,12 +22,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install SDL2 dev libs (ARM64)
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
-
-      - name: Build ARM64 binaries (native, CGO)
-        env:
-          CGO_ENABLED: "1"
+      - name: Build ARM64 binaries (native)
         run: |
           SHORT_SHA="${{ github.event.workflow_run.head_sha }}"
           SHORT_SHA="${SHORT_SHA::7}"

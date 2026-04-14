@@ -19,7 +19,6 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
-	"github.com/hashimoto/pi-obd-meter/internal/sdlui"
 )
 
 var version = "dev"
@@ -51,9 +50,7 @@ func main() {
 	recoverSSH()
 
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
-	mode := flag.String("mode", "browser", "描画モード: browser (WPE/cog) / sdl (SDL2直描画)")
 	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
-	fontDir := flag.String("font-dir", "/opt/pi-obd-meter/web/static/fonts", "SDL用フォントディレクトリ")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
@@ -124,55 +121,7 @@ func main() {
 
 	slog.Info("データ収集開始")
 
-	// --- SDL モード: メインスレッドで SDL 描画、OBD 処理はバックグラウンド ---
-	if *mode == "sdl" {
-		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
-			MaxSpeed:        float64(cfg.MaxSpeedKmh),
-			ThrottleIdlePct: cfg.ThrottleIdlePct,
-			ThrottleMaxPct:  cfg.ThrottleMaxPct,
-			FontDir:         *fontDir,
-			Demo:            *demo,
-		}, func() sdlui.GaugeData {
-			d := app.getRealtimeData()
-			return sdlui.GaugeData{
-				SpeedKmh:     d.SpeedKmh,
-				RPM:          d.RPM,
-				ThrottlePos:  d.ThrottlePos,
-				IntakeMAP:    d.IntakeMAP,
-				CoolantTemp:  d.CoolantTemp,
-				FuelEconomy:  d.FuelEconomy,
-				AvgFuelEco:   d.AvgFuelEconomy,
-				TripKm:       d.TripKm,
-				Gear:         d.Gear,
-				ATRangeStr:   d.ATRangeStr,
-				Hold:         d.Hold,
-				TCLocked:     d.TCLocked,
-				OilAlert:     d.OilAlert,
-				OilCurrentKm: d.OilCurrentKm,
-				OBDConnected: d.OBDConnected,
-			}
-		})
-
-		// OBD データ処理はバックグラウンドで実行 (SDL がメインスレッド)
-		go app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, nil)
-
-		go func() {
-			<-sigCh
-			slog.Info("シグナル受信、SDL シャットダウン")
-			sdlRenderer.Stop()
-			cancel()
-			app.tracker.SaveState()
-			app.maintMgr.SaveState()
-		}()
-
-		if err := sdlRenderer.Run(); err != nil {
-			slog.Error("SDL 描画エラー", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// --- ブラウザモード (WPE/cog 経由) ---
+	// --- メインループ ---
 
 	// デモモード: ブラウザ向けにサイン波データを生成
 	if *demo {

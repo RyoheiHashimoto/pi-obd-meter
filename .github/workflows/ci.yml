@@ -16,9 +16,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install SDL2 dev libs
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
-
       - name: Check go.mod tidy
         run: |
           go mod tidy
@@ -28,8 +25,6 @@ jobs:
         uses: golangci/golangci-lint-action@v7
 
       - name: Test
-        env:
-          CGO_ENABLED: "1"
         run: go test -v -race -coverprofile=coverage.out ./...
 
       - name: Coverage summary
@@ -42,8 +37,6 @@ jobs:
           echo "**Total: ${COVERAGE}%**" >> $GITHUB_STEP_SUMMARY
 
       - name: Build
-        env:
-          CGO_ENABLED: "1"
         run: |
           go build -o pi-obd-meter ./cmd/pi-obd-meter
           go build -o pi-obd-scanner ./cmd/pi-obd-scanner
@@ -57,12 +50,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install SDL2 dev libs (ARM64)
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev
-
-      - name: Build (ARM64 native, CGO)
-        env:
-          CGO_ENABLED: "1"
+      - name: Build (ARM64 native)
         run: |
           GOOS=linux GOARCH=arm64 go build -o pi-obd-meter-arm64 ./cmd/pi-obd-meter
           GOOS=linux GOARCH=arm64 go build -o pi-obd-scanner-arm64 ./cmd/pi-obd-scanner
