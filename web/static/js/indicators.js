@@ -317,12 +317,7 @@ export function createIndicators(panelEl) {
   vBg.setAttribute('fill', 'url(#vacGlow)');
   svg.insertBefore(vBg, vDefs.nextSibling);
 
-  // ベゼル: 多層 fake bloom でぼやけた拡散感
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 24, opacity: 0.12 });
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 16, opacity: 0.22 });
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 10, opacity: 0.55 });
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 16, fill: 'none', stroke: 'url(#vacBezelOuter)', 'stroke-width': 4,  opacity: 0.9  });
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: MAP_R + 11, fill: 'none', stroke: 'url(#vacBezelInner)', 'stroke-width': 2, opacity: 0.7 });
+  // (ベゼル一時無効化)
 
   // バキュームトラック（radialGradient ストローク）
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');

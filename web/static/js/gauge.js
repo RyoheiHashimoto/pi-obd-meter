@@ -350,14 +350,7 @@ export function buildSpeedGauge(svgId, cfg) {
   bg.setAttribute('fill', 'url(#spdGlow)');
   svg.insertBefore(bg, defs.nextSibling);
 
-  // ベゼル: 多層 fake bloom でぼやけた拡散感 (速度計用、大径なので広めに展開)
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 60, opacity: 0.06 });
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 44, opacity: 0.12 });
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 30, opacity: 0.22 });
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 18, opacity: 0.4  });
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 10, opacity: 0.7  });
-  svgEl(svg, 'circle', { cx, cy, r: r + 30, fill: 'none', stroke: 'url(#bezelOuter)', 'stroke-width': 4,  opacity: 1.0  });
-  svgEl(svg, 'circle', { cx, cy, r: r + 22, fill: 'none', stroke: 'url(#bezelInner)', 'stroke-width': 3, opacity: 0.6 });
+  // (ベゼル一時無効化)
 
   // 同心円ガイドライン（階層感）
   svgEl(svg, 'path', { d: arcPath(cx, cy, 200, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
