@@ -190,7 +190,7 @@ export function createIndicators(panelEl) {
   vrg.setAttribute('id', 'vacGlow');
   vrg.setAttribute('cx', MAP_CX); vrg.setAttribute('cy', MAP_CY); vrg.setAttribute('r', MAP_R);
   vrg.setAttribute('gradientUnits', 'userSpaceOnUse');
-  [['0%', '#484868'], ['50%', '#14141e'], ['100%', '#000000']].forEach(([o, c]) => {
+  [['0%', '#58587a'], ['50%', '#181824'], ['100%', '#000000']].forEach(([o, c]) => {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
     s.setAttribute('offset', o); s.setAttribute('stop-color', c);
     vrg.appendChild(s);
@@ -249,7 +249,7 @@ export function createIndicators(panelEl) {
   // === 4行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
-    svgEl(svg, 'rect', { x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.10)', stroke: 'rgba(255,255,255,0.18)', 'stroke-width': 1.5 });
+    svgEl(svg, 'rect', { x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 });
   }
 
   // Row 0: ECO
