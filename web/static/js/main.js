@@ -33,11 +33,14 @@ let usingPolling = false;
 
 // --- データ適用 ---
 function applyData(d) {
-  const spd = d.speed_kmh || 0;
+  // OBD 未接続時 (ACC/エンジン停止) はプレースホルダー状態
+  const obdOn = d.obd_connected !== false;
+  document.body.classList.toggle('obd-offline', !obdOn);
+  const spd = obdOn ? (d.speed_kmh || 0) : 0;
   gs.update(spd, speedColor(spd));
-  updateThrottle(d.throttle_pos || 0);
-  updateRPM(d.rpm || 0);
-  updateGear(d.gear || 0, d.at_range_str || '?', d.hold || false, d.tc_locked || false);
+  updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
+  updateRPM(obdOn ? (d.rpm || 0) : 0);
+  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '-') : '-', obdOn && (d.hold || false), obdOn && (d.tc_locked || false));
   updateIndicators(dom, d, conf);
 }
 
@@ -55,6 +58,7 @@ function connectWebSocket() {
 
   ws.onmessage = (ev) => {
     connected = true;
+    if (window.__wsAlive) window.__wsAlive();
     applyData(JSON.parse(ev.data));
   };
 
@@ -62,6 +66,7 @@ function connectWebSocket() {
     connected = false;
     ws = null;
     wsRetryCount++;
+    reportError('ws_close', { retry: wsRetryCount });
     if (!wsEverConnected || wsRetryCount >= WS_MAX_RETRIES) {
       // WS 未接続 or 再接続上限超過 → HTTP polling にフォールバック
       usingPolling = true;
@@ -99,8 +104,30 @@ function startPolling() {
   })();
 }
 
+// --- クライアント側エラーを backend に送信 ---
+function reportError(type, detail) {
+  try {
+    fetch('/api/client-error', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, detail, url: location.href, ua: navigator.userAgent, t: Date.now() }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
+
+window.addEventListener('error', (e) => {
+  reportError('window_error', { msg: e.message, src: e.filename, line: e.lineno, col: e.colno, stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', (e) => {
+  reportError('unhandled_rejection', { reason: String(e.reason), stack: e.reason && e.reason.stack });
+});
+
 // --- 初期化 ---
 async function initApp() {
+  // 起動アニメ中はテキスト非表示 (Phase 3 で CSS 経由フェードイン)
+  document.body.classList.add('booting');
+
   dom = createIndicators(document.getElementById('panel'));
 
   try {
@@ -141,18 +168,22 @@ async function initApp() {
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
-  // --- 起動アニメーション（針スイープ + フェードイン）---
+  // --- 起動アニメーション (SDL 版と同じ 4 Phase) ---
   await bootAnimation(gs);
+
+  // フリーズ検知 watchdog (rAF 停止時 自動リロード)
+  startWatchdog();
 
   // WebSocket 優先、失敗時は HTTP polling にフォールバック
   connectWebSocket();
 }
 
-// 起動アニメーション: 針スイープ out(1.2s) → back(0.8s) → 待機
+// 起動アニメーション: sweep out(1.2s) → back(0.8s) → fade in(0.8s) → 通常
 function bootAnimation(gauge) {
   return new Promise(resolve => {
     const SWEEP_OUT = 1200;
     const SWEEP_BACK = 800;
+    const FADE_IN = 800;
     const spdCol = '#69f0ae';
     const rpmCol = '#42a5f5';
     const thrCol = '#26c6da';
@@ -179,12 +210,17 @@ function bootAnimation(gauge) {
         gauge.setThrDirect(1 - t, thrCol);
         setMapDirect(1 - t, mapCol);
         requestAnimationFrame(frame);
-      } else {
-        // 完了: ゼロ位置に戻す
+      } else if (elapsed < SWEEP_OUT + SWEEP_BACK + FADE_IN) {
+        // Phase 3: 針は 0、テキスト/ラベルが CSS transition でフェードイン
         gauge.setDirect(0, '#78909c');
         gauge.setRPMDirect(0, '#222');
         gauge.setThrDirect(0, '#333');
         setMapDirect(0, '#333');
+        // 一度だけ class 除去 (CSS で 800ms フェード開始)
+        document.body.classList.remove('booting');
+        requestAnimationFrame(frame);
+      } else {
+        // 完了: transition 復帰
         gauge.restoreTransition();
         restoreMapTransition();
         resolve();
@@ -192,6 +228,26 @@ function bootAnimation(gauge) {
     }
     requestAnimationFrame(frame);
   });
+}
+
+// フリーズ検知 watchdog: rAF が 3 秒以上止まったら自動リロード
+// setInterval は rAF が死んでも動き続けるので、独立した stuck 検知ができる
+function startWatchdog() {
+  const THRESH_MS = 3000;
+  let lastRAF = performance.now();
+  let lastWS = performance.now();
+  function rafHeartbeat() { lastRAF = performance.now(); requestAnimationFrame(rafHeartbeat); }
+  requestAnimationFrame(rafHeartbeat);
+  // WebSocket 最終受信時刻も監視
+  window.__wsAlive = () => { lastWS = performance.now(); };
+  setInterval(() => {
+    const rafStuck = performance.now() - lastRAF;
+    const wsStuck = performance.now() - lastWS;
+    if (rafStuck > THRESH_MS) {
+      reportError('raf_freeze', { stuck_ms: rafStuck, ws_stuck_ms: wsStuck });
+      setTimeout(() => location.reload(), 200); // backend送信猶予
+    }
+  }, 1000);
 }
 
 initApp();

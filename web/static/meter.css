@@ -38,6 +38,13 @@
 * { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
 html, body { cursor: none !important; }
 
+/* 起動アニメ Phase 3: 文字・ラベルを 800ms でフェードイン */
+svg text { transition: opacity 800ms ease-in-out; }
+body.booting svg text { opacity: 0; }
+
+/* OBD 未接続 (ACC 等): 動的な数値ラベルを半透明に */
+body.obd-offline .g-num { opacity: 0.35; }
+
 body {
   background: var(--color-bg);
   color: var(--color-text);
