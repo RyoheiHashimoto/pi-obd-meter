@@ -18,6 +18,54 @@
 </style>
 </head>
 <body>
+<!-- グローバル SVG filter 定義 (WebKit Bug 246106 対策: CSS filter は SVG 子要素に効かないため SVG filter を使う) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- 強グロー: アーク・大きな要素用 -->
+    <filter id="glow-strong" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="b2"/>
+      <feMerge>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- 中グロー: アイコン・ラベル用 -->
+    <filter id="glow-mid" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b2"/>
+      <feMerge>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- 弱グロー: 控えめな要素用 -->
+    <filter id="glow-soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="1.5" result="b1"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- テキスト影 (立体感) -->
+    <filter id="text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feOffset dx="2" dy="3" in="SourceAlpha" result="off"/>
+      <feGaussianBlur in="off" stdDeviation="0.5" result="bl"/>
+      <feComponentTransfer in="bl" result="sh">
+        <feFuncA type="linear" slope="0.6"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="sh"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
 <div class="dashboard">
   <div class="gauge-area">
     <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>

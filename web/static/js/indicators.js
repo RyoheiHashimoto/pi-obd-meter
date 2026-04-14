@@ -2,6 +2,14 @@
 // Indicators — 右パネル MAP メーター + 4行インジケーター
 // ============================================================
 
+// 同値 setAttribute を避ける (WPE WebKit の filter 領域再計算によるフリーズ対策)
+function setFilter(el, v) {
+  if (el._filter !== v) {
+    if (v) el.setAttribute('filter', v); else el.removeAttribute('filter');
+    el._filter = v;
+  }
+}
+
 const DEG = Math.PI / 180;
 const MG_ARC_START = -135;
 const MG_ARC_END = 135;
@@ -119,16 +127,16 @@ function lerpMap() {
   const hue = (1 - pct / 100) * HUE_MAX;
   const col = active ? (hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`) : '#333';
   mapArcEl.setAttribute('stroke', col);
-  mapArcEl.style.filter = active ? `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})` : '';
+  setFilter(mapArcEl, active ? 'url(#glow-strong)' : '');
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
-  mapNeedleEl.style.filter = active ? `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})` : '';
+  setFilter(mapNeedleEl, active ? 'url(#glow-strong)' : '');
   // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
   if (vacLabelEl) {
     const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
     const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
     const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
     vacLabelEl.setAttribute('fill', vacCol);
-    vacLabelEl.style.filter = active ? `drop-shadow(0 0 ${3 + pct / 100 * 5}px ${vacCol})` : '';
+    setFilter(vacLabelEl, active ? (pct > 60 ? 'url(#glow-strong)' : 'url(#glow-mid)') : '');
   }
   mapValEl.setAttribute('fill', active ? col : '#333');
   mapValEl.textContent = active ? mapCur.toFixed(2) : '--';
@@ -240,7 +248,7 @@ export function createIndicators(panelEl) {
 
   // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
-  mapValEl.style.filter = 'drop-shadow(2px 3px 0 rgba(0,0,0,0.6))';
+  mapValEl.setAttribute('filter', 'url(#text-shadow)');
   mapValEl.textContent = '--';
   // Unit
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
@@ -296,7 +304,7 @@ export function setMapDirect(pct, col) {
   mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transition = 'none';
   mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
-  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.style.filter = `drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})`; mapNeedleEl.setAttribute('stroke', col); }
+  if (col) { mapArcEl.setAttribute('stroke', col); mapArcEl.setAttribute('filter', 'url(#glow-strong)'); mapNeedleEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('filter', 'url(#glow-strong)'); }
 }
 
 export function restoreMapTransition() {
@@ -332,7 +340,7 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
-  ecoIconEls.outline.parentNode.style.filter = `drop-shadow(0 0 3px ${ecoCol}) drop-shadow(0 0 6px ${ecoCol})`;
+  setFilter(ecoIconEls.outline.parentNode, 'url(#glow-mid)');
 
   // TEMP
   const coolant = d.coolant_temp || 0;
@@ -341,12 +349,12 @@ export function updateIndicators(dom, d, conf) {
     const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
     tempValEl.setAttribute('fill', col);
     tempIconEl.setAttribute('fill', col);
-    tempIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${col}) drop-shadow(0 0 6px ${col})`;
+    setFilter(tempIconEl.parentNode, 'url(#glow-mid)');
   } else {
     tempValEl.textContent = '--';
     tempValEl.setAttribute('fill', '#333');
     tempIconEl.setAttribute('fill', '#333');
-    tempIconEl.parentNode.style.filter = '';
+    setFilter(tempIconEl.parentNode, '');
   }
 
   // TRIP
@@ -355,7 +363,7 @@ export function updateIndicators(dom, d, conf) {
   const tripCol = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
-  tripIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${tripCol}) drop-shadow(0 0 6px ${tripCol})`;
+  setFilter(tripIconEl.parentNode, 'url(#glow-mid)');
 
   // OIL
   const oilAlert = d.oil_alert || 'green';
@@ -368,5 +376,5 @@ export function updateIndicators(dom, d, conf) {
   }
   oilValEl.setAttribute('fill', oilCol);
   oilIconEl.setAttribute('fill', oilCol);
-  oilIconEl.parentNode.style.filter = `drop-shadow(0 0 3px ${oilCol}) drop-shadow(0 0 6px ${oilCol})`;
+  setFilter(oilIconEl.parentNode, 'url(#glow-mid)');
 }
