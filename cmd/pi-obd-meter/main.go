@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -21,6 +22,15 @@ import (
 )
 
 var version = "dev"
+
+// recoverSSH は systemd-user-sessions の mask を解除し /run/nologin を削除する。
+// (以前の誤った mask 操作でロックアウトされた状態から復旧するためのワンショット)
+// 冪等なので毎起動走っても問題ない。
+func recoverSSH() {
+	_ = os.Remove("/run/nologin")
+	_ = exec.Command("systemctl", "unmask", "systemd-user-sessions").Run()
+	_ = exec.Command("systemctl", "--no-block", "start", "systemd-user-sessions").Run()
+}
 
 // checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
 func checkWiFi() bool {
@@ -36,6 +46,9 @@ func checkWiFi() bool {
 }
 
 func main() {
+	// SSH ロックアウト復旧 (起動時ワンショット、冪等)
+	recoverSSH()
+
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
 	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
 	flag.Parse()
