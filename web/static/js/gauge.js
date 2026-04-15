@@ -47,7 +47,10 @@ function svgEl(parent, tag, attrs) {
 // arc (path): clone、d は setAttribute hook で即時同期 (lag なし、幅広静的グロー)
 function createBloom(parent, tag, attrs, bloomExtra = 12, bloomOpacity = 0.28) {
   const sw = parseFloat(attrs['stroke-width'] || '1');
-  const bloom = svgEl(parent, tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+  const bloomAttrs = { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity };
+  // 塗りつぶしあり (rect 等) の場合、bloom は stroke-only halo にして fill 重ねを防ぐ
+  if (attrs.fill && attrs.fill !== 'none') bloomAttrs.fill = 'none';
+  const bloom = svgEl(parent, tag, bloomAttrs);
   const main = svgEl(parent, tag, attrs);
   main._bloom = bloom;
   // 針だけ残像用 transform transition を適用 (arc は d 同期のみで即時)
@@ -376,10 +379,10 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // 目盛り最内端のインナーリング
   const innerRingR = r + 4 - 30;
-  createGradientTrack(svg, cx, cy, innerRingR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
+  createGradientTrack(svg, cx, cy, innerRingR, 10, ARC_START, ARC_END, '#020204', '#333345', '#020204');
 
   // スロットルトラック
-  createGradientTrack(svg, cx, cy, throttleR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
+  createGradientTrack(svg, cx, cy, throttleR, 10, ARC_START, ARC_END, '#020204', '#333345', '#020204');
   const thrArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 8, 'stroke-linecap': 'round' }, 10, 0.3);
 
   // THROTTLE label は unitY 確定後に配置
@@ -389,14 +392,14 @@ export function buildSpeedGauge(svgId, cfg) {
   const rangeX = cx - r - 10;
   const rangeY = 62;
   const boxW = 64, boxH = 62, boxR = 8;
-  const rangeBox = svgEl(svg, 'rect', { class: 'acc-dim', x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
+  const rangeBox = createBloom(svg, 'rect', { class: 'acc-dim', x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 }, 6, 0.45);
   gearSubEl = svgEl(svg, 'text', { x: rangeX, y: rangeY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearSubEl.textContent = '';
   gearSubEl._box = rangeBox;
   // Gear number (右上、アークの外) — 枠付き
   const gearNumX = cx + r + 2;
   const gearNumY = 62;
-  const gearBox = svgEl(svg, 'rect', { class: 'acc-dim', x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
+  const gearBox = createBloom(svg, 'rect', { class: 'acc-dim', x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 }, 6, 0.45);
   gearEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearEl._box = gearBox;
 

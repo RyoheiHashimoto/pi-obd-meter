@@ -314,7 +314,7 @@ export function createIndicators(panelEl) {
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
   // バキュームインナーリング
   const vacInnerR = MAP_R - 16;
-  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#22222e', '#020204');
+  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
 
   // Ticks
   for (let i = 0; i <= VAC_TOTAL; i++) {
@@ -358,7 +358,7 @@ export function createIndicators(panelEl) {
   // === 4行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
-    svgEl(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 });
+    createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
   // Row 0: ECO
