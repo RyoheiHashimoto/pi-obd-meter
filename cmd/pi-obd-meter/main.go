@@ -138,7 +138,7 @@ func main() {
 					return
 				case <-ticker.C:
 					t += 0.05
-					speed := 90 + 90*math.Sin(t*0.3)                // 0 - 180 (full range)
+					speed := 90 + 90*math.Sin(t*0.3)                 // 0 - 180 (full range)
 					rpm := 1000 + 6500*math.Max(0, math.Sin(t*0.25)) // 1000 - 7500
 					throttle := 50 + 50*math.Sin(t*0.5)              // 0 - 100 (full range)
 					gear := 1
