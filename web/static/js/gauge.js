@@ -42,39 +42,24 @@ function svgEl(parent, tag, attrs) {
 
 // グロー: SVG <use> で同じパスを幅広・半透明で下敷き (fake bloom)
 // feGaussianBlur より遥かに軽く、Pi 4 WPE でも 60fps 維持可能
-let _bloomId = 0;
+// 全 bloom を clone 方式 (SVG <use> は stroke-width を main から継承するため幅広グローが作れない)
+// 針 (transform-origin 持ち): clone + transform transition で残像追従
+// arc (path): clone、d は setAttribute hook で即時同期 (lag なし、幅広静的グロー)
 function createBloom(parent, tag, attrs, bloomExtra = 12, bloomOpacity = 0.28) {
   const sw = parseFloat(attrs['stroke-width'] || '1');
-  // needle 等 (transform-origin 持ち) は実要素クローン方式 (<use> の座標系問題回避)
-  // それ以外は <use> 方式 (d属性が同期されるため軽い)
-  const useClone = !!attrs['transform-origin'];
-  let bloom, main;
-  if (useClone) {
-    bloom = svgEl(parent, tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
-    main = svgEl(parent, tag, attrs);
-  } else {
-    const id = 'b' + (++_bloomId);
-    bloom = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    bloom.setAttribute('href', '#' + id);
-    bloom.setAttribute('stroke-width', sw + bloomExtra);
-    bloom.setAttribute('opacity', bloomOpacity);
-    parent.appendChild(bloom);
-    main = svgEl(parent, tag, { ...attrs, id });
-  }
+  const bloom = svgEl(parent, tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+  const main = svgEl(parent, tag, attrs);
   main._bloom = bloom;
-  main._isCloneBloom = useClone;
-  // bloom に初期から残像用 transition を適用 (針が動いたあと尾を引いて追従)
-  if (useClone) {
-    bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
+  // 針だけ残像用 transform transition を適用 (arc は d 同期のみで即時)
+  if (attrs['transform-origin']) {
+    bloom.style.transition = 'transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
   }
-  // stroke 変化を bloom にも自動反映 (clone 方式用)
-  if (useClone) {
-    const origSet = main.setAttribute.bind(main);
-    main.setAttribute = (k, v) => {
-      origSet(k, v);
-      if (k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
-    };
-  }
+  // main の d / stroke / fill 変更を bloom に即時同期
+  const origSet = main.setAttribute.bind(main);
+  main.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'd' || k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
+  };
   return main;
 }
 // 針 rotate ヘルパー: main と bloom 両方に transform 適用
@@ -366,7 +351,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // Redzone background (6500-8000)
   const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
   createGradientTrack(svg, cx, cy, rpmR, 12, redStart, ARC_END, '#200000', '#7a0000', '#200000');
-  const rpmArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 14, 'stroke-linecap': 'round' }, 10, 0.3);
+  const rpmArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' }, 8, 0.35);
 
   // 速度トラック（radialGradient ストローク）
   createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
@@ -395,7 +380,7 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // スロットルトラック
   createGradientTrack(svg, cx, cy, throttleR, 10, ARC_START, ARC_END, '#020204', '#22222e', '#020204');
-  const thrArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 12, 'stroke-linecap': 'round' }, 8, 0.25);
+  const thrArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 8, 'stroke-linecap': 'round' }, 10, 0.3);
 
   // THROTTLE label は unitY 確定後に配置
   let thrLabel;
@@ -429,7 +414,7 @@ export function buildSpeedGauge(svgId, cfg) {
   bloomText(lockLabelEl, 2.5, 0.4);
 
   // Value arc
-  const va = createBloom(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 18, 'stroke-linecap': 'round' }, 14, 0.32);
+  const va = createBloom(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 12, 'stroke-linecap': 'round' }, 10, 0.38);
   applyGlow(va, cfg.color);
 
   // Needle

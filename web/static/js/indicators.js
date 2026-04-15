@@ -27,40 +27,27 @@ function bloomText(textEl, strokeWidth = 3, opacity = 0.4) {
   return textEl;
 }
 
-// fake bloom: transform-origin 有りは clone 方式、他は <use> 方式
-let _bloomId2 = 0;
+// 全 bloom clone 方式 (<use> は stroke-width を継承して幅広にできない)
+// 針: transform transition で残像、arc: d 即時同期 (lag なし、幅広静的グロー)
 function createBloom(parent, tag, attrs, bloomExtra = 10, bloomOpacity = 0.3) {
   const sw = parseFloat(attrs['stroke-width'] || '1');
-  const useClone = !!attrs['transform-origin'];
-  let bloom, main;
   const mkEl = (t, a) => {
     const e = document.createElementNS('http://www.w3.org/2000/svg', t);
     for (const [k, v] of Object.entries(a)) e.setAttribute(k, v);
     parent.appendChild(e);
     return e;
   };
-  if (useClone) {
-    bloom = mkEl(tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
-    main = mkEl(tag, attrs);
-  } else {
-    const id = 'bi' + (++_bloomId2);
-    bloom = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    bloom.setAttribute('href', '#' + id);
-    bloom.setAttribute('stroke-width', sw + bloomExtra);
-    bloom.setAttribute('opacity', bloomOpacity);
-    parent.appendChild(bloom);
-    main = mkEl(tag, { ...attrs, id });
-  }
+  const bloom = mkEl(tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+  const main = mkEl(tag, attrs);
   main._bloom = bloom;
-  if (useClone) {
-    // bloom に初期から残像用 transition を適用 (針が動いたあと尾を引いて追従)
-    bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
-    const origSet = main.setAttribute.bind(main);
-    main.setAttribute = (k, v) => {
-      origSet(k, v);
-      if (k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
-    };
+  if (attrs['transform-origin']) {
+    bloom.style.transition = 'transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
   }
+  const origSet = main.setAttribute.bind(main);
+  main.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'd' || k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
+  };
   return main;
 }
 function rotateWithBloom(el, t) {
@@ -347,7 +334,7 @@ export function createIndicators(panelEl) {
   }
 
   // Active arc
-  mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' }, 10, 0.3);
+  mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
   // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
   vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
