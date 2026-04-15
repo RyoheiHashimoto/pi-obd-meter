@@ -22,19 +22,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install SDL2 dev libs
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev
-
       - name: Build ARM64 binaries (native)
         run: |
           SHORT_SHA="${{ github.event.workflow_run.head_sha }}"
           SHORT_SHA="${SHORT_SHA::7}"
-          CGO_ENABLED=1 go build \
+          GOOS=linux GOARCH=arm64 go build \
             -ldflags "-s -w -X main.version=dev-${SHORT_SHA}" \
             -o pi-obd-meter ./cmd/pi-obd-meter
-          CGO_ENABLED=1 go build \
+          GOOS=linux GOARCH=arm64 go build \
             -ldflags "-s -w -X main.version=dev-${SHORT_SHA}" \
             -o pi-obd-scanner ./cmd/pi-obd-scanner
 

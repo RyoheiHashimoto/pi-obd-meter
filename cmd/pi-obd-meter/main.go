@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -18,10 +19,18 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/can"
 	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
-	"github.com/hashimoto/pi-obd-meter/internal/sdlui"
 )
 
 var version = "dev"
+
+// recoverSSH は systemd-user-sessions の mask を解除し /run/nologin を削除する。
+// (以前の誤った mask 操作でロックアウトされた状態から復旧するためのワンショット)
+// 冪等なので毎起動走っても問題ない。
+func recoverSSH() {
+	_ = os.Remove("/run/nologin")
+	_ = exec.Command("systemctl", "unmask", "systemd-user-sessions").Run()
+	_ = exec.Command("systemctl", "--no-block", "start", "systemd-user-sessions").Run()
+}
 
 // checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
 func checkWiFi() bool {
@@ -37,10 +46,11 @@ func checkWiFi() bool {
 }
 
 func main() {
+	// SSH ロックアウト復旧 (起動時ワンショット、冪等)
+	recoverSSH()
+
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
-	mode := flag.String("mode", "browser", "描画モード: browser (Chromium) / sdl (SDL2直描画)")
 	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
-	fontDir := flag.String("font-dir", "web/static/fonts", "フォントディレクトリ")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
@@ -88,7 +98,10 @@ func main() {
 		fastIntervalMs = 150
 	}
 	obdCh := make(chan OBDEvent, 1)
-	if cfg.CANInterface != "" {
+	if *demo {
+		// デモモード: OBD リーダー起動しない (デモジェネレータと競合するため)
+		slog.Info("デモモード: OBD リーダー無効化")
+	} else if cfg.CANInterface != "" {
 		// CAN直結モード（SocketCAN パッシブモニタリング）
 		slog.Info("CAN直結モードで起動", "interface", cfg.CANInterface)
 		go canReaderLoop(ctx, cfg.CANInterface, fastIntervalMs, obdCh)
@@ -111,57 +124,7 @@ func main() {
 
 	slog.Info("データ収集開始")
 
-	// --- SDL モード: OBDデータ処理をバックグラウンドで実行し、メインスレッドでSDL描画 ---
-	if *mode == "sdl" {
-		sdlRenderer := sdlui.NewRenderer(sdlui.RendererConfig{
-			MaxSpeed:        float64(cfg.MaxSpeedKmh),
-			ThrottleIdlePct: cfg.ThrottleIdlePct,
-			ThrottleMaxPct:  cfg.ThrottleMaxPct,
-			FontDir:         *fontDir,
-			Demo:            *demo,
-		}, func() sdlui.GaugeData {
-			d := app.getRealtimeData()
-			return sdlui.GaugeData{
-				SpeedKmh:     d.SpeedKmh,
-				RPM:          d.RPM,
-				ThrottlePos:  d.ThrottlePos,
-				IntakeMAP:    d.IntakeMAP,
-				CoolantTemp:  d.CoolantTemp,
-				FuelEconomy:  d.FuelEconomy,
-				AvgFuelEco:   d.AvgFuelEconomy,
-				TripKm:       d.TripKm,
-				Gear:         d.Gear,
-				ATRangeStr:   d.ATRangeStr,
-				Hold:         d.Hold,
-				TCLocked:     d.TCLocked,
-				OilAlert:     d.OilAlert,
-				OilCurrentKm: d.OilCurrentKm,
-				OBDConnected: d.OBDConnected,
-			}
-		})
-
-		// OBDデータ処理ループをバックグラウンドで実行（距離積算・メンテ更新・GAS送信）
-		// SDLモードではシグナル処理はSDL側が担当するのでnilを渡す
-		go app.obdProcessingLoop(ctx, cancel, obdCh, fastIntervalMs, cfg, retryTicker, maintTicker, nil)
-
-		// SIGINT/SIGTERM で SDL ループを停止 + 状態保存
-		go func() {
-			<-sigCh
-			slog.Info("シグナル受信、SDLシャットダウン")
-			sdlRenderer.Stop()
-			cancel()
-			app.tracker.SaveState()
-			app.maintMgr.SaveState()
-		}()
-
-		if err := sdlRenderer.Run(); err != nil {
-			slog.Error("SDL描画エラー", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
-
-	// --- ブラウザモード: 従来のメインループ ---
+	// --- メインループ ---
 
 	// デモモード: ブラウザ向けにサイン波データを生成
 	if *demo {
@@ -175,9 +138,9 @@ func main() {
 					return
 				case <-ticker.C:
 					t += 0.05
-					speed := 70 + 70*math.Sin(t*0.3)
-					rpm := 800 + speed*35
-					throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
+					speed := 90 + 90*math.Sin(t*0.3)                 // 0 - 180 (full range)
+					rpm := 1000 + 6500*math.Max(0, math.Sin(t*0.25)) // 1000 - 7500
+					throttle := 50 + 50*math.Sin(t*0.5)              // 0 - 100 (full range)
 					gear := 1
 					if speed > 100 {
 						gear = 4
@@ -190,7 +153,7 @@ func main() {
 						SpeedKmh:       speed,
 						RPM:            rpm,
 						ThrottlePos:    throttle,
-						IntakeMAP:      30 + throttle*0.7,
+						IntakeMAP:      50 + 50*math.Sin(t*0.35), // 0-100 kPa = -1.0 Bar 〜 0 Bar (full range)
 						CoolantTemp:    88,
 						FuelEconomy:    8 + 4*math.Sin(t*0.4),
 						AvgFuelEconomy: 9.5,

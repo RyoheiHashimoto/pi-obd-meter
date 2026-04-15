@@ -164,6 +164,17 @@ func (app *App) startLocalAPI(ctx context.Context) {
 		writeJSON(w, app.maintMgr.OilStatus())
 	})
 
+	// --- クライアントエラーログ: フロントから JS エラー/ watchdog 検知を受け取り journal に記録 ---
+	mux.HandleFunc("POST /api/client-error", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		slog.Warn("client error", "payload", body)
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	// --- キオスク停止API（タッチパネルから Chromium を終了する） ---
 	mux.HandleFunc("POST /api/kiosk/stop", func(w http.ResponseWriter, r *http.Request) {
 		slog.Info("キオスク停止リクエスト受信")

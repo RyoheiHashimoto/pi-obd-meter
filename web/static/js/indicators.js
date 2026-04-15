@@ -2,6 +2,61 @@
 // Indicators — 右パネル MAP メーター + 4行インジケーター
 // ============================================================
 
+import { addOffsetShadow } from './gauge.js';
+
+// SVG filter glow 無効化 (fake bloom で代替)
+function setFilter(_el, _v) { /* no-op */ }
+
+// テキスト bloom (stroke で外縁発光)
+function bloomText(textEl, strokeWidth = 3, opacity = 0.4) {
+  const bloom = textEl.cloneNode(true);
+  bloom.removeAttribute('id');
+  const c = textEl.getAttribute('fill') || '#fff';
+  bloom.setAttribute('fill', c);
+  bloom.setAttribute('stroke', c);
+  bloom.setAttribute('stroke-width', strokeWidth);
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', opacity);
+  textEl.parentNode.insertBefore(bloom, textEl);
+  textEl._bloom = bloom;
+  const origSet = textEl.setAttribute.bind(textEl);
+  textEl.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'fill') { bloom.setAttribute('fill', v); bloom.setAttribute('stroke', v); }
+  };
+  new MutationObserver(() => { bloom.textContent = textEl.textContent; })
+    .observe(textEl, { childList: true, characterData: true, subtree: true });
+  return textEl;
+}
+
+// 全 bloom clone 方式 (<use> は stroke-width を継承して幅広にできない)
+// 針: transform transition で残像、arc: d 即時同期 (lag なし、幅広静的グロー)
+function createBloom(parent, tag, attrs, bloomExtra = 10, bloomOpacity = 0.3) {
+  const sw = parseFloat(attrs['stroke-width'] || '1');
+  const mkEl = (t, a) => {
+    const e = document.createElementNS('http://www.w3.org/2000/svg', t);
+    for (const [k, v] of Object.entries(a)) e.setAttribute(k, v);
+    parent.appendChild(e);
+    return e;
+  };
+  const bloom = mkEl(tag, { ...attrs, 'stroke-width': sw + bloomExtra, opacity: bloomOpacity });
+  const main = mkEl(tag, attrs);
+  main._bloom = bloom;
+  if (attrs['transform-origin']) {
+    bloom.style.transition = 'transform 0.6s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
+  }
+  const origSet = main.setAttribute.bind(main);
+  main.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'd' || k === 'stroke' || k === 'fill') bloom.setAttribute(k, v);
+  };
+  return main;
+}
+function rotateWithBloom(el, t) {
+  el.style.transform = t;
+  if (el._bloom) el._bloom.style.transform = t;
+}
+
 const DEG = Math.PI / 180;
 const MG_ARC_START = -135;
 const MG_ARC_END = 135;
@@ -51,6 +106,31 @@ const ICON_THERMO = 'M12 2C10.34 2 9 3.34 9 5v8.59c-1.22.73-2 2.05-2 3.41 0 2.76
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
 
+// 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
+let trackGradCount = 100;
+function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
+  const id = `trkGrad${trackGradCount++}`;
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(defs, svg.firstChild); }
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  grad.setAttribute('id', id);
+  grad.setAttribute('cx', cx); grad.setAttribute('cy', cy);
+  grad.setAttribute('r', r + strokeW / 2);
+  grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+  const innerR = (r - strokeW / 2) / (r + strokeW / 2);
+  [
+    [innerR.toFixed(3), innerCol],
+    [((innerR + 1) / 2).toFixed(3), midCol],
+    ['1', outerCol],
+  ].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    grad.appendChild(s);
+  });
+  defs.appendChild(grad);
+  return svgEl(svg, 'path', { d: arcPath(cx, cy, r, startDeg, endDeg), fill: 'none', stroke: `url(#${id})`, 'stroke-width': strokeW, 'stroke-linecap': 'round' });
+}
+
 // --- Module state ---
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
@@ -88,22 +168,22 @@ function lerpMap() {
   const pct = Math.max(0, Math.min(100, (mapCur - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
   const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
   mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
-  mapNeedleEl.style.transform = `rotate(${angle - MG_ARC_START}deg)`;
+  rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   const active = mapCur < 0.01;
   // 色: 0 bar(大気圧/全開)=赤, -1 bar(深い負圧)=青
   const hue = (1 - pct / 100) * HUE_MAX;
   const col = active ? (hue < 5 ? '#f44336' : `hsl(${hue}, 100%, 55%)`) : '#333';
   mapArcEl.setAttribute('stroke', col);
-  mapArcEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
+  setFilter(mapArcEl, active ? 'url(#glow-strong)' : '');
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
-  mapNeedleEl.style.filter = active ? `drop-shadow(0 0 6px ${col})` : '';
+  setFilter(mapNeedleEl, active ? 'url(#glow-strong)' : '');
   // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
   if (vacLabelEl) {
-    const lum = 10 + (pct / 100) * 45; // 10%(暗い) → 55%(明るい)
+    const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
     const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
     const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
     vacLabelEl.setAttribute('fill', vacCol);
-    vacLabelEl.style.filter = active ? `drop-shadow(0 0 ${3 + pct / 100 * 5}px ${vacCol})` : '';
+    setFilter(vacLabelEl, active ? (pct > 60 ? 'url(#glow-strong)' : 'url(#glow-mid)') : '');
   }
   mapValEl.setAttribute('fill', active ? col : '#333');
   mapValEl.textContent = active ? mapCur.toFixed(2) : '--';
@@ -113,24 +193,56 @@ function lerpMap() {
 // --- アイコン生成 ---
 function createIconPath(svg, x, y, pathD, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'acc-dim');
   g.setAttribute('transform', `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`);
+  // bloom outline (下敷き、fill色を stroke として太く縁取り)
+  const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  bloom.setAttribute('d', pathD);
+  bloom.setAttribute('fill', 'none');
+  bloom.setAttribute('stroke', '#444');
+  bloom.setAttribute('stroke-width', '3');
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', '0.45');
+  g.appendChild(bloom);
   const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   p.setAttribute('d', pathD);
   p.setAttribute('fill', '#444');
   g.appendChild(p);
   svg.appendChild(g);
+  // fill 変更 → bloom stroke 同期
+  const origSet = p.setAttribute.bind(p);
+  p.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'fill') bloom.setAttribute('stroke', v);
+  };
   return p;
 }
 
 function createLeafIcon(svg, x, y, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'acc-dim');
   g.setAttribute('transform', `translate(${x}, ${y}) rotate(60) scale(${size/20})`);
+  // bloom outline (下敷き)
+  const outlineBloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  outlineBloom.setAttribute('d', ICON_LEAF);
+  outlineBloom.setAttribute('fill', 'none');
+  outlineBloom.setAttribute('stroke', '#444');
+  outlineBloom.setAttribute('stroke-width', '3.5');
+  outlineBloom.setAttribute('opacity', '0.4');
+  outlineBloom.setAttribute('stroke-linejoin', 'round');
+  g.appendChild(outlineBloom);
   const outline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   outline.setAttribute('d', ICON_LEAF);
   outline.setAttribute('fill', 'none');
   outline.setAttribute('stroke', '#444');
   outline.setAttribute('stroke-width', '1.5');
   g.appendChild(outline);
+  // outline stroke 変更を bloom に同期
+  const origSet = outline.setAttribute.bind(outline);
+  outline.setAttribute = (k, v) => {
+    origSet(k, v);
+    if (k === 'stroke') outlineBloom.setAttribute('stroke', v);
+  };
   const vein = document.createElementNS('http://www.w3.org/2000/svg', 'line');
   vein.setAttribute('x1', '0'); vein.setAttribute('y1', '-8');
   vein.setAttribute('x2', '0'); vein.setAttribute('y2', '10');
@@ -158,8 +270,53 @@ export function createIndicators(panelEl) {
   const VAC_MN = 4;    // 主目盛り間の副目盛り数
   const VAC_TOTAL = VAC_MJ * VAC_MN;
 
-  // Track
-  svgEl(svg, 'path', { d: arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, MG_ARC_END), fill: 'none', stroke: '#181820', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
+  // バキューム計中心グラデーション
+  let vDefs = svg.querySelector('defs');
+  if (!vDefs) { vDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.insertBefore(vDefs, svg.firstChild); }
+  const vrg = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+  vrg.setAttribute('id', 'vacGlow');
+  vrg.setAttribute('cx', MAP_CX); vrg.setAttribute('cy', MAP_CY); vrg.setAttribute('r', MAP_R);
+  vrg.setAttribute('gradientUnits', 'userSpaceOnUse');
+  [['0%', '#58587a'], ['50%', '#181824'], ['100%', '#000000']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vrg.appendChild(s);
+  });
+  vDefs.appendChild(vrg);
+  // メタリックベゼル用 linearGradient (速度計と同じ)
+  const vBezel = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  vBezel.setAttribute('id', 'vacBezelOuter');
+  vBezel.setAttribute('x1', '0%'); vBezel.setAttribute('y1', '0%');
+  vBezel.setAttribute('x2', '0%'); vBezel.setAttribute('y2', '100%');
+  [['0%', '#3a3d44'], ['50%', '#5a5f68'], ['100%', '#4a4d54']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vBezel.appendChild(s);
+  });
+  vDefs.appendChild(vBezel);
+  const vBezelInner = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  vBezelInner.setAttribute('id', 'vacBezelInner');
+  vBezelInner.setAttribute('x1', '0%'); vBezelInner.setAttribute('y1', '0%');
+  vBezelInner.setAttribute('x2', '0%'); vBezelInner.setAttribute('y2', '100%');
+  [['0%', '#0a0a0e'], ['50%', '#1c1e24'], ['100%', '#04040a']].forEach(([o, c]) => {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+    vBezelInner.appendChild(s);
+  });
+  vDefs.appendChild(vBezelInner);
+
+  const vBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  vBg.setAttribute('cx', MAP_CX); vBg.setAttribute('cy', MAP_CY); vBg.setAttribute('r', MAP_R);
+  vBg.setAttribute('fill', 'url(#vacGlow)');
+  svg.insertBefore(vBg, vDefs.nextSibling);
+
+  // (ベゼル一時無効化)
+
+  // バキュームトラック（radialGradient ストローク）
+  createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
+  // バキュームインナーリング
+  const vacInnerR = MAP_R - 16;
+  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
 
   // Ticks
   for (let i = 0; i <= VAC_TOTAL; i++) {
@@ -179,35 +336,38 @@ export function createIndicators(panelEl) {
   }
 
   // Active arc
-  mapArcEl = svgEl(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': ARC_W, 'stroke-linecap': 'round' });
+  mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
   // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
   vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
   vacLabelEl.textContent = 'VACUUM';
+  bloomText(vacLabelEl, 2.5, 0.45);
 
   // Needle (VACUUM ラベルの上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
-  mapNeedleEl = svgEl(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` });
-  mapNeedleEl.style.transition = 'transform 0.15s ease-out';
-
+  mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
-  // Value
+  // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  addOffsetShadow(mapValEl);
   mapValEl.textContent = '--';
   // Unit
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
   // === 4行インジケーター ===
-  // 区切り線
-  svgEl(svg, 'line', { x1: 10, y1: IND_Y_START - 16, x2: 210, y2: IND_Y_START - 16, stroke: '#222', 'stroke-width': 1 });
+  // ガラスパネル（各行に角丸背景 + 色付きボーダー）
+  function addIndPanel(y) {
+    createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
+  }
 
   // Row 0: ECO
   const ecoY = IND_Y_START;
-  const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 8, 30);
+  addIndPanel(ecoY);
+  const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
   ecoIconEls = leafIcons;
   ecoValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: ecoY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   ecoValEl.textContent = '--';
@@ -215,6 +375,7 @@ export function createIndicators(panelEl) {
 
   // Row 1: TEMP
   const tempY = IND_Y_START + IND_SPACING;
+  addIndPanel(tempY);
   tempIconEl = createIconPath(svg, IND_X_ICON + 10, tempY - 8, ICON_THERMO, 40);
   tempValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tempY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tempValEl.textContent = '--';
@@ -222,6 +383,7 @@ export function createIndicators(panelEl) {
 
   // Row 2: TRIP
   const tripY = IND_Y_START + IND_SPACING * 2;
+  addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
   tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
@@ -229,6 +391,7 @@ export function createIndicators(panelEl) {
 
   // Row 3: OIL
   const oilY = IND_Y_START + IND_SPACING * 3;
+  addIndPanel(oilY);
   oilIconEl = createIconPath(svg, IND_X_ICON + 10, oilY - 8, ICON_OIL, 40);
   oilValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: oilY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   oilValEl.textContent = '--';
@@ -236,6 +399,23 @@ export function createIndicators(panelEl) {
   oilLabelEl.textContent = 'km';
 
   return {};
+}
+
+// MAP 直接アニメーション（起動アニメ用）
+export function setMapDirect(pct, col) {
+  if (!mapArcEl) return;
+  const angle = MG_ARC_START + pct * MG_ARC_SWEEP;
+  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapNeedleEl.style.transition = 'none';
+  rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
+  if (col) { mapArcEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('stroke', col); }
+}
+
+export function restoreMapTransition() {
+  if (mapNeedleEl) {
+    mapNeedleEl.style.transition = 'transform 0.05s ease-out';  // 針は即応答
+    if (mapNeedleEl._bloom) mapNeedleEl._bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
+  }
 }
 
 // OIL lamp colors
@@ -267,6 +447,7 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
+  // アイコン glow は Pi 4 軽量化のため廃止（色だけで表現）
 
   // TEMP
   const coolant = d.coolant_temp || 0;
@@ -279,6 +460,7 @@ export function updateIndicators(dom, d, conf) {
     tempValEl.textContent = '--';
     tempValEl.setAttribute('fill', '#333');
     tempIconEl.setAttribute('fill', '#333');
+    setFilter(tempIconEl.parentNode, '');
   }
 
   // TRIP
@@ -287,6 +469,7 @@ export function updateIndicators(dom, d, conf) {
   const tripCol = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
+  setFilter(tripIconEl.parentNode, 'url(#glow-mid)');
 
   // OIL
   const oilAlert = d.oil_alert || 'green';
@@ -299,4 +482,5 @@ export function updateIndicators(dom, d, conf) {
   }
   oilValEl.setAttribute('fill', oilCol);
   oilIconEl.setAttribute('fill', oilCol);
+  setFilter(oilIconEl.parentNode, 'url(#glow-mid)');
 }

@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" style="background:#000;">
 <head>
 <meta charset="UTF-8">
+<style>html,body{background:#000 !important;margin:0;}</style>
 <meta name="viewport" content="width=800, height=480">
 <title>pi-obd-meter</title>
 <link rel="preload" href="fonts/Orbitron-Black.ttf" as="font" type="font/truetype" crossorigin>
@@ -17,6 +18,45 @@
 </style>
 </head>
 <body>
+<!-- グローバル SVG filter 定義 (WebKit Bug 246106 対策: CSS filter は SVG 子要素に効かないため SVG filter を使う) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- グロー (Pi 4 WPE 軽量化: stdDev 小さめ + フィルタ領域最小) -->
+    <filter id="glow-strong" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="2.5" result="b1"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glow-mid" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="1.8" result="b1"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="glow-soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1" result="b1"/>
+      <feMerge>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- テキスト影 (立体感) -->
+    <filter id="text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feOffset dx="2" dy="3" in="SourceAlpha" result="off"/>
+      <feGaussianBlur in="off" stdDeviation="0.5" result="bl"/>
+      <feComponentTransfer in="bl" result="sh">
+        <feFuncA type="linear" slope="0.6"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="sh"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
 <div class="dashboard">
   <div class="gauge-area">
     <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>

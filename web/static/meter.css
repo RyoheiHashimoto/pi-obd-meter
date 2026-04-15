@@ -27,7 +27,7 @@
   /* --- Indicator --- */
   --ind-dot-size: 30px;
   --ind-font-size: 26px;
-  --ind-glow-radius: 14px;
+  --ind-glow-radius: 20px;
 }
 
 @font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/Orbitron-Regular.ttf') format('truetype'); }
@@ -35,7 +35,18 @@
 @font-face { font-family: 'Orbitron'; font-style: normal; font-weight: 900; font-display: swap; src: url('fonts/Orbitron-Black.ttf') format('truetype'); }
 @font-face { font-family: 'Share Tech Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/ShareTechMono-Regular.woff2') format('woff2'); }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin: 0; padding: 0; box-sizing: border-box; cursor: none !important; }
+html, body { cursor: none !important; }
+
+/* 起動アニメ Phase 3: 文字・ラベルを 800ms でフェードイン */
+svg text { transition: opacity 800ms ease-in-out; }
+
+/* OBD 未接続 (ACC 等) / 起動中: テキスト/ラベル/枠/アイコン非表示 (目盛り・トラックは残す) */
+.acc-dim { transition: opacity 800ms ease-in-out; }
+body.booting svg text,
+body.obd-offline svg text,
+body.booting .acc-dim,
+body.obd-offline .acc-dim { opacity: 0; }
 
 body {
   background: var(--color-bg);
