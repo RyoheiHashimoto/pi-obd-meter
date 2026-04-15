@@ -35,10 +35,11 @@
 
 | パラメータ | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| `serial_port` | string | `"/dev/rfcomm0"` | ELM327 のシリアルポート |
+| `can_interface` | string | `""` | CAN インタフェース名 (例: `"can0"`)。**設定すると CAN 直結モード (主)**。空なら ELM327 フォールバック |
+| `serial_port` | string | `"/dev/rfcomm0"` | ELM327 のシリアルポート (can_interface 空時のみ使用) |
 | `webhook_url` | string | `""` | GAS Webhook の URL。空の場合はデータ送信しない |
 | `obd_protocol` | string | `"6"` | ELM327 の ATSP コマンド値。`"0"`=自動検出, `"6"`=CAN 11bit 500k |
-| `poll_interval_ms` | int | `500` | OBD ポーリング間隔 (ms)。ECU応答速度に依存 |
+| `poll_interval_ms` | int | `50` | OBD 取得間隔 (ms)。CAN 直結なら 50、ELM327 なら 200 推奨 |
 | `local_api_port` | int | `9090` | メーター UI 用のローカル API ポート |
 
 ### 車両パラメータ

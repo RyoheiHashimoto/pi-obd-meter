@@ -62,34 +62,76 @@ head -10 scripts/deploy.sh | grep PI=
 ```bash
 ./scripts/deploy.sh ssh
 
-# Bluetooth有効化の確認
-sudo systemctl status bluetooth
-
-# 必要パッケージのインストール
+# 必要パッケージのインストール (Wayland キオスク + CAN ツール)
 sudo apt update
-sudo apt install -y bluez bluez-tools chromium-browser xserver-xorg xinit unclutter
+sudo apt install -y \
+  greetd labwc cog swaybg wlr-randr \
+  can-utils \
+  unclutter
+```
+
+X11 / Chromium / lightdm / xserver-xorg は不要。bluez も CAN 直結構成では不要 (ELM327 フォールバック時のみ必要)。
+
+---
+
+## 2A. CAN HAT 直結 (推奨)
+
+### Step 1: ハードウェア接続
+
+- CAN HAT (例: Waveshare RS485 CAN HAT、MCP2515) を Pi GPIO に装着
+- CAN High/Low を OBD-II コネクタの 6 番/14 番に接続 (車種により異なる、サービスマニュアル要参照)
+
+### Step 2: `/boot/firmware/config.txt` に追記
+
+```
+dtparam=spi=on
+dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25
+```
+
+⚠ クリスタル周波数は HAT の実装差に注意。**12MHz が一般的** だが 8MHz / 16MHz もある。`oscillator=` を実装に合わせる。
+
+### Step 3: `can0` 起動設定
+
+`/etc/network/interfaces.d/can0`:
+```
+auto can0
+iface can0 inet manual
+  pre-up /sbin/ip link set $IFACE type can bitrate 500000 restart-ms 100
+  up /sbin/ifconfig $IFACE up
+  down /sbin/ifconfig $IFACE down
+```
+
+再起動後:
+```bash
+ip -details link show can0
+candump can0  # フレーム受信確認 (エンジン始動時)
+```
+
+### Step 4: `configs/config.json` 設定
+
+```json
+{
+  "can_interface": "can0",
+  "serial_port": "",
+  ...
+}
 ```
 
 ---
 
-## 2. ELM327 Bluetooth ペアリング
+## 2B. ELM327 Bluetooth (フォールバック)
+
+CAN HAT が用意できない場合の簡易構成。対応 PID 少なめ、レイテンシ大。
 
 > **注意**: Pi 4 は WiFi と Bluetooth が同じチップを共有している。Bluetooth 操作中に WiFi が不安定になることがある。
 
-### Step 1: Bluetooth アダプタ準備
-
 ```bash
+sudo apt install -y bluez bluez-tools
 sudo rfkill unblock bluetooth
 sudo systemctl restart bluetooth
 sudo hciconfig hci0 class 0x200000
 sudo hciconfig hci0 piscan
-```
 
-### Step 2: ELM327 スキャン & ペアリング
-
-ELM327 の電源スイッチを ON にし、車のキーを ACC 以上にしてから実行:
-
-```bash
 hcitool scan
 # → 00:1D:A5:XX:XX:XX  OBDII のように表示される
 
@@ -98,22 +140,24 @@ bluetoothctl
   # PINを聞かれたら 1234 を入力
   trust XX:XX:XX:XX:XX:XX
   quit
-```
 
-### Step 3: rfcomm バインド
-
-```bash
 sudo rfcomm bind 0 XX:XX:XX:XX:XX:XX
-ls -la /dev/rfcomm0
 ```
 
-### 起動時の自動バインド
-
-`/etc/rc.local` の `exit 0` の前に追記:
+起動時の自動バインド: `/etc/rc.local` の `exit 0` の前に:
 ```bash
 hciconfig hci0 class 0x200000
 hciconfig hci0 piscan
 rfcomm bind 0 XX:XX:XX:XX:XX:XX
+```
+
+`configs/config.json`:
+```json
+{
+  "can_interface": "",
+  "serial_port": "/dev/rfcomm0",
+  ...
+}
 ```
 
 ---
@@ -192,27 +236,44 @@ Google Sheets で新しいスプレッドシートを作成。
 
 ---
 
-## 6. キオスクモード
+## 6. キオスクモード (Wayland + WPE WebKit)
 
-Chromium をフルスクリーンで自動起動し、5インチ LCD にメーター画面を表示する。
+cog (WPE WebKit ランチャ) をフルスクリーンで自動起動し、5インチ LCD にメーター画面を表示する。
 
 ### 仕組み
 
-- `pi-obd-meter.service` 起動後に `kiosk.service` が起動
-- `kiosk.sh` が WiFi 接続を30秒待ち、API の起動を待ってから Chromium を起動
-- スクリーンセーバー無効化、マウスカーソル非表示
-- Chromium の翻訳バー・初回セットアップ・拡張機能を無効化
-- ディスクキャッシュを `/dev/null` に設定（SD書き込み回避）
+```
+systemd ──> greetd (autologin laurel)
+              └─> labwc (Wayland compositor)
+                   └─> ~/.config/labwc/autostart
+                        ├─> swaybg (黒背景)
+                        └─> /opt/pi-obd-meter/configs/cog-kiosk.sh
+                              └─> cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
+```
+
+- **greetd** が laurel ユーザーで自動ログイン
+- **labwc** が Wayland コンポジタとして起動、autostart から swaybg と cog を同時起動
+- **cog** (WPE WebKit 0.18.4+) が `localhost:9090/meter.html` をフルスクリーン表示
+- `cog-kiosk.sh` が pi-obd-meter API 起動を待ってから cog を exec
+- `XCURSOR_THEME=blank` で空カーソルテーマ指定 (labwc rc.xml で `<cursorTheme name="blank">` も併用)
+
+Chromium / X11 / lightdm は使わない。理由:
+- Wayland 起動時の白フラッシュが Chromium Ozone で残るバグがある (crbug.com/40207942)
+- WPE WebKit は wl_surface の map を first-content-commit まで遅延するため白フラッシュなし
+- メモリフットプリント (~100MB) が Chromium (~400MB) より大幅軽量
+- 起動時間も短い
 
 ### キオスク終了
 
-**画面のどこでも3秒長押し** するとキオスクが終了する。
-WiFi設定やコンソール操作が必要な時に使用。
+**画面のどこでも3秒長押し** するとキオスクが終了する (`POST /api/kiosk/stop` → `pkill cog`)。
+SSH もキーボードも使えないときのコンソール操作用。
 
-### WiFi ガード
+### カーソル非表示
 
-WiFi 未接続時はキオスクを起動しない。
-これにより、SSH もキーボードも使えないときにコンソールで WiFi 設定が可能。
+Wayland では `unclutter` (X11 専用) は効かない。代わりに:
+- labwc `rc.xml` の `<theme><cursorTheme name="blank"/>` で透明カーソルテーマ指定
+- `/usr/share/icons/blank/cursors/default` に 1x1 透明の xcursor ファイル配置
+- `meter.css` の `* { cursor: none !important }` で念押し
 
 ---
 
