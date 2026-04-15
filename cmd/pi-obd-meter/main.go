@@ -138,9 +138,9 @@ func main() {
 					return
 				case <-ticker.C:
 					t += 0.05
-					speed := 70 + 70*math.Sin(t*0.3)
-					rpm := 800 + speed*35
-					throttle := 5 + 40*math.Max(0, math.Sin(t*0.5))
+					speed := 90 + 90*math.Sin(t*0.3)                // 0 - 180 (full range)
+					rpm := 1000 + 6500*math.Max(0, math.Sin(t*0.25)) // 1000 - 7500
+					throttle := 50 + 50*math.Sin(t*0.5)              // 0 - 100 (full range)
 					gear := 1
 					if speed > 100 {
 						gear = 4
@@ -153,7 +153,7 @@ func main() {
 						SpeedKmh:       speed,
 						RPM:            rpm,
 						ThrottlePos:    throttle,
-						IntakeMAP:      30 + throttle*0.7,
+						IntakeMAP:      50 + 50*math.Sin(t*0.35), // 0-100 kPa = -1.0 Bar 〜 0 Bar (full range)
 						CoolantTemp:    88,
 						FuelEconomy:    8 + 4*math.Sin(t*0.4),
 						AvgFuelEconomy: 9.5,

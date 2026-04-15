@@ -2,6 +2,8 @@
 // Indicators — 右パネル MAP メーター + 4行インジケーター
 // ============================================================
 
+import { addOffsetShadow } from './gauge.js';
+
 // SVG filter glow 無効化 (fake bloom で代替)
 function setFilter(_el, _v) { /* no-op */ }
 
@@ -350,6 +352,7 @@ export function createIndicators(panelEl) {
 
   // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
+  addOffsetShadow(mapValEl);
   mapValEl.textContent = '--';
   // Unit
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });

@@ -98,6 +98,23 @@ function bloomText(textEl, strokeWidth = 3, opacity = 0.4) {
 function applyGlow(_el, _color, _strength) { /* no-op (use bloom is declarative) */ }
 function removeGlow(_el) { /* no-op */ }
 
+// オフセット影 (SVG text 用、CSS text-shadow は WebKit 未対応)
+// 同じ text 要素を dx/dy オフセット + 暗色で下敷きに複製
+export function addOffsetShadow(textEl, dx = 2, dy = 3, color = 'rgba(0,0,0,0.6)') {
+  const sh = textEl.cloneNode(true);
+  sh.removeAttribute('id');
+  sh.setAttribute('x', parseFloat(textEl.getAttribute('x')) + dx);
+  sh.setAttribute('y', parseFloat(textEl.getAttribute('y')) + dy);
+  sh.setAttribute('fill', color);
+  sh.removeAttribute('stroke');
+  sh.style.pointerEvents = 'none';
+  textEl.parentNode.insertBefore(sh, textEl);
+  // textContent 同期
+  new MutationObserver(() => { sh.textContent = textEl.textContent; })
+    .observe(textEl, { childList: true, characterData: true, subtree: true });
+  return textEl;
+}
+
 // 速度→ゲージ色（ZJ-VE / DYデミオ実用域に合わせた8段階）
 export function speedColor(v) {
   if (v >= 130) return '#f44336'; // 赤
@@ -433,6 +450,7 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmReadY = cy - Math.round(throttleR / 2) + 5;
   const rpmValEl = svgEl(svg, 'text', { x: cx, y: rpmReadY, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
   rpmValEl.textContent = '--';
+  addOffsetShadow(rpmValEl);
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
@@ -440,6 +458,7 @@ export function buildSpeedGauge(svgId, cfg) {
   const numY = cy + r * 0.35;
   const nm = svgEl(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
   nm.textContent = '0';
+  addOffsetShadow(nm);
 
   // Unit label
   const unitY = numY + numSz * 0.45;
