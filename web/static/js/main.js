@@ -56,10 +56,22 @@ function connectWebSocket() {
     wsRetryCount = 0;
   };
 
+  let lastMsgAt = performance.now();
+  let lastObdConnected = true;
   ws.onmessage = (ev) => {
+    const now = performance.now();
+    const gap = now - lastMsgAt;
+    lastMsgAt = now;
     connected = true;
     if (window.__wsAlive) window.__wsAlive();
-    applyData(JSON.parse(ev.data));
+    const d = JSON.parse(ev.data);
+    const obdOn = d.obd_connected !== false;
+    // OBD 接続中のみ ws_gap 判定 (未接続時は backend heartbeat で 1s 間隔=正常)
+    if (obdOn && lastObdConnected && gap > 500) {
+      reportError('ws_gap', { gap_ms: Math.round(gap) });
+    }
+    lastObdConnected = obdOn;
+    applyData(d);
   };
 
   ws.onclose = () => {

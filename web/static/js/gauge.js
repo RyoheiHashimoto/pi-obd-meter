@@ -63,6 +63,10 @@ function createBloom(parent, tag, attrs, bloomExtra = 12, bloomOpacity = 0.28) {
   }
   main._bloom = bloom;
   main._isCloneBloom = useClone;
+  // bloom に初期から残像用 transition を適用 (針が動いたあと尾を引いて追従)
+  if (useClone) {
+    bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
+  }
   // stroke 変化を bloom にも自動反映 (clone 方式用)
   if (useClone) {
     const origSet = main.setAttribute.bind(main);
@@ -400,14 +404,14 @@ export function buildSpeedGauge(svgId, cfg) {
   const rangeX = cx - r - 10;
   const rangeY = 62;
   const boxW = 64, boxH = 62, boxR = 8;
-  const rangeBox = svgEl(svg, 'rect', { x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
+  const rangeBox = svgEl(svg, 'rect', { class: 'acc-dim', x: rangeX - boxW/2, y: rangeY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
   gearSubEl = svgEl(svg, 'text', { x: rangeX, y: rangeY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearSubEl.textContent = '';
   gearSubEl._box = rangeBox;
   // Gear number (右上、アークの外) — 枠付き
   const gearNumX = cx + r + 2;
   const gearNumY = 62;
-  const gearBox = svgEl(svg, 'rect', { x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
+  const gearBox = svgEl(svg, 'rect', { class: 'acc-dim', x: gearNumX - boxW/2, y: gearNumY - boxH + 14, width: boxW, height: boxH, rx: boxR, fill: '#000', stroke: '#444', 'stroke-width': 3 });
   gearEl = svgEl(svg, 'text', { x: gearNumX, y: gearNumY, class: 'g-num', fill: '#555', 'font-size': 52, 'text-anchor': 'middle', 'dominant-baseline': 'auto' });
   gearEl._box = gearBox;
 
@@ -522,8 +526,8 @@ export function buildSpeedGauge(svgId, cfg) {
   }
 
   function restoreTransition() {
-    nd.style.transition = 'transform 0.15s ease-out';
-    if (nd._bloom) nd._bloom.style.transition = 'transform 0.15s ease-out';
+    nd.style.transition = 'transform 0.05s ease-out';  // 針は即応答
+    if (nd._bloom) nd._bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
   }
 
   return {

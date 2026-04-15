@@ -53,6 +53,8 @@ function createBloom(parent, tag, attrs, bloomExtra = 10, bloomOpacity = 0.3) {
   }
   main._bloom = bloom;
   if (useClone) {
+    // bloom に初期から残像用 transition を適用 (針が動いたあと尾を引いて追従)
+    bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
     const origSet = main.setAttribute.bind(main);
     main.setAttribute = (k, v) => {
       origSet(k, v);
@@ -202,6 +204,7 @@ function lerpMap() {
 // --- アイコン生成 ---
 function createIconPath(svg, x, y, pathD, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'acc-dim');
   g.setAttribute('transform', `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`);
   // bloom outline (下敷き、fill色を stroke として太く縁取り)
   const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -228,6 +231,7 @@ function createIconPath(svg, x, y, pathD, size) {
 
 function createLeafIcon(svg, x, y, size) {
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('class', 'acc-dim');
   g.setAttribute('transform', `translate(${x}, ${y}) rotate(60) scale(${size/20})`);
   // bloom outline (下敷き)
   const outlineBloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
@@ -367,7 +371,7 @@ export function createIndicators(panelEl) {
   // === 4行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
-    svgEl(svg, 'rect', { x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 });
+    svgEl(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 });
   }
 
   // Row 0: ECO
@@ -418,7 +422,10 @@ export function setMapDirect(pct, col) {
 }
 
 export function restoreMapTransition() {
-  if (mapNeedleEl) mapNeedleEl.style.transition = 'transform 0.15s ease-out';
+  if (mapNeedleEl) {
+    mapNeedleEl.style.transition = 'transform 0.05s ease-out';  // 針は即応答
+    if (mapNeedleEl._bloom) mapNeedleEl._bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
+  }
 }
 
 // OIL lamp colors

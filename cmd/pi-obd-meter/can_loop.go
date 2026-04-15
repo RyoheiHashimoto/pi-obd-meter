@@ -32,7 +32,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 
 	const (
 		reconnectInterval = 10 * time.Second
-		staleTimeout      = 3 * time.Second // CAN無通信でエンジンOFF判定
+		staleTimeout      = 1 * time.Second // エンジン ECU (IDEngine 100Hz) 無通信で OFF 判定
 		obdQueryInterval  = 4               // OBDクエリは N tick ごと（N×intervalMs）
 	)
 
@@ -127,6 +127,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				}
 
 				mu.Lock()
+				// lastFrameTime はエンジン ECU (IDEngine) フレームのみで更新
+				// (エンジン OFF 後も他 ECU が 10秒以上信号送り続けるため、エンジン停止判定を遅らせないように)
 				switch frame.ID {
 				case can.IDEngine:
 					rpm, speedKmh, engineLoad = can.DecodeEngine(frame.Data)
@@ -134,20 +136,15 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 					lastFrameTime = time.Now()
 				case can.IDATCtrl:
 					gear, gearRatio = can.DecodeATCtrl(frame.Data)
-					lastFrameTime = time.Now()
 				case can.IDATStatus:
 					_, atRange, hold, tcLocked, shifting = can.DecodeATStatus(frame.Data)
-					lastFrameTime = time.Now()
 				case can.IDCoolant:
 					ct, _ := can.DecodeCoolant(frame.Data)
 					coolantTemp = ct
-					lastFrameTime = time.Now()
 				case can.IDElectric:
 					_, voltage, baroKPa = can.DecodeElectric(frame.Data)
-					lastFrameTime = time.Now()
 				case can.IDWheels:
 					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
-					lastFrameTime = time.Now()
 				case can.IDOBDResponse:
 					// OBD-2 レスポンス処理
 					if pid, data, ok := can.ParseOBDResponse(frame); ok {
@@ -231,8 +228,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			tickCount++
 
 			if sock == nil {
-				// ソケット未接続でも1秒ごとに切断状態を通知（UI更新用）
-				if tickCount%(1000/intervalMs) == 0 {
+				// ソケット未接続でも 100ms ごとに切断状態を通知 (UI 移行 smooth 化)
+				if tickCount%max(1, 100/intervalMs) == 0 {
 					select {
 					case ch <- OBDEvent{Connected: false, ReadAt: time.Now()}:
 					case <-ctx.Done():

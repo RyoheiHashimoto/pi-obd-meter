@@ -98,7 +98,10 @@ func main() {
 		fastIntervalMs = 150
 	}
 	obdCh := make(chan OBDEvent, 1)
-	if cfg.CANInterface != "" {
+	if *demo {
+		// デモモード: OBD リーダー起動しない (デモジェネレータと競合するため)
+		slog.Info("デモモード: OBD リーダー無効化")
+	} else if cfg.CANInterface != "" {
 		// CAN直結モード（SocketCAN パッシブモニタリング）
 		slog.Info("CAN直結モードで起動", "interface", cfg.CANInterface)
 		go canReaderLoop(ctx, cfg.CANInterface, fastIntervalMs, obdCh)
