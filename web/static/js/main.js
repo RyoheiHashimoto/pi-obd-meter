@@ -2,7 +2,7 @@
 // Main — エントリポイント + WebSocket / HTTP ポーリング
 // ============================================================
 
-import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
+import { buildSpeedGauge, updateThrottle, updateGear, speedColor, rpmColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax, setMapDirect, restoreMapTransition } from './indicators.js';
 
 const DEFAULTS = {
@@ -37,9 +37,9 @@ function applyData(d) {
   const obdOn = d.obd_connected !== false;
   document.body.classList.toggle('obd-offline', !obdOn);
   const spd = obdOn ? (d.speed_kmh || 0) : 0;
-  gs.update(spd, speedColor(spd));
+  const rpm = obdOn ? (d.rpm || 0) : 0;
+  gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateRPM(obdOn ? (d.rpm || 0) : 0);
   updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '-') : '-', obdOn && (d.hold || false), obdOn && (d.tc_locked || false));
   updateIndicators(dom, d, conf);
 }
@@ -210,7 +210,7 @@ function bootAnimation(gauge) {
         // Phase 1: 針 0 → MAX
         const t = easeInOut(elapsed / SWEEP_OUT);
         gauge.setDirect(t, spdCol);
-        gauge.setRPMDirect(t, rpmCol);
+        gauge.setSpeedDirect(t, rpmCol);
         gauge.setThrDirect(t, thrCol);
         setMapDirect(t, mapCol);
         requestAnimationFrame(frame);
@@ -218,14 +218,14 @@ function bootAnimation(gauge) {
         // Phase 2: 針 MAX → 0
         const t = easeInOut((elapsed - SWEEP_OUT) / SWEEP_BACK);
         gauge.setDirect(1 - t, spdCol);
-        gauge.setRPMDirect(1 - t, rpmCol);
+        gauge.setSpeedDirect(1 - t, rpmCol);
         gauge.setThrDirect(1 - t, thrCol);
         setMapDirect(1 - t, mapCol);
         requestAnimationFrame(frame);
       } else if (elapsed < SWEEP_OUT + SWEEP_BACK + FADE_IN) {
         // Phase 3: 針は 0、テキスト/ラベルが CSS transition でフェードイン
         gauge.setDirect(0, '#78909c');
-        gauge.setRPMDirect(0, '#222');
+        gauge.setSpeedDirect(0, '#222');
         gauge.setThrDirect(0, '#333');
         setMapDirect(0, '#333');
         // 一度だけ class 除去 (CSS で 800ms フェード開始)
