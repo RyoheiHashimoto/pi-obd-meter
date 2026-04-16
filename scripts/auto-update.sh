@@ -72,6 +72,11 @@ check_stable() {
         cp "${tmpdir}/pi-obd-scanner" "${DEST}/pi-obd-scanner"
         chmod +x "${DEST}/pi-obd-scanner"
     fi
+    # web/static を更新 (stable release でも UI 差し替え)
+    if [ -d "${tmpdir}/web/static" ]; then
+        mkdir -p "${DEST}/web/static"
+        cp -r "${tmpdir}/web/static/"* "${DEST}/web/static/"
+    fi
     systemctl start "$SERVICE"
 
     # ヘルスチェック（10秒以内にプロセスが生存しているか）
