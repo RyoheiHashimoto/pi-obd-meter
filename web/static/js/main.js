@@ -176,7 +176,7 @@ async function initApp() {
   gs = buildSpeedGauge('gs', {
     cx: 280, cy: 270, r: 230,
     min: 0, max: conf.max_speed_kmh, color: '#78909c',
-    unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 28,
+    unit: 'km/h', mj: 9, mn: 5, numSz: 84, tkSz: 32,
     fmt: v => v > 0.5 ? String(Math.round(v)) : '0'
   });
 
