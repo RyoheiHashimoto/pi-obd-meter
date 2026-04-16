@@ -474,7 +474,7 @@ export function buildSpeedGauge(svgId, cfg) {
   // 速度 外側アーク ArcAnimator (速度色で描画、目盛りなし)
   const spdAnimator = new ArcAnimator({
     cx, cy, r: outerR, maxVal: max, lerpSpeed: 0.4,
-    arcEl: spdArcEl, offColor: '#222', activeThreshold: 1,
+    arcEl: spdArcEl, offColor: '#78909c', activeThreshold: 0,
   });
   spdAnimator._lerp = function() {
     const delta = spdAnimator.tgt - spdAnimator.cur;
