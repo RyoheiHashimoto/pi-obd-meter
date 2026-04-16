@@ -256,7 +256,7 @@ export function updateGear(gear, range, hold, tcLocked) {
 
 // --- RPM色: 回転数に応じた色 ---
 // RPM→色（ZJ-VE 91PS/6000rpm, 124Nm/3500rpm に合わせた8段階）
-function rpmColor(rpm) {
+export function rpmColor(rpm) {
   if (rpm >= 5000) return '#f44336';  // 赤
   if (rpm >= 4000) return '#ff9800';  // 橙
   if (rpm >= 3500) return '#fdd835';  // 黄
@@ -268,12 +268,7 @@ function rpmColor(rpm) {
 }
 
 // --- RPM アニメーター ---
-let rpmAnimator;
 const RPM_MAX = 8000;
-
-export function updateRPM(rpm) {
-  if (rpmAnimator) rpmAnimator.update(rpm);
-}
 
 // --- スロットル アニメーター ---
 let thrAnimator;
@@ -365,29 +360,30 @@ export function buildSpeedGauge(svgId, cfg) {
   svgEl(svg, 'path', { d: arcPath(cx, cy, 200, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
   svgEl(svg, 'path', { d: arcPath(cx, cy, 175, ARC_START, ARC_END), fill: 'none', stroke: '#1a1a24', 'stroke-width': 1 });
 
-  // RPM トラック（radialGradient ストローク）
-  const rpmR = r + RPM_R_OFFSET;
-  createGradientTrack(svg, cx, cy, rpmR, 12, ARC_START, ARC_END, '#040408', '#3a3a48', '#040408');
+  // === 外側: 速度 (km/h) アーク ===
+  const outerR = r + RPM_R_OFFSET;
+  createGradientTrack(svg, cx, cy, outerR, 12, ARC_START, ARC_END, '#040408', '#3a3a48', '#040408');
+  const spdArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' }, 8, 0.35);
+
+  // === 中央: RPM トラック + レッドゾーン ===
+  createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
   // Redzone background (6500-8000)
   const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
-  createGradientTrack(svg, cx, cy, rpmR, 12, redStart, ARC_END, '#200000', '#7a0000', '#200000');
-  const rpmArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 10, 'stroke-linecap': 'round' }, 8, 0.35);
+  createGradientTrack(svg, cx, cy, r, 16, redStart, ARC_END, '#200000', '#7a0000', '#200000');
 
-  // 速度トラック（radialGradient ストローク）
-  createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
-
-  // Ticks
-  const total = mj * mn;
-  for (let i = 0; i <= total; i++) {
-    const a = ARC_START + (i / total) * ARC_SWEEP;
-    const isMj = i % mn === 0;
+  // RPM 目盛り (0〜8, ×1000)
+  const rpmMj = 8, rpmMn = 5;
+  const rpmTotal = rpmMj * rpmMn;
+  for (let i = 0; i <= rpmTotal; i++) {
+    const a = ARC_START + (i / rpmTotal) * ARC_SWEEP;
+    const isMj = i % rpmMn === 0;
     const ri = isMj ? r - 30 : r - 18;
     const ro = r + 4;
     const [x1, y1] = polarToXY(cx, cy, ri, a);
     const [x2, y2] = polarToXY(cx, cy, ro, a);
     svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 5 : 2.5 });
     if (isMj) {
-      const v = min + (i / total) * (max - min);
+      const v = (i / rpmTotal) * (RPM_MAX / 1000); // 0〜8
       const [lx, ly] = polarToXY(cx, cy, r - 54, a);
       const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': tkSz });
       t.textContent = Math.round(v);
@@ -433,15 +429,13 @@ export function buildSpeedGauge(svgId, cfg) {
   bloomText(holdLabelEl, 2.5, 0.4);
   bloomText(lockLabelEl, 2.5, 0.4);
 
-  // Value arc
-  const va = createBloom(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 12, 'stroke-linecap': 'round' }, 10, 0.38);
-  applyGlow(va, cfg.color);
+  // RPM Value arc (中央、針と連動)
+  const rpmArc = createBloom(svg, 'path', { d: '', fill: 'none', stroke: cfg.color, 'stroke-width': 12, 'stroke-linecap': 'round' }, 10, 0.38);
 
-  // Needle
+  // RPM Needle (中央)
   const [nx0, ny0] = polarToXY(cx, cy, r - 24, ARC_START);
   const [tx0, ty0] = polarToXY(cx, cy, -16, ARC_START);
   const nd = createBloom(svg, 'line', { x1: tx0, y1: ty0, x2: nx0, y2: ny0, stroke: cfg.color, 'stroke-width': 6, 'stroke-linecap': 'round', 'transform-origin': `${cx}px ${cy}px` }, 10, 0.3);
-  applyGlow(nd, cfg.color);
 
   // Center dot
   svgEl(svg, 'circle', { cx, cy, r: 8, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
@@ -470,60 +464,69 @@ export function buildSpeedGauge(svgId, cfg) {
   thrLabel.textContent = 'THROTTLE';
   bloomText(thrLabel, 2.5, 0.4);
 
-  // ArcAnimator インスタンス生成
+  // === ArcAnimator ===
+  // スロットル (内側)
   thrAnimator = new ArcAnimator({
     cx, cy, r: throttleR, maxVal: 100, lerpSpeed: 0.4,
     arcEl: thrArcEl, offColor: '#333', activeThreshold: 0.5, labelEl: thrLabel, dimZone: 5,
   });
 
-  // RPM ArcAnimator（目盛り数字の上を通過、色はRPMに応じて動的変化）
-  rpmAnimator = new ArcAnimator({
-    cx, cy, r: rpmR, maxVal: RPM_MAX, lerpSpeed: 0.4,
-    arcEl: rpmArcEl, offColor: '#222', activeThreshold: 100,
+  // 速度 外側アーク ArcAnimator (速度色で描画、目盛りなし)
+  const spdAnimator = new ArcAnimator({
+    cx, cy, r: outerR, maxVal: max, lerpSpeed: 0.4,
+    arcEl: spdArcEl, offColor: '#222', activeThreshold: 1,
   });
-  rpmAnimator._lerp = function() {
-    const delta = rpmAnimator.tgt - rpmAnimator.cur;
-    rpmAnimator.cur = Math.abs(delta) > LERP_THRESHOLD ? rpmAnimator.cur + delta * rpmAnimator.lerpSpeed : rpmAnimator.tgt;
-    const pct = Math.max(0, Math.min(100, rpmAnimator.cur / rpmAnimator.maxVal * 100));
+  spdAnimator._lerp = function() {
+    const delta = spdAnimator.tgt - spdAnimator.cur;
+    spdAnimator.cur = Math.abs(delta) > LERP_THRESHOLD ? spdAnimator.cur + delta * spdAnimator.lerpSpeed : spdAnimator.tgt;
+    const pct = Math.max(0, Math.min(100, spdAnimator.cur / spdAnimator.maxVal * 100));
     const angle = ARC_START + (pct / 100) * ARC_SWEEP;
-    rpmArcEl.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, rpmR, ARC_START, angle) : '');
-    const active = rpmAnimator.cur > rpmAnimator.activeThreshold;
-    const col = active ? rpmColor(rpmAnimator.cur) : rpmAnimator.offColor;
-    rpmArcEl.setAttribute('stroke', col);
-    applyGlow(rpmArcEl, col);
-    rpmValEl.textContent = active ? Math.round(rpmAnimator.cur).toLocaleString() : '--';
-    rpmValEl.setAttribute('fill', col);
-    rpmUnitEl.setAttribute('fill', '#fff');
-    rpmAnimator.rafId = Math.abs(rpmAnimator.cur - rpmAnimator.tgt) > LERP_STOP ? requestAnimationFrame(rpmAnimator._lerp) : 0;
+    spdArcEl.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, outerR, ARC_START, angle) : '');
+    const active = spdAnimator.cur > spdAnimator.activeThreshold;
+    const col = active ? speedColor(spdAnimator.cur) : spdAnimator.offColor;
+    spdArcEl.setAttribute('stroke', col);
+    // 速度の数値も更新 (大きい数字)
+    nm.textContent = cfg.fmt(spdAnimator.cur);
+    nm.setAttribute('fill', col);
+    spdAnimator.rafId = Math.abs(spdAnimator.cur - spdAnimator.tgt) > LERP_STOP ? requestAnimationFrame(spdAnimator._lerp) : 0;
   };
 
-  // Speed Lerp animation
-  let curVal = min, tgtVal = min, rafId = 0;
-  function lerp() {
-    const delta = tgtVal - curVal;
-    curVal = Math.abs(delta) > LERP_THRESHOLD ? curVal + delta * LERP_SPEED : tgtVal;
-    const clamped = Math.max(min, Math.min(max, curVal));
-    const angle = ARC_START + ((clamped - min) / (max - min)) * ARC_SWEEP;
-    va.setAttribute('d', clamped > min + 0.001 ? arcPath(cx, cy, r, ARC_START, angle) : '');
-    nm.textContent = cfg.fmt(curVal);
-    rafId = Math.abs(curVal - tgtVal) > LERP_STOP ? requestAnimationFrame(lerp) : 0;
+  // RPM 中央アーク + 針 LERP (RPM色で描画)
+  let rpmCur = 0, rpmTgt = 0, rpmRafId = 0;
+  function rpmLerp() {
+    const delta = rpmTgt - rpmCur;
+    rpmCur = Math.abs(delta) > LERP_THRESHOLD ? rpmCur + delta * LERP_SPEED : rpmTgt;
+    const pct = Math.max(0, Math.min(100, rpmCur / RPM_MAX * 100));
+    const angle = ARC_START + (pct / 100) * ARC_SWEEP;
+    rpmArc.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, r, ARC_START, angle) : '');
+    const active = rpmCur > 100;
+    const col = active ? rpmColor(rpmCur) : '#222';
+    rpmArc.setAttribute('stroke', col);
+    nd.setAttribute('stroke', col);
+    rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
+    // RPM 数字
+    rpmValEl.textContent = active ? Math.round(rpmCur).toLocaleString() : '--';
+    rpmValEl.setAttribute('fill', col);
+    rpmUnitEl.setAttribute('fill', '#fff');
+    rpmRafId = Math.abs(rpmCur - rpmTgt) > LERP_STOP ? requestAnimationFrame(rpmLerp) : 0;
   }
 
-  // 直接アニメーション（LERP なし、起動アニメ用）
-  // 起動アニメ中は glow 無し (Pi 4 WPE で feGaussianBlur x 4 が重い)
+  // 起動アニメ用 直接アニメーション (LERP なし)
   function setDirect(pct, col) {
+    // RPM 中央アーク + 針 (主役)
     const angle = ARC_START + pct * ARC_SWEEP;
-    va.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, r, ARC_START, angle) : '');
+    rpmArc.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, r, ARC_START, angle) : '');
     nd.style.transition = 'none';
     if (nd._bloom) nd._bloom.style.transition = 'none';
     rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
-    if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); }
+    if (col) { nd.setAttribute('stroke', col); rpmArc.setAttribute('stroke', col); }
   }
 
-  function setRPMDirect(pct, col) {
+  function setSpeedDirect(pct, col) {
+    // 速度 外側アーク
     const angle = ARC_START + pct * ARC_SWEEP;
-    rpmArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, rpmR, ARC_START, angle) : '');
-    if (col) rpmArcEl.setAttribute('stroke', col);
+    spdArcEl.setAttribute('d', pct > 0.001 ? arcPath(cx, cy, outerR, ARC_START, angle) : '');
+    if (col) spdArcEl.setAttribute('stroke', col);
   }
 
   function setThrDirect(pct, col) {
@@ -533,20 +536,22 @@ export function buildSpeedGauge(svgId, cfg) {
   }
 
   function restoreTransition() {
-    nd.style.transition = 'transform 0.05s ease-out';  // 針は即応答
+    nd.style.transition = 'transform 0.05s ease-out';
     if (nd._bloom) nd._bloom.style.transition = 'transform 0.8s cubic-bezier(0.18, 0.89, 0.32, 1.15)';
   }
 
   return {
-    update(value, col) {
-      tgtVal = value;
-      const clamped = Math.max(min, Math.min(max, value));
-      const angle = ARC_START + ((clamped - min) / (max - min)) * ARC_SWEEP;
-      rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
-      if (col) { nd.setAttribute('stroke', col); va.setAttribute('stroke', col); nm.setAttribute('fill', col); }
-      if (!rafId) rafId = requestAnimationFrame(lerp);
+    // speed: 速度 → 外側アーク + 大数値
+    // rpm: RPM → 中央アーク + 針 + RPM 数字
+    update(speed, rpm, spdCol, rpmCol) {
+      // 速度 (外側アーク + 大数値)
+      spdAnimator.update(speed);
+      // RPM (中央アーク + 針)
+      rpmTgt = rpm;
+      if (rpmCol) { nd.setAttribute('stroke', rpmCol); rpmArc.setAttribute('stroke', rpmCol); }
+      if (!rpmRafId) rpmRafId = requestAnimationFrame(rpmLerp);
     },
-    setDirect, setRPMDirect, setThrDirect, restoreTransition,
+    setDirect, setSpeedDirect, setThrDirect, restoreTransition,
     getElements() { return { nm, rpmValEl, rpmUnitEl, thrLabel }; }
   };
 }

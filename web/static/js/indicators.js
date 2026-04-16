@@ -330,7 +330,7 @@ export function createIndicators(panelEl) {
     if (isMj) {
       const v = VAC_MIN + (i / VAC_TOTAL) * (VAC_MAX - VAC_MIN);
       const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 32, a);
-      const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 22 });
+      const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 18 });
       t.textContent = v === 0 ? '0' : v.toFixed(1).replace('-0.', '-.');
     }
   }
