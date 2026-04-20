@@ -185,6 +185,8 @@ async function initApp() {
 
   // フリーズ検知 watchdog (rAF 停止時 自動リロード)
   startWatchdog();
+  // バージョン更新検知 (auto-update 後に自動リロード)
+  startVersionCheck();
 
   // WebSocket 優先、失敗時は HTTP polling にフォールバック
   connectWebSocket();
@@ -240,6 +242,24 @@ function bootAnimation(gauge) {
     }
     requestAnimationFrame(frame);
   });
+}
+
+// バージョン検知: auto-update 後にページ自動リロード
+function startVersionCheck() {
+  let currentVersion = null;
+  setInterval(async () => {
+    try {
+      const resp = await fetch('/api/config');
+      if (!resp.ok) return;
+      const cfg = await resp.json();
+      if (!cfg.version) return;
+      if (currentVersion === null) { currentVersion = cfg.version; return; }
+      if (cfg.version !== currentVersion) {
+        console.log('version changed:', currentVersion, '→', cfg.version, '→ reload');
+        location.reload();
+      }
+    } catch {}
+  }, 30000); // 30秒ごとにチェック
 }
 
 // フリーズ検知 watchdog: rAF が 3 秒以上止まったら自動リロード
