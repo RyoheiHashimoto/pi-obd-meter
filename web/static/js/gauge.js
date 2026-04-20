@@ -500,7 +500,7 @@ export function buildSpeedGauge(svgId, cfg) {
     const angle = ARC_START + (pct / 100) * ARC_SWEEP;
     rpmArc.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, r, ARC_START, angle) : '');
     const active = rpmCur > 100;
-    const col = active ? rpmColor(rpmCur) : '#222';
+    const col = active ? rpmColor(rpmCur) : '#78909c';
     rpmArc.setAttribute('stroke', col);
     nd.setAttribute('stroke', col);
     rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
