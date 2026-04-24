@@ -424,8 +424,11 @@ const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red
 // updateIndicators: APIデータで更新
 export function updateIndicators(dom, d, conf) {
   // バキューム (kPa → bar)
-  const mapKpa = d.intake_map || 0;
-  mapTgt = (mapKpa - 101.3) / 100;
+  // OBD 未接続時はバキューム値を更新しない (ACC→ON で針が最大値に張り付く問題の対策)
+  if (d.obd_connected !== false) {
+    const mapKpa = d.intake_map || 0;
+    mapTgt = (mapKpa - 101.3) / 100;
+  }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
   // ECO (平均燃費の数値、色は瞬間燃費)
