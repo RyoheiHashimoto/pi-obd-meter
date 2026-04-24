@@ -229,7 +229,7 @@ function bootAnimation(gauge) {
         gauge.setDirect(0, '#78909c');
         gauge.setSpeedDirect(0, '#222');
         gauge.setThrDirect(0, '#333');
-        setMapDirect(0, '#333');
+        setMapDirect(0, '#78909c');
         // 一度だけ class 除去 (CSS で 800ms フェード開始)
         document.body.classList.remove('booting');
         requestAnimationFrame(frame);
