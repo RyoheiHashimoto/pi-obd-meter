@@ -40,7 +40,7 @@ function applyData(d) {
   const rpm = obdOn ? (d.rpm || 0) : 0;
   gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '-') : '-', obdOn && (d.hold || false), obdOn && (d.tc_locked || false));
+  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '-') : '-', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
   updateIndicators(dom, d, conf);
 }
 

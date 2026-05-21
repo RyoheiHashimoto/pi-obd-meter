@@ -220,7 +220,11 @@ class ArcAnimator {
 // --- ギアポジション表示 ---
 let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
 
-export function updateGear(gear, range, hold, tcLocked) {
+// TCC ロック率の閾値: 95% 以上は完全ロック(緑)、未満はスリップロック(青)
+// median ≈ 97% (車両固有の設計スリップ。タイヤ周長や減速比の補正は不要)
+const TCC_FULL_LOCK_THRESHOLD = 95;
+
+export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
   if (!gearEl) return;
   const color = range === 'P' ? '#ffffff' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
 
@@ -247,10 +251,18 @@ export function updateGear(gear, range, hold, tcLocked) {
     holdLabelEl.setAttribute('fill', hold ? '#fdd835' : '#333');
     if (hold) applyGlow(holdLabelEl, '#fdd835', 'strong'); else removeGlow(holdLabelEl);
   }
-  // LOCK label
+  // LOCK label: OFF=灰 / FULL ロック=緑 / スリップロック=青
   if (lockLabelEl) {
-    lockLabelEl.setAttribute('fill', tcLocked ? '#69f0ae' : '#333');
-    if (tcLocked) applyGlow(lockLabelEl, '#69f0ae', 'strong'); else removeGlow(lockLabelEl);
+    let lockColor;
+    if (!tcLocked) {
+      lockColor = '#333';
+    } else if (tccLockPct == null || tccLockPct >= TCC_FULL_LOCK_THRESHOLD) {
+      lockColor = '#69f0ae'; // FULL (緑)
+    } else {
+      lockColor = '#29b6f6'; // SLIP (青、冷間水温と同じトーン)
+    }
+    lockLabelEl.setAttribute('fill', lockColor);
+    if (tcLocked) applyGlow(lockLabelEl, lockColor, 'strong'); else removeGlow(lockLabelEl);
   }
 }
 

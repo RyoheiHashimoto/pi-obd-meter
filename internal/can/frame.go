@@ -105,7 +105,7 @@ func (r ATRange) String() string {
 	case ATRangeL:
 		return "L"
 	default:
-		return "?"
+		return "--"
 	}
 }
 
