@@ -234,7 +234,7 @@ export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
   } else if (gear >= 1 && gear <= 4) {
     gearEl.textContent = String(gear);
   } else {
-    gearEl.textContent = '-';
+    gearEl.textContent = '--';
   }
   gearEl.setAttribute('fill', color);
   applyGlow(gearEl, color, 'strong');
@@ -251,18 +251,14 @@ export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
     holdLabelEl.setAttribute('fill', hold ? '#fdd835' : '#333');
     if (hold) applyGlow(holdLabelEl, '#fdd835', 'strong'); else removeGlow(holdLabelEl);
   }
-  // LOCK label: OFF=灰 / FULL ロック=緑 / スリップロック=青
+  // LOCK label: OFF=灰 / ロック中=緑 (スリップ時は点滅)
   if (lockLabelEl) {
-    let lockColor;
-    if (!tcLocked) {
-      lockColor = '#333';
-    } else if (tccLockPct == null || tccLockPct >= TCC_FULL_LOCK_THRESHOLD) {
-      lockColor = '#69f0ae'; // FULL (緑)
-    } else {
-      lockColor = '#29b6f6'; // SLIP (青、冷間水温と同じトーン)
-    }
+    const lockColor = tcLocked ? '#69f0ae' : '#333';
+    const isSlip = tcLocked && tccLockPct != null && tccLockPct < TCC_FULL_LOCK_THRESHOLD;
     lockLabelEl.setAttribute('fill', lockColor);
     if (tcLocked) applyGlow(lockLabelEl, lockColor, 'strong'); else removeGlow(lockLabelEl);
+    lockLabelEl.classList.toggle('lock-slip-blink', isSlip);
+    if (lockLabelEl._bloom) lockLabelEl._bloom.classList.toggle('lock-slip-blink', isSlip);
   }
 }
 
