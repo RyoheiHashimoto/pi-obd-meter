@@ -1,9 +1,10 @@
 [Unit]
-Description=Pi OBD Meter auto-update check
+Description=Pi OBD Meter auto-update (boot-time)
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=2min
+# 起動時 1 回のみ実行 (network-online は .service 側で待つ)
+# 周期実行は GitHub API rate limit (60/hr) を消費するため廃止
+OnBootSec=10sec
 
 [Install]
 WantedBy=timers.target
