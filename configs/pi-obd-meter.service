@@ -6,7 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStartPre=-/sbin/ip link set can0 down
-ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100
+# listen-only on: MCP2515 をハードウェア的に受信専用化 (送信物理ブロック、セキュリティ保証)
+ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100 listen-only on
 ExecStartPre=-/sbin/ip link set can0 up
 ExecStart=/opt/pi-obd-meter/pi-obd-meter -config /opt/pi-obd-meter/configs/config.json
 Restart=always
