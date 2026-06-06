@@ -109,13 +109,23 @@ candump can0  # フレーム受信確認 (エンジン始動時)
 
 ### Step 4: `configs/config.json` 設定
 
+`configs/config.json` は .gitignore で除外されているので、テンプレートからコピーして実値を埋める:
+
+```bash
+cp configs/config.json.example configs/config.json
+# エディタで開いて webhook_url を実際の GAS Webhook URL に置き換える
+```
+
 ```json
 {
   "can_interface": "can0",
   "serial_port": "",
+  "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
   ...
 }
 ```
+
+⚠ **`webhook_url` は実 URL を含むため絶対に git commit しないこと**。.gitignore で除外済みだが、誤って `git add -f configs/config.json` 等しないよう注意。
 
 ---
 

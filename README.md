@@ -177,7 +177,14 @@ hdmi_cvt 800 480 60 6 0 0 0
 
 ## 車両設定
 
-`configs/config.json` で車両ごとのパラメータを設定する。全パラメータの詳細は [docs/configuration.md](docs/configuration.md) を参照。
+初回セットアップ:
+```bash
+cp configs/config.json.example configs/config.json
+cp configs/config.mac.json.example configs/config.mac.json  # Mac demo 用 (任意)
+# webhook_url を実際の GAS Webhook URL に書き換える
+```
+
+`configs/config.json` は **.gitignore で除外**されている (実 URL を含むため)。全パラメータの詳細は [docs/configuration.md](docs/configuration.md) を参照。
 
 ```json
 {
