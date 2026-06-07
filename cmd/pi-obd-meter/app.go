@@ -13,15 +13,17 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
 )
 
-// oilStatusPayload はGASに送信するオイル状態
+// oilStatusPayload はGASに送信するメンテナンス状態 (オイル + 燃費精度検証用)
 type oilStatusPayload struct {
-	OilCurrentKm    float64   `json:"oil_current_km"`
-	OilRemainingKm  float64   `json:"oil_remaining_km"`
-	OilAlert        string    `json:"oil_alert"`
-	TotalKm         float64   `json:"total_km"`
-	TripKm          float64   `json:"trip_km"`
-	OdometerApplied bool      `json:"odometer_applied,omitempty"`
-	SentAt          time.Time `json:"sent_at"`
+	OilCurrentKm       float64   `json:"oil_current_km"`
+	OilRemainingKm     float64   `json:"oil_remaining_km"`
+	OilAlert           string    `json:"oil_alert"`
+	TotalKm            float64   `json:"total_km"`
+	TripKm             float64   `json:"trip_km"`
+	OdometerApplied    bool      `json:"odometer_applied,omitempty"`
+	AvgFuelEconomy     float64   `json:"avg_fuel_economy,omitempty"`     // Pi 計算の現在の平均燃費 (km/L)
+	FuelRateCorrection float64   `json:"fuel_rate_correction,omitempty"` // 補正係数 (config の値)
+	SentAt             time.Time `json:"sent_at"`
 }
 
 // gasMaintenanceResponse はGASからのメンテナンスレスポンス
@@ -164,13 +166,15 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		app.totalKmMu.Unlock()
 
 		payload := oilStatusPayload{
-			OilCurrentKm:    oil.CurrentKm,
-			OilRemainingKm:  oil.RemainingKm,
-			OilAlert:        string(oil.Alert),
-			TotalKm:         app.maintMgr.TotalKm(),
-			TripKm:          app.tracker.DistanceKm(),
-			OdometerApplied: odoApplied,
-			SentAt:          time.Now(),
+			OilCurrentKm:       oil.CurrentKm,
+			OilRemainingKm:     oil.RemainingKm,
+			OilAlert:           string(oil.Alert),
+			TotalKm:            app.maintMgr.TotalKm(),
+			TripKm:             app.tracker.DistanceKm(),
+			OdometerApplied:    odoApplied,
+			AvgFuelEconomy:     app.tracker.AvgFuelEconomy(),
+			FuelRateCorrection: app.cfg.FuelRateCorrection,
+			SentAt:             time.Now(),
 		}
 
 		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
