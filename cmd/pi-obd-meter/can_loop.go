@@ -37,10 +37,12 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	)
 
 	// OBD-2クエリ対象PID（ラウンドロビンで1 tickに1 PIDずつ送信）
-	// CAN直結モードでは速度・RPM・負荷・水温はCAN受信、OBDはMAF+MAPのみ
+	// CAN直結モードでは速度・RPM・負荷・水温はCAN受信、OBDで追加取得するもの:
 	obdPIDs := []byte{
-		obd.PIDMAFAirFlow, // 0x10
-		obd.PIDIntakeMAP,  // 0x0B
+		obd.PIDMAFAirFlow,  // 0x10 — MAF (燃費計算)
+		obd.PIDIntakeMAP,   // 0x0B — MAP (バキューム計、燃費計算)
+		obd.PIDFuelLevel,   // 0x2F — 燃料残量 (%)。ECU 非対応なら応答ゼロで害なし
+		obd.PIDAmbientTemp, // 0x46 — 外気温 (°C)。DY 廉価車は非対応の可能性大
 	}
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
