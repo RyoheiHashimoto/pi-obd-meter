@@ -432,9 +432,9 @@ export function updateIndicators(dom, d, conf) {
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
   // ECO (平均燃費の数値、色は瞬間燃費)
-  const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
+  const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
   const instantEco = d.fuel_economy || 0;
-  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--';
+  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
   let ecoCol;
   if (instantEco < 0 || instantEco < 0.1) {
     // エンブレ/停車: VACUUM 計と同じ色に同期
