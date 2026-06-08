@@ -102,9 +102,10 @@ function svgEl(parent, tag, attrs) {
 
 // --- アイコンパス (24x24 viewBox) ---
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
-const ICON_THERMO = 'M12 2C10.34 2 9 3.34 9 5v8.59c-1.22.73-2 2.05-2 3.41 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.36-.78-2.68-2-3.41V5c0-1.66-1.34-3-3-3zm0 2c.55 0 1 .45 1 1v9.13l.5.29C14.46 15 15 15.96 15 17c0 1.65-1.35 3-3 3s-3-1.35-3-3c0-1.04.54-2 1.5-2.58l.5-.29V5c0-.55.45-1 1-1z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
+// 歯車 (TCC ロック率インジケーター用)
+const ICON_GEAR = 'M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z';
 
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
@@ -135,12 +136,67 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
+let tccValEl, tccIconEl;
 let ecoValEl, ecoIconEls;
-let tempValEl, tempIconEl;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 
-// 閾値（config から設定可能）
+// ECO トレンド計算用の履歴 (平均燃費の時間変化を見るためのリングバッファ)
+const TREND_HIST = [];          // [{ t: ms, v: km/L }, ...]
+const TREND_WINDOW_MS = 5000;   // 5秒前と比較
+const TREND_HIST_MAX_MS = 10000;
+const TREND_SAMPLE_INTERVAL = 1000;
+const TREND_MIN_SAMPLES = 3;
+let trendLastSampleMs = 0;
+
+function updateTrendHistory(avg, nowMs) {
+  if (avg <= 0.1) {
+    // トリップリセット or 走行開始直後 → 履歴クリア
+    TREND_HIST.length = 0;
+    trendLastSampleMs = 0;
+    return;
+  }
+  if (nowMs - trendLastSampleMs < TREND_SAMPLE_INTERVAL) return;
+  trendLastSampleMs = nowMs;
+  TREND_HIST.push({ t: nowMs, v: avg });
+  while (TREND_HIST.length > 0 && nowMs - TREND_HIST[0].t > TREND_HIST_MAX_MS) {
+    TREND_HIST.shift();
+  }
+}
+
+function computeTrendRate(nowMs) {
+  if (TREND_HIST.length < TREND_MIN_SAMPLES) return null;
+  const cur = TREND_HIST[TREND_HIST.length - 1];
+  const targetT = nowMs - TREND_WINDOW_MS;
+  let oldest = TREND_HIST[0];
+  for (const s of TREND_HIST) {
+    if (s.t <= targetT) oldest = s; else break;
+  }
+  const dt = (cur.t - oldest.t) / 1000;
+  if (dt < 3) return null;
+  return (cur.v - oldest.v) / dt * 60; // km/L/分
+}
+
+// 変化率 → 色 (タコメーター色相と統一)
+function ecoTrendColor(rate) {
+  if (rate === null) return '#76ff03'; // 履歴不足: 黄緑 (中立)
+  if (rate >= 0.5)  return '#26c6da';  // 急改善 水色
+  if (rate >= 0.1)  return '#69f0ae';  // 改善 緑
+  if (rate >= -0.1) return '#76ff03';  // 横ばい 黄緑
+  if (rate >= -0.5) return '#fdd835';  // 軽悪化 黄
+  if (rate >= -1.5) return '#ff9800';  // 悪化 橙
+  return '#f44336';                     // 急悪化 赤
+}
+
+// TCC ロック状態 → 色
+function tccColor(tcLocked, pct, gear) {
+  if (!gear || gear < 1 || gear > 4) return '#666';      // ギア無効: 灰
+  if (tcLocked && pct >= 95) return '#69f0ae';           // フルロック: 緑
+  if (tcLocked) return '#29b6f6';                         // スリップロック: 青
+  return '#fff';                                          // 未ロック: 白 (流体カップリングのみ)
+}
+
+// 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
 let coolantNormalMax = 100;
 let coolantWarningMax = 104;
@@ -364,22 +420,22 @@ export function createIndicators(panelEl) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: ECO
-  const ecoY = IND_Y_START;
+  // Row 0: TCC ロック率 (歯車アイコン)
+  const tccY = IND_Y_START;
+  addIndPanel(tccY);
+  tccIconEl = createIconPath(svg, IND_X_ICON + 10, tccY - 8, ICON_GEAR, 40);
+  tccValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tccY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
+  tccValEl.textContent = '--';
+  svgEl(svg, 'text', { x: IND_X_UNIT, y: tccY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = '%';
+
+  // Row 1: ECO (葉アイコン、色 = 平均燃費の時間変化率)
+  const ecoY = IND_Y_START + IND_SPACING;
   addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
   ecoIconEls = leafIcons;
   ecoValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: ecoY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
-
-  // Row 1: TEMP
-  const tempY = IND_Y_START + IND_SPACING;
-  addIndPanel(tempY);
-  tempIconEl = createIconPath(svg, IND_X_ICON + 10, tempY - 8, ICON_THERMO, 40);
-  tempValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tempY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  tempValEl.textContent = '--';
-  svgEl(svg, 'text', { x: IND_X_UNIT, y: tempY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = '°C';
 
   // Row 2: TRIP
   const tripY = IND_Y_START + IND_SPACING * 2;
@@ -431,40 +487,37 @@ export function updateIndicators(dom, d, conf) {
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // ECO (平均燃費の数値、色は瞬間燃費)
+  // TCC ロック率 (歯車アイコン)
+  // 数値は ATCU 内部のロック状態に関係なく流体カップリング効率を示す
+  // 色はロック状態を表す: 緑=フルロック / 青=スリップロック / 白=未ロック / 灰=ギア無効
+  const gear = d.gear || 0;
+  const tcLocked = !!d.tc_locked;
+  const tccPct = d.tcc_lock_pct;
+  if (gear >= 1 && gear <= 4 && tccPct != null && tccPct >= 1) {
+    tccValEl.textContent = Math.round(tccPct);
+  } else {
+    tccValEl.textContent = '--';
+  }
+  const tccCol = tccColor(tcLocked, tccPct || 0, gear);
+  tccValEl.setAttribute('fill', tccCol);
+  tccIconEl.setAttribute('fill', tccCol);
+
+  // ECO (平均燃費数値、色 = 平均燃費の時間変化率)
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
-  const instantEco = d.fuel_economy || 0;
   ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
   let ecoCol;
-  if (instantEco < 0 || instantEco < 0.1) {
-    // エンブレ/停車: VACUUM 計と同じ色に同期
-    const vacBar = (mapKpa - 101.3) / 100;
-    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
-    const vacHue = (1 - vacPct / 100) * HUE_MAX;
-    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
+  if (avgEco <= 0.1) {
+    ecoCol = '#fff'; // データなし
   } else {
-    const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
-    ecoCol = `hsl(${hue}, 100%, 55%)`;
+    const now = performance.now();
+    updateTrendHistory(avgEco, now);
+    const rate = computeTrendRate(now);
+    ecoCol = ecoTrendColor(rate);
   }
   ecoValEl.setAttribute('fill', ecoCol);
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
-  // アイコン glow は Pi 4 軽量化のため廃止（色だけで表現）
-
-  // TEMP
-  const coolant = d.coolant_temp || 0;
-  if (coolant > 0) {
-    tempValEl.textContent = Math.round(coolant);
-    const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
-    tempValEl.setAttribute('fill', col);
-    tempIconEl.setAttribute('fill', col);
-  } else {
-    tempValEl.textContent = '--';
-    tempValEl.setAttribute('fill', '#333');
-    tempIconEl.setAttribute('fill', '#333');
-    setFilter(tempIconEl.parentNode, '');
-  }
 
   // TRIP
   const tripKm = d.trip_km || 0;
