@@ -143,37 +143,42 @@ let oilValEl, oilIconEl, oilLabelEl;
 
 // 瞬間燃費スムージング (3秒時定数の EMA)
 // 走行中の瞬間値は揺らぐので、3秒くらいの時定数で平均化して読みやすくする
-// EMA 時定数: 通常走行はキビキビ、エンブレ・アイドルはじっくり動かす
-const INST_SMOOTH_TC_NORMAL = 3000;  // 通常走行
-const INST_SMOOTH_TC_SLOW = 20000;    // エンブレ・アイドル (数字がゆっくり動く)
-const INST_CAP_KMPL = 99;             // 上限 (Pi 側の maxDisplayKmL と一致)
-let smoothedInst = null;
-let smoothInstLastT = 0;
-let prevSlowState = false;            // 前フレームでエンブレ/アイドルだったか
+// RPM 上昇幅の計算用 (1 秒前との差分で rpm/秒 を算出)
+const RPM_HIST = [];                 // [{ t: ms, v: rpm }, ...]
+const RPM_WINDOW_MS = 1000;          // 1 秒前と比較
+const RPM_HIST_MAX_MS = 3000;
+const RPM_SAMPLE_INTERVAL = 250;     // 4Hz サンプリング
+let rpmLastSampleMs = 0;
 
-// target を目標値として EMA を tcMs の時定数で追従させる
-function updateSmoothedInst(target, nowMs, tcMs) {
-  const capped = Math.min(Math.max(target, 0), INST_CAP_KMPL);
-  if (smoothedInst === null || smoothInstLastT === 0) {
-    smoothedInst = capped;
-    smoothInstLastT = nowMs;
-    return;
+function updateRpmHistory(rpm, nowMs) {
+  if (nowMs - rpmLastSampleMs < RPM_SAMPLE_INTERVAL) return;
+  rpmLastSampleMs = nowMs;
+  RPM_HIST.push({ t: nowMs, v: rpm });
+  while (RPM_HIST.length > 0 && nowMs - RPM_HIST[0].t > RPM_HIST_MAX_MS) {
+    RPM_HIST.shift();
   }
-  const dt = nowMs - smoothInstLastT;
-  smoothInstLastT = nowMs;
-  const alpha = 1 - Math.exp(-dt / tcMs);
-  smoothedInst = smoothedInst + alpha * (capped - smoothedInst);
 }
 
-// 差分 (瞬間 - 累積) → 色 (6段階、Row 1 ECO 累積と同じパレット)
-// アイドル時は smoothedInst が avg-2 に着地 → diff = -2 → 自然に黄になる
-function instDiffColor(diff) {
-  if (diff >= 5)  return '#26c6da';  // 水色 (急良、エンブレ・下り惰性)
-  if (diff >= 1)  return '#69f0ae';  // 緑 (良い、経済巡航)
-  if (diff >= -1) return '#76ff03';  // 黄緑 (中立、累積と同程度)
-  if (diff >= -3) return '#fdd835';  // 黄 (軽悪化、アイドル自然着地)
-  if (diff >= -5) return '#ff9800';  // 橙 (悪化)
-  return '#f44336';                   // 赤 (急悪化、急加速)
+function computeRpmRate(nowMs) {
+  if (RPM_HIST.length < 2) return null;
+  const cur = RPM_HIST[RPM_HIST.length - 1];
+  const targetT = nowMs - RPM_WINDOW_MS;
+  let oldest = RPM_HIST[0];
+  for (const s of RPM_HIST) {
+    if (s.t <= targetT) oldest = s; else break;
+  }
+  const dt = (cur.t - oldest.t) / 1000;
+  if (dt < 0.5) return null;
+  return (cur.v - oldest.v) / dt;  // rpm/秒
+}
+
+// RPM 上昇幅 → 色
+function rpmRateColor(rate) {
+  if (rate > 500)  return '#f44336';  // 赤   急上昇 (強加速)
+  if (rate > 100)  return '#ff9800';  // 橙   上昇
+  if (rate >= -100) return '#76ff03'; // 黄緑 安定
+  if (rate >= -500) return '#26c6da'; // 水色 下降 (coasting)
+  return '#42a5f5';                    // 青   急下降 (シフトアップ・エンブレ)
 }
 
 // ECO 累積平均値 → 色 (ZJ-VE の現実的な燃費帯ベース)
@@ -450,8 +455,8 @@ export function createIndicators(panelEl) {
   trendIcon = createTriangleIcon(svg, IND_X_ICON + 16, trendY - 8, 36);
   trendValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: trendY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   trendValEl.textContent = '--';
-  trendUnitEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: trendY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
-  trendUnitEl.textContent = 'km/L';
+  trendUnitEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: trendY + 4, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'end' });
+  trendUnitEl.textContent = 'rpm/s';
 
   // Row 1: ECO (葉アイコン、色 = 平均燃費の時間変化率)
   const ecoY = IND_Y_START + IND_SPACING;
@@ -512,69 +517,55 @@ export function updateIndicators(dom, d, conf) {
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // ECO 累積平均値 (Row 1) — 色は絶対値の閾値ベース
+  // ECO 累積平均 (Row 1) — 色は瞬間燃費ベース (元の仕様)
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
+  const instantEco = d.fuel_economy || 0;
   ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
-  const ecoCol = ecoValueColor(avgEco);
+  let ecoCol;
+  if (instantEco < 0 || instantEco < 0.1) {
+    // エンブレ/停車: VACUUM 計と同じ色に同期
+    const vacBar = (mapKpa - 101.3) / 100;
+    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
+    const vacHue = (1 - vacPct / 100) * HUE_MAX;
+    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
+  } else {
+    const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
+    ecoCol = `hsl(${hue}, 100%, 55%)`;
+  }
   ecoValEl.setAttribute('fill', ecoCol);
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
 
-  // Row 0: 瞬間燃費 + 三角形 (vs 累積)
-  // Pi 側の fuel_economy 値の意味と EMA 動作:
-  //   > 0: 通常走行 (km/L)         → target=raw, TC=3s (キビキビ反応)
-  //   = -1: エンブレ (fuel cut)    → target=99,  TC=20s (じわっと上昇)
-  //   = 0: 停車・低速 (<10km/h)    → target=avg-2, TC=20s (じわっと下降、自然に黄に着地)
-  const rawInst = d.fuel_economy;
-  const isEngBrake = rawInst === -1;
-  const isLowSpeed = rawInst === 0;
+  // Row 0: RPM 上昇幅 (rpm/秒) + 三角形 (方向)
+  const rpm = d.rpm || 0;
   const now = performance.now();
+  if (rpm >= 300) {
+    updateRpmHistory(rpm, now);
+  } else {
+    // エンジン停止/未受信 → 履歴クリア
+    RPM_HIST.length = 0;
+    rpmLastSampleMs = 0;
+  }
+  const rpmRate = computeRpmRate(now);
 
-  if (avgEco <= 0.1) {
-    // 累積未確定: 比較対象がない → 全中立、EMA も停止
-    smoothedInst = null;
-    smoothInstLastT = 0;
+  if (rpmRate === null || rpm < 300) {
+    // データ不足 or エンジン停止
     trendValEl.textContent = '--';
     trendValEl.setAttribute('fill', '#fff');
     trendUnitEl.setAttribute('fill', '#fff');
     trendIcon.setColor('#fff');
     trendIcon.setRotation(90);
   } else {
-    // 状態遷移検知: Slow (エンブレ/アイドル) → Normal の瞬間に snap
-    const isSlowState = isEngBrake || isLowSpeed;
-    const exitingSlow = prevSlowState && !isSlowState && rawInst > 0;
-    if (exitingSlow) {
-      // エンブレ/アイドル離脱: 即座に実値にリセット (戻りキビキビ)
-      smoothedInst = Math.min(rawInst, INST_CAP_KMPL);
-      smoothInstLastT = now;
-    } else if (rawInst > 0) {
-      updateSmoothedInst(rawInst, now, INST_SMOOTH_TC_NORMAL);
-    } else if (isEngBrake) {
-      updateSmoothedInst(INST_CAP_KMPL, now, INST_SMOOTH_TC_SLOW);
-    } else if (isLowSpeed) {
-      updateSmoothedInst(avgEco - 2, now, INST_SMOOTH_TC_SLOW);
-    }
-    prevSlowState = isSlowState;
-    // 表示
-    if (smoothedInst === null) {
-      // EMA 未蓄積 (起動直後など)
-      trendValEl.textContent = '--';
-      trendValEl.setAttribute('fill', '#fff');
-      trendUnitEl.setAttribute('fill', '#fff');
-      trendIcon.setColor('#fff');
-      trendIcon.setRotation(90);
-    } else {
-      trendValEl.textContent = smoothedInst.toFixed(2);
-      const diff = smoothedInst - avgEco;
-      const col = instDiffColor(diff);
-      trendValEl.setAttribute('fill', col);
-      trendUnitEl.setAttribute('fill', col);
-      trendIcon.setColor(col);
-      if (diff > 1)       trendIcon.setRotation(0);    // ▲ 上向き (累積より良い)
-      else if (diff < -1) trendIcon.setRotation(180);  // ▼ 下向き (累積より悪い)
-      else                trendIcon.setRotation(90);   // ▶ 横向き (累積近辺)
-    }
+    const sign = rpmRate >= 0 ? '+' : '';
+    trendValEl.textContent = sign + Math.round(rpmRate);
+    const col = rpmRateColor(rpmRate);
+    trendValEl.setAttribute('fill', col);
+    trendUnitEl.setAttribute('fill', col);
+    trendIcon.setColor(col);
+    if (rpmRate > 50)       trendIcon.setRotation(0);    // ▲ 上昇
+    else if (rpmRate < -50) trendIcon.setRotation(180);  // ▼ 下降
+    else                    trendIcon.setRotation(90);   // ▶ 安定
   }
 
   // TRIP
