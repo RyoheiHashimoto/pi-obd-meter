@@ -139,13 +139,14 @@ let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 let clockValEl;
 
-// 時計を HH:MM 形式で更新
+// 時計を HH:MM:SS 形式で更新
 function updateClock() {
   if (!clockValEl) return;
   const d = new Date();
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
-  clockValEl.textContent = `${h}:${m}`;
+  const s = String(d.getSeconds()).padStart(2, '0');
+  clockValEl.textContent = `${h}:${m}:${s}`;
 }
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
@@ -398,14 +399,15 @@ export function createIndicators(panelEl) {
   oilLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: oilY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
   oilLabelEl.textContent = 'km';
 
-  // Row 3: 現在時刻 (HH:MM、他行と同じスタイル、アイコン・枠あり)
+  // Row 3: 現在時刻 (HH:MM:SS、秒刻みで動く)
   const clockY = IND_Y_START + IND_SPACING * 3;
   addIndPanel(clockY);
   const clockIconEl = createIconPath(svg, IND_X_ICON + 10, clockY - 8, ICON_CLOCK, 40);
   clockIconEl.setAttribute('fill', '#fff');
-  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
+  // 8 文字 (HH:MM:SS) なので font-size を少し下げて行内に収める
+  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL + 20, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 34, 'text-anchor': 'middle' });
   updateClock();
-  setInterval(updateClock, 30000); // 30秒ごと更新 (分の境目をすぐ反映)
+  setInterval(updateClock, 1000); // 1 秒ごと更新
 
   return {};
 }
