@@ -104,9 +104,6 @@ function svgEl(parent, tag, attrs) {
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
-// 上向き三角形 (24x24 viewBox)、回転で下向きに切替
-const ICON_TRIANGLE_UP = 'M12 4 L22 20 L2 20 Z';
-
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
 function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
@@ -136,94 +133,9 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
-let trendValEl, trendUnitEl, trendIcon;  // { setColor, setRotation }
 let ecoValEl, ecoIconEls;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
-
-// 瞬間燃費スムージング (3秒時定数の EMA)
-// 走行中の瞬間値は揺らぐので、3秒くらいの時定数で平均化して読みやすくする
-// RPM 上昇幅の計算用 (1 秒前との差分で rpm/秒 を算出)
-const RPM_HIST = [];                 // [{ t: ms, v: rpm }, ...]
-const RPM_WINDOW_MS = 1000;          // 1 秒前と比較
-const RPM_HIST_MAX_MS = 3000;
-const RPM_SAMPLE_INTERVAL = 250;     // 4Hz サンプリング
-let rpmLastSampleMs = 0;
-
-function updateRpmHistory(rpm, nowMs) {
-  if (nowMs - rpmLastSampleMs < RPM_SAMPLE_INTERVAL) return;
-  rpmLastSampleMs = nowMs;
-  RPM_HIST.push({ t: nowMs, v: rpm });
-  while (RPM_HIST.length > 0 && nowMs - RPM_HIST[0].t > RPM_HIST_MAX_MS) {
-    RPM_HIST.shift();
-  }
-}
-
-function computeRpmRate(nowMs) {
-  if (RPM_HIST.length < 2) return null;
-  const cur = RPM_HIST[RPM_HIST.length - 1];
-  const targetT = nowMs - RPM_WINDOW_MS;
-  let oldest = RPM_HIST[0];
-  for (const s of RPM_HIST) {
-    if (s.t <= targetT) oldest = s; else break;
-  }
-  const dt = (cur.t - oldest.t) / 1000;
-  if (dt < 0.5) return null;
-  return (cur.v - oldest.v) / dt;  // rpm/秒
-}
-
-// RPM 上昇幅 → 色
-function rpmRateColor(rate) {
-  if (rate > 500)  return '#f44336';  // 赤   急上昇 (強加速)
-  if (rate > 100)  return '#ff9800';  // 橙   上昇
-  if (rate >= -100) return '#76ff03'; // 黄緑 安定
-  if (rate >= -500) return '#26c6da'; // 水色 下降 (coasting)
-  return '#42a5f5';                    // 青   急下降 (シフトアップ・エンブレ)
-}
-
-// ECO 累積平均値 → 色 (ZJ-VE の現実的な燃費帯ベース)
-function ecoValueColor(avg) {
-  if (avg <= 0.1) return '#fff';     // データなし
-  if (avg < 11)   return '#f44336';  // 赤
-  if (avg < 12)   return '#ff9800';  // 橙
-  if (avg < 13)   return '#fdd835';  // 黄
-  if (avg < 14)   return '#76ff03';  // 黄緑
-  if (avg < 15)   return '#69f0ae';  // 緑
-  return '#26c6da';                   // 水色
-}
-
-// 三角形アイコン (回転可能、ブルーム付き)
-function createTriangleIcon(svg, x, y, size) {
-  const outer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  outer.setAttribute('class', 'acc-dim');
-  outer.setAttribute('transform', `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`);
-  const inner = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  inner.setAttribute('transform', 'rotate(0 12 12)');
-  outer.appendChild(inner);
-  const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  bloom.setAttribute('d', ICON_TRIANGLE_UP);
-  bloom.setAttribute('fill', '#444');
-  bloom.setAttribute('stroke', '#444');
-  bloom.setAttribute('stroke-width', '3');
-  bloom.setAttribute('stroke-linejoin', 'round');
-  bloom.setAttribute('opacity', '0.45');
-  inner.appendChild(bloom);
-  const main = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  main.setAttribute('d', ICON_TRIANGLE_UP);
-  main.setAttribute('fill', '#444');
-  inner.appendChild(main);
-  svg.appendChild(outer);
-  return {
-    setColor(c) {
-      main.setAttribute('fill', c);
-      bloom.setAttribute('fill', c);
-      bloom.setAttribute('stroke', c);
-    },
-    setRotation(deg) {
-      inner.setAttribute('transform', `rotate(${deg} 12 12)`);
-    },
-  };
-}
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
@@ -443,23 +355,14 @@ export function createIndicators(panelEl) {
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
-  // === 4行インジケーター ===
+  // === 3行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: ECO トレンド (三角形アイコンが上下動を直接表現、+ 変化率 km/L/分)
-  const trendY = IND_Y_START;
-  addIndPanel(trendY);
-  trendIcon = createTriangleIcon(svg, IND_X_ICON + 16, trendY - 8, 36);
-  trendValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: trendY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  trendValEl.textContent = '--';
-  trendUnitEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: trendY + 4, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'end' });
-  trendUnitEl.textContent = 'rpm/s';
-
-  // Row 1: ECO (葉アイコン、色 = 平均燃費の時間変化率)
-  const ecoY = IND_Y_START + IND_SPACING;
+  // Row 0: ECO (葉アイコン、色 = 瞬間燃費ベース)
+  const ecoY = IND_Y_START;
   addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
   ecoIconEls = leafIcons;
@@ -467,16 +370,16 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 2: TRIP
-  const tripY = IND_Y_START + IND_SPACING * 2;
+  // Row 1: TRIP
+  const tripY = IND_Y_START + IND_SPACING;
   addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
   tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
-  // Row 3: OIL
-  const oilY = IND_Y_START + IND_SPACING * 3;
+  // Row 2: OIL
+  const oilY = IND_Y_START + IND_SPACING * 2;
   addIndPanel(oilY);
   oilIconEl = createIconPath(svg, IND_X_ICON + 10, oilY - 8, ICON_OIL, 40);
   oilValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: oilY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
@@ -537,36 +440,6 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
 
-  // Row 0: RPM 上昇幅 (rpm/秒) + 三角形 (方向)
-  const rpm = d.rpm || 0;
-  const now = performance.now();
-  if (rpm >= 300) {
-    updateRpmHistory(rpm, now);
-  } else {
-    // エンジン停止/未受信 → 履歴クリア
-    RPM_HIST.length = 0;
-    rpmLastSampleMs = 0;
-  }
-  const rpmRate = computeRpmRate(now);
-
-  if (rpmRate === null || rpm < 300) {
-    // データ不足 or エンジン停止
-    trendValEl.textContent = '--';
-    trendValEl.setAttribute('fill', '#fff');
-    trendUnitEl.setAttribute('fill', '#fff');
-    trendIcon.setColor('#fff');
-    trendIcon.setRotation(90);
-  } else {
-    const sign = rpmRate >= 0 ? '+' : '';
-    trendValEl.textContent = sign + Math.round(rpmRate);
-    const col = rpmRateColor(rpmRate);
-    trendValEl.setAttribute('fill', col);
-    trendUnitEl.setAttribute('fill', col);
-    trendIcon.setColor(col);
-    if (rpmRate > 50)       trendIcon.setRotation(0);    // ▲ 上昇
-    else if (rpmRate < -50) trendIcon.setRotation(180);  // ▼ 下降
-    else                    trendIcon.setRotation(90);   // ▶ 安定
-  }
 
   // TRIP
   const tripKm = d.trip_km || 0;
