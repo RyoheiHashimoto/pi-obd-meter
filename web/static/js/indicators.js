@@ -143,19 +143,16 @@ let oilValEl, oilIconEl, oilLabelEl;
 
 // 瞬間燃費スムージング (3秒時定数の EMA)
 // 走行中の瞬間値は揺らぐので、3秒くらいの時定数で平均化して読みやすくする
-const INST_SMOOTH_TC_MS = 3000;
-const INST_CAP_KMPL = 30;       // 30 km/L で上限キャップ (下り惰性以上は "30+" 固定)
+// EMA 時定数: 通常走行はキビキビ、エンブレ・アイドルはじっくり動かす
+const INST_SMOOTH_TC_NORMAL = 3000;  // 通常走行
+const INST_SMOOTH_TC_SLOW = 20000;    // エンブレ・アイドル (数字がゆっくり動く)
+const INST_CAP_KMPL = 99;             // 上限 (Pi 側の maxDisplayKmL と一致)
 let smoothedInst = null;
 let smoothInstLastT = 0;
 
-function updateSmoothedInst(raw, nowMs) {
-  // raw <= 0 は Pi 側の特殊フラグ: 0=低速/停車, -1=エンブレ
-  if (raw <= 0) {
-    smoothedInst = null;
-    smoothInstLastT = 0;
-    return;
-  }
-  const capped = Math.min(raw, INST_CAP_KMPL);
+// target を目標値として EMA を tcMs の時定数で追従させる
+function updateSmoothedInst(target, nowMs, tcMs) {
+  const capped = Math.min(Math.max(target, 0), INST_CAP_KMPL);
   if (smoothedInst === null || smoothInstLastT === 0) {
     smoothedInst = capped;
     smoothInstLastT = nowMs;
@@ -163,18 +160,18 @@ function updateSmoothedInst(raw, nowMs) {
   }
   const dt = nowMs - smoothInstLastT;
   smoothInstLastT = nowMs;
-  // 時定数 TC の EMA: alpha = 1 - exp(-dt/TC)
-  const alpha = 1 - Math.exp(-dt / INST_SMOOTH_TC_MS);
+  const alpha = 1 - Math.exp(-dt / tcMs);
   smoothedInst = smoothedInst + alpha * (capped - smoothedInst);
 }
 
-// 差分 (瞬間 - 累積) → 色 (5段階、タコメーター色相から黄を除く)
-// 黄は停車・アイドル専用の識別色として予約 (通常走行では出現しない)
+// 差分 (瞬間 - 累積) → 色 (6段階、Row 1 ECO 累積と同じパレット)
+// アイドル時は smoothedInst が avg-2 に着地 → diff = -2 → 自然に黄になる
 function instDiffColor(diff) {
-  if (diff >= 5)  return '#26c6da';  // 水色 (今かなり良い)
-  if (diff >= 1)  return '#69f0ae';  // 緑 (良い)
-  if (diff >= -1) return '#76ff03';  // 黄緑 (累積と同程度)
-  if (diff >= -5) return '#ff9800';  // 橙 (悪い、黄吸収)
+  if (diff >= 5)  return '#26c6da';  // 水色 (急良、エンブレ・下り惰性)
+  if (diff >= 1)  return '#69f0ae';  // 緑 (良い、経済巡航)
+  if (diff >= -1) return '#76ff03';  // 黄緑 (中立、累積と同程度)
+  if (diff >= -3) return '#fdd835';  // 黄 (軽悪化、アイドル自然着地)
+  if (diff >= -5) return '#ff9800';  // 橙 (悪化)
   return '#f44336';                   // 赤 (急悪化、急加速)
 }
 
@@ -524,58 +521,45 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
 
   // Row 0: 瞬間燃費 + 三角形 (vs 累積)
-  // Pi 側の fuel_economy 値の意味:
-  //   > 0: 通常走行 (km/L)
-  //   = 0: 停車・低速 (<10km/h) — 数字 -- だが三角形は累積比で動く (= ▼ + 赤)
-  //   = -1: エンブレ (fuel cut) — 30+ + ▲ + 水色 で「エコ中」を表示
+  // Pi 側の fuel_economy 値の意味と EMA 動作:
+  //   > 0: 通常走行 (km/L)         → target=raw, TC=3s (キビキビ反応)
+  //   = -1: エンブレ (fuel cut)    → target=99,  TC=20s (じわっと上昇)
+  //   = 0: 停車・低速 (<10km/h)    → target=avg-2, TC=20s (じわっと下降、自然に黄に着地)
   const rawInst = d.fuel_economy;
   const isEngBrake = rawInst === -1;
   const isLowSpeed = rawInst === 0;
-  if (rawInst > 0) {
-    updateSmoothedInst(rawInst, performance.now());
-  } else {
-    smoothedInst = null;
-    smoothInstLastT = 0;
-  }
+  const now = performance.now();
 
   if (avgEco <= 0.1) {
-    // 累積未確定: 比較対象がない → 全中立
+    // 累積未確定: 比較対象がない → 全中立、EMA も停止
+    smoothedInst = null;
+    smoothInstLastT = 0;
     trendValEl.textContent = '--';
     trendValEl.setAttribute('fill', '#fff');
     trendUnitEl.setAttribute('fill', '#fff');
     trendIcon.setColor('#444');
     trendIcon.setRotation(90);
   } else {
-    let displayText;
-    let effectiveInst; // 累積との比較に使う仮想的な瞬間値
-    if (isEngBrake) {
-      displayText = '30+';
-      effectiveInst = INST_CAP_KMPL; // 30 として比較 → 大きく正 → ▲ + 水色
+    // EMA を更新 (target と TC は状態で決定)
+    if (rawInst > 0) {
+      updateSmoothedInst(rawInst, now, INST_SMOOTH_TC_NORMAL);
+    } else if (isEngBrake) {
+      updateSmoothedInst(INST_CAP_KMPL, now, INST_SMOOTH_TC_SLOW);
     } else if (isLowSpeed) {
-      displayText = '--';
-      // 停車・低速は「穏やかな警告」: 仮想 diff = -2 として 黄 + ▼ で着地 (赤は派手すぎ)
-      effectiveInst = avgEco - 2;
-    } else if (smoothedInst === null) {
-      displayText = '--';
-      effectiveInst = null;
-    } else if (smoothedInst >= INST_CAP_KMPL) {
-      displayText = '30+';
-      effectiveInst = INST_CAP_KMPL;
-    } else {
-      displayText = smoothedInst.toFixed(2);
-      effectiveInst = smoothedInst;
+      updateSmoothedInst(avgEco - 2, now, INST_SMOOTH_TC_SLOW);
     }
-    trendValEl.textContent = displayText;
-
-    if (effectiveInst === null) {
+    // 表示
+    if (smoothedInst === null) {
+      // EMA 未蓄積 (起動直後など)
+      trendValEl.textContent = '--';
       trendValEl.setAttribute('fill', '#fff');
       trendUnitEl.setAttribute('fill', '#fff');
       trendIcon.setColor('#444');
       trendIcon.setRotation(90);
     } else {
-      const diff = effectiveInst - avgEco;
-      // 停車・アイドル時は専用色「黄 #fdd835」を強制 (通常走行の色域から黄を外し、状態識別用に予約)
-      const col = isLowSpeed ? '#fdd835' : instDiffColor(diff);
+      trendValEl.textContent = smoothedInst.toFixed(2);
+      const diff = smoothedInst - avgEco;
+      const col = instDiffColor(diff);
       trendValEl.setAttribute('fill', col);
       trendUnitEl.setAttribute('fill', col);
       trendIcon.setColor(col);
