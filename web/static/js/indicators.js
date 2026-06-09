@@ -168,14 +168,14 @@ function updateSmoothedInst(raw, nowMs) {
   smoothedInst = smoothedInst + alpha * (capped - smoothedInst);
 }
 
-// 差分 (瞬間 - 累積) → 色 (タコメーター色相)
+// 差分 (瞬間 - 累積) → 色 (5段階、タコメーター色相から黄を除く)
+// 黄は停車・アイドル専用の識別色として予約 (通常走行では出現しない)
 function instDiffColor(diff) {
   if (diff >= 5)  return '#26c6da';  // 水色 (今かなり良い)
   if (diff >= 1)  return '#69f0ae';  // 緑 (良い)
   if (diff >= -1) return '#76ff03';  // 黄緑 (累積と同程度)
-  if (diff >= -3) return '#fdd835';  // 黄 (やや悪い)
-  if (diff >= -5) return '#ff9800';  // 橙 (悪い)
-  return '#f44336';                   // 赤 (急悪化)
+  if (diff >= -5) return '#ff9800';  // 橙 (悪い、黄吸収)
+  return '#f44336';                   // 赤 (急悪化、急加速)
 }
 
 // ECO 累積平均値 → 色 (ZJ-VE の現実的な燃費帯ベース)
@@ -553,7 +553,8 @@ export function updateIndicators(dom, d, conf) {
       effectiveInst = INST_CAP_KMPL; // 30 として比較 → 大きく正 → ▲ + 水色
     } else if (isLowSpeed) {
       displayText = '--';
-      effectiveInst = 0; // 0 として比較 → 大きく負 → ▼ + 赤 (停車もエコしてない)
+      // 停車・低速は「穏やかな警告」: 仮想 diff = -2 として 黄 + ▼ で着地 (赤は派手すぎ)
+      effectiveInst = avgEco - 2;
     } else if (smoothedInst === null) {
       displayText = '--';
       effectiveInst = null;
@@ -573,7 +574,8 @@ export function updateIndicators(dom, d, conf) {
       trendIcon.setRotation(90);
     } else {
       const diff = effectiveInst - avgEco;
-      const col = instDiffColor(diff);
+      // 停車・アイドル時は専用色「黄 #fdd835」を強制 (通常走行の色域から黄を外し、状態識別用に予約)
+      const col = isLowSpeed ? '#fdd835' : instDiffColor(diff);
       trendValEl.setAttribute('fill', col);
       trendUnitEl.setAttribute('fill', col);
       trendIcon.setColor(col);
