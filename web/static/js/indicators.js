@@ -104,8 +104,8 @@ function svgEl(parent, tag, attrs) {
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
-// 歯車 (TCC ロック率インジケーター用)
-const ICON_GEAR = 'M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z';
+// 上向き三角形 (24x24 viewBox)、回転で下向きに切替
+const ICON_TRIANGLE_UP = 'M12 4 L22 20 L2 20 Z';
 
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
@@ -136,64 +136,90 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
-let tccValEl, tccIconEl;
+let trendValEl, trendUnitEl, trendIcon;  // { setColor, setRotation }
 let ecoValEl, ecoIconEls;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 
-// ECO トレンド計算用の履歴 (平均燃費の時間変化を見るためのリングバッファ)
-const TREND_HIST = [];          // [{ t: ms, v: km/L }, ...]
-const TREND_WINDOW_MS = 5000;   // 5秒前と比較
-const TREND_HIST_MAX_MS = 10000;
-const TREND_SAMPLE_INTERVAL = 1000;
-const TREND_MIN_SAMPLES = 3;
-let trendLastSampleMs = 0;
+// 瞬間燃費スムージング (3秒時定数の EMA)
+// 走行中の瞬間値は揺らぐので、3秒くらいの時定数で平均化して読みやすくする
+const INST_SMOOTH_TC_MS = 3000;
+const INST_CAP_KMPL = 30;       // 30 km/L で上限キャップ (下り惰性以上は "30+" 固定)
+let smoothedInst = null;
+let smoothInstLastT = 0;
 
-function updateTrendHistory(avg, nowMs) {
-  if (avg <= 0.1) {
-    // トリップリセット or 走行開始直後 → 履歴クリア
-    TREND_HIST.length = 0;
-    trendLastSampleMs = 0;
+function updateSmoothedInst(raw, nowMs) {
+  // raw <= 0 は Pi 側の特殊フラグ: 0=低速/停車, -1=エンブレ
+  if (raw <= 0) {
+    smoothedInst = null;
+    smoothInstLastT = 0;
     return;
   }
-  if (nowMs - trendLastSampleMs < TREND_SAMPLE_INTERVAL) return;
-  trendLastSampleMs = nowMs;
-  TREND_HIST.push({ t: nowMs, v: avg });
-  while (TREND_HIST.length > 0 && nowMs - TREND_HIST[0].t > TREND_HIST_MAX_MS) {
-    TREND_HIST.shift();
+  const capped = Math.min(raw, INST_CAP_KMPL);
+  if (smoothedInst === null || smoothInstLastT === 0) {
+    smoothedInst = capped;
+    smoothInstLastT = nowMs;
+    return;
   }
+  const dt = nowMs - smoothInstLastT;
+  smoothInstLastT = nowMs;
+  // 時定数 TC の EMA: alpha = 1 - exp(-dt/TC)
+  const alpha = 1 - Math.exp(-dt / INST_SMOOTH_TC_MS);
+  smoothedInst = smoothedInst + alpha * (capped - smoothedInst);
 }
 
-function computeTrendRate(nowMs) {
-  if (TREND_HIST.length < TREND_MIN_SAMPLES) return null;
-  const cur = TREND_HIST[TREND_HIST.length - 1];
-  const targetT = nowMs - TREND_WINDOW_MS;
-  let oldest = TREND_HIST[0];
-  for (const s of TREND_HIST) {
-    if (s.t <= targetT) oldest = s; else break;
-  }
-  const dt = (cur.t - oldest.t) / 1000;
-  if (dt < 3) return null;
-  return (cur.v - oldest.v) / dt * 60; // km/L/分
+// 差分 (瞬間 - 累積) → 色 (タコメーター色相)
+function instDiffColor(diff) {
+  if (diff >= 5)  return '#26c6da';  // 水色 (今かなり良い)
+  if (diff >= 1)  return '#69f0ae';  // 緑 (良い)
+  if (diff >= -1) return '#76ff03';  // 黄緑 (累積と同程度)
+  if (diff >= -3) return '#fdd835';  // 黄 (やや悪い)
+  if (diff >= -5) return '#ff9800';  // 橙 (悪い)
+  return '#f44336';                   // 赤 (急悪化)
 }
 
-// 変化率 → 色 (タコメーター色相と統一)
-function ecoTrendColor(rate) {
-  if (rate === null) return '#76ff03'; // 履歴不足: 黄緑 (中立)
-  if (rate >= 0.5)  return '#26c6da';  // 急改善 水色
-  if (rate >= 0.1)  return '#69f0ae';  // 改善 緑
-  if (rate >= -0.1) return '#76ff03';  // 横ばい 黄緑
-  if (rate >= -0.5) return '#fdd835';  // 軽悪化 黄
-  if (rate >= -1.5) return '#ff9800';  // 悪化 橙
-  return '#f44336';                     // 急悪化 赤
+// ECO 累積平均値 → 色 (ZJ-VE の現実的な燃費帯ベース)
+function ecoValueColor(avg) {
+  if (avg <= 0.1) return '#fff';     // データなし
+  if (avg < 11)   return '#f44336';  // 赤
+  if (avg < 12)   return '#ff9800';  // 橙
+  if (avg < 13)   return '#fdd835';  // 黄
+  if (avg < 14)   return '#76ff03';  // 黄緑
+  if (avg < 15)   return '#69f0ae';  // 緑
+  return '#26c6da';                   // 水色
 }
 
-// TCC ロック状態 → 色
-function tccColor(tcLocked, pct, gear) {
-  if (!gear || gear < 1 || gear > 4) return '#666';      // ギア無効: 灰
-  if (tcLocked && pct >= 95) return '#69f0ae';           // フルロック: 緑
-  if (tcLocked) return '#29b6f6';                         // スリップロック: 青
-  return '#fff';                                          // 未ロック: 白 (流体カップリングのみ)
+// 三角形アイコン (回転可能、ブルーム付き)
+function createTriangleIcon(svg, x, y, size) {
+  const outer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  outer.setAttribute('class', 'acc-dim');
+  outer.setAttribute('transform', `translate(${x - size/2}, ${y - size/2}) scale(${size/24})`);
+  const inner = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  inner.setAttribute('transform', 'rotate(0 12 12)');
+  outer.appendChild(inner);
+  const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  bloom.setAttribute('d', ICON_TRIANGLE_UP);
+  bloom.setAttribute('fill', '#444');
+  bloom.setAttribute('stroke', '#444');
+  bloom.setAttribute('stroke-width', '3');
+  bloom.setAttribute('stroke-linejoin', 'round');
+  bloom.setAttribute('opacity', '0.45');
+  inner.appendChild(bloom);
+  const main = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  main.setAttribute('d', ICON_TRIANGLE_UP);
+  main.setAttribute('fill', '#444');
+  inner.appendChild(main);
+  svg.appendChild(outer);
+  return {
+    setColor(c) {
+      main.setAttribute('fill', c);
+      bloom.setAttribute('fill', c);
+      bloom.setAttribute('stroke', c);
+    },
+    setRotation(deg) {
+      inner.setAttribute('transform', `rotate(${deg} 12 12)`);
+    },
+  };
 }
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
@@ -420,13 +446,14 @@ export function createIndicators(panelEl) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: TCC ロック率 (歯車アイコン)
-  const tccY = IND_Y_START;
-  addIndPanel(tccY);
-  tccIconEl = createIconPath(svg, IND_X_ICON + 10, tccY - 8, ICON_GEAR, 40);
-  tccValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tccY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  tccValEl.textContent = '--';
-  svgEl(svg, 'text', { x: IND_X_UNIT, y: tccY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = '%';
+  // Row 0: ECO トレンド (三角形アイコンが上下動を直接表現、+ 変化率 km/L/分)
+  const trendY = IND_Y_START;
+  addIndPanel(trendY);
+  trendIcon = createTriangleIcon(svg, IND_X_ICON + 16, trendY - 8, 36);
+  trendValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: trendY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
+  trendValEl.textContent = '--';
+  trendUnitEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: trendY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
+  trendUnitEl.textContent = 'km/L';
 
   // Row 1: ECO (葉アイコン、色 = 平均燃費の時間変化率)
   const ecoY = IND_Y_START + IND_SPACING;
@@ -487,37 +514,74 @@ export function updateIndicators(dom, d, conf) {
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // TCC ロック率 (歯車アイコン)
-  // 数値は ATCU 内部のロック状態に関係なく流体カップリング効率を示す
-  // 色はロック状態を表す: 緑=フルロック / 青=スリップロック / 白=未ロック / 灰=ギア無効
-  const gear = d.gear || 0;
-  const tcLocked = !!d.tc_locked;
-  const tccPct = d.tcc_lock_pct;
-  if (gear >= 1 && gear <= 4 && tccPct != null && tccPct >= 1) {
-    tccValEl.textContent = Math.round(tccPct);
-  } else {
-    tccValEl.textContent = '--';
-  }
-  const tccCol = tccColor(tcLocked, tccPct || 0, gear);
-  tccValEl.setAttribute('fill', tccCol);
-  tccIconEl.setAttribute('fill', tccCol);
-
-  // ECO (平均燃費数値、色 = 平均燃費の時間変化率)
+  // ECO 累積平均値 (Row 1) — 色は絶対値の閾値ベース
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
   ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
-  let ecoCol;
-  if (avgEco <= 0.1) {
-    ecoCol = '#fff'; // データなし
-  } else {
-    const now = performance.now();
-    updateTrendHistory(avgEco, now);
-    const rate = computeTrendRate(now);
-    ecoCol = ecoTrendColor(rate);
-  }
+  const ecoCol = ecoValueColor(avgEco);
   ecoValEl.setAttribute('fill', ecoCol);
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
+
+  // Row 0: 瞬間燃費 + 三角形 (vs 累積)
+  // Pi 側の fuel_economy 値の意味:
+  //   > 0: 通常走行 (km/L)
+  //   = 0: 停車・低速 (<10km/h) — 数字 -- だが三角形は累積比で動く (= ▼ + 赤)
+  //   = -1: エンブレ (fuel cut) — 30+ + ▲ + 水色 で「エコ中」を表示
+  const rawInst = d.fuel_economy;
+  const isEngBrake = rawInst === -1;
+  const isLowSpeed = rawInst === 0;
+  if (rawInst > 0) {
+    updateSmoothedInst(rawInst, performance.now());
+  } else {
+    smoothedInst = null;
+    smoothInstLastT = 0;
+  }
+
+  if (avgEco <= 0.1) {
+    // 累積未確定: 比較対象がない → 全中立
+    trendValEl.textContent = '--';
+    trendValEl.setAttribute('fill', '#fff');
+    trendUnitEl.setAttribute('fill', '#fff');
+    trendIcon.setColor('#444');
+    trendIcon.setRotation(90);
+  } else {
+    let displayText;
+    let effectiveInst; // 累積との比較に使う仮想的な瞬間値
+    if (isEngBrake) {
+      displayText = '30+';
+      effectiveInst = INST_CAP_KMPL; // 30 として比較 → 大きく正 → ▲ + 水色
+    } else if (isLowSpeed) {
+      displayText = '--';
+      effectiveInst = 0; // 0 として比較 → 大きく負 → ▼ + 赤 (停車もエコしてない)
+    } else if (smoothedInst === null) {
+      displayText = '--';
+      effectiveInst = null;
+    } else if (smoothedInst >= INST_CAP_KMPL) {
+      displayText = '30+';
+      effectiveInst = INST_CAP_KMPL;
+    } else {
+      displayText = smoothedInst.toFixed(2);
+      effectiveInst = smoothedInst;
+    }
+    trendValEl.textContent = displayText;
+
+    if (effectiveInst === null) {
+      trendValEl.setAttribute('fill', '#fff');
+      trendUnitEl.setAttribute('fill', '#fff');
+      trendIcon.setColor('#444');
+      trendIcon.setRotation(90);
+    } else {
+      const diff = effectiveInst - avgEco;
+      const col = instDiffColor(diff);
+      trendValEl.setAttribute('fill', col);
+      trendUnitEl.setAttribute('fill', col);
+      trendIcon.setColor(col);
+      if (diff > 1)       trendIcon.setRotation(0);    // ▲ 上向き (累積より良い)
+      else if (diff < -1) trendIcon.setRotation(180);  // ▼ 下向き (累積より悪い)
+      else                trendIcon.setRotation(90);   // ▶ 横向き (累積近辺)
+    }
+  }
 
   // TRIP
   const tripKm = d.trip_km || 0;
