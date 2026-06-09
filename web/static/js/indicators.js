@@ -149,6 +149,7 @@ const INST_SMOOTH_TC_SLOW = 20000;    // エンブレ・アイドル (数字が�
 const INST_CAP_KMPL = 99;             // 上限 (Pi 側の maxDisplayKmL と一致)
 let smoothedInst = null;
 let smoothInstLastT = 0;
+let prevSlowState = false;            // 前フレームでエンブレ/アイドルだったか
 
 // target を目標値として EMA を tcMs の時定数で追従させる
 function updateSmoothedInst(target, nowMs, tcMs) {
@@ -540,14 +541,21 @@ export function updateIndicators(dom, d, conf) {
     trendIcon.setColor('#fff');
     trendIcon.setRotation(90);
   } else {
-    // EMA を更新 (target と TC は状態で決定)
-    if (rawInst > 0) {
+    // 状態遷移検知: Slow (エンブレ/アイドル) → Normal の瞬間に snap
+    const isSlowState = isEngBrake || isLowSpeed;
+    const exitingSlow = prevSlowState && !isSlowState && rawInst > 0;
+    if (exitingSlow) {
+      // エンブレ/アイドル離脱: 即座に実値にリセット (戻りキビキビ)
+      smoothedInst = Math.min(rawInst, INST_CAP_KMPL);
+      smoothInstLastT = now;
+    } else if (rawInst > 0) {
       updateSmoothedInst(rawInst, now, INST_SMOOTH_TC_NORMAL);
     } else if (isEngBrake) {
       updateSmoothedInst(INST_CAP_KMPL, now, INST_SMOOTH_TC_SLOW);
     } else if (isLowSpeed) {
       updateSmoothedInst(avgEco - 2, now, INST_SMOOTH_TC_SLOW);
     }
+    prevSlowState = isSlowState;
     // 表示
     if (smoothedInst === null) {
       // EMA 未蓄積 (起動直後など)
