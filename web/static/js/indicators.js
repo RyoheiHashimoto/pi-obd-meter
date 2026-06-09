@@ -104,6 +104,7 @@ function svgEl(parent, tag, attrs) {
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
+const ICON_CLOCK = 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z';
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
 function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
@@ -136,6 +137,17 @@ let mapCur = 0, mapTgt = 0, mapRaf = 0;
 let ecoValEl, ecoIconEls;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
+let clockValEl;
+
+// 時計を HH:MM:SS 形式で更新
+function updateClock() {
+  if (!clockValEl) return;
+  const d = new Date();
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const s = String(d.getSeconds()).padStart(2, '0');
+  clockValEl.textContent = `${h}:${m}:${s}`;
+}
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
@@ -386,6 +398,16 @@ export function createIndicators(panelEl) {
   oilValEl.textContent = '--';
   oilLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: oilY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
   oilLabelEl.textContent = 'km';
+
+  // Row 3: 現在時刻 (HH:MM:SS、秒刻みで動く)
+  const clockY = IND_Y_START + IND_SPACING * 3;
+  addIndPanel(clockY);
+  const clockIconEl = createIconPath(svg, IND_X_ICON + 10, clockY - 8, ICON_CLOCK, 40);
+  clockIconEl.setAttribute('fill', '#fff');
+  // 8 文字 (HH:MM:SS) なので font-size を少し下げて行内に収める
+  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL + 20, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 34, 'text-anchor': 'middle' });
+  updateClock();
+  setInterval(updateClock, 1000); // 1 秒ごと更新
 
   return {};
 }
