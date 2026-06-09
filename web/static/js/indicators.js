@@ -537,7 +537,7 @@ export function updateIndicators(dom, d, conf) {
     trendValEl.textContent = '--';
     trendValEl.setAttribute('fill', '#fff');
     trendUnitEl.setAttribute('fill', '#fff');
-    trendIcon.setColor('#444');
+    trendIcon.setColor('#fff');
     trendIcon.setRotation(90);
   } else {
     // EMA を更新 (target と TC は状態で決定)
@@ -554,7 +554,7 @@ export function updateIndicators(dom, d, conf) {
       trendValEl.textContent = '--';
       trendValEl.setAttribute('fill', '#fff');
       trendUnitEl.setAttribute('fill', '#fff');
-      trendIcon.setColor('#444');
+      trendIcon.setColor('#fff');
       trendIcon.setRotation(90);
     } else {
       trendValEl.textContent = smoothedInst.toFixed(2);
