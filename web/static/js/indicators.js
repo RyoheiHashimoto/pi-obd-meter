@@ -404,8 +404,7 @@ export function createIndicators(panelEl) {
   addIndPanel(clockY);
   const clockIconEl = createIconPath(svg, IND_X_ICON + 10, clockY - 8, ICON_CLOCK, 40);
   clockIconEl.setAttribute('fill', '#fff');
-  // 8 文字 (HH:MM:SS) なので font-size を少し下げて行内に収める
-  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL + 20, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 34, 'text-anchor': 'middle' });
+  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
   updateClock();
   setInterval(updateClock, 1000); // 1 秒ごと更新
 
