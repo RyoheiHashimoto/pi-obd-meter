@@ -398,9 +398,12 @@ export function createIndicators(panelEl) {
   oilLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: oilY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
   oilLabelEl.textContent = 'km';
 
-  // Row 3: 現在時刻 (HH:MM、右寄せ、アイコン・枠なし、控えめ表示)
+  // Row 3: 現在時刻 (HH:MM、他行と同じスタイル、アイコン・枠あり)
   const clockY = IND_Y_START + IND_SPACING * 3;
-  clockValEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: clockY + 6, class: 'g-unit', fill: '#fff', 'font-size': 40, 'text-anchor': 'end' });
+  addIndPanel(clockY);
+  const clockIconEl = createIconPath(svg, IND_X_ICON + 10, clockY - 8, ICON_CLOCK, 40);
+  clockIconEl.setAttribute('fill', '#fff');
+  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
   updateClock();
   setInterval(updateClock, 30000); // 30秒ごと更新 (分の境目をすぐ反映)
 
