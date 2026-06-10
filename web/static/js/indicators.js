@@ -136,7 +136,7 @@ let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
 let ecoValEl, ecoIconEls;
-let runtimeValEl, runtimeIconEl;
+let runtimeValEl, runtimeIconEl, runtimeSecEl;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 
@@ -373,13 +373,16 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 1: RUN (エンジン稼働時間、HH:MM、PID 0x1F 経由)
+  // Row 1: RUN (エンジン稼働時間、HH:MM + SS、PID 0x1F 経由)
   const runtimeY = IND_Y_START + IND_SPACING;
   addIndPanel(runtimeY);
   runtimeIconEl = createIconPath(svg, IND_X_ICON + 10, runtimeY - 8, ICON_TIMER, 40);
   runtimeIconEl.setAttribute('fill', '#fff');
   runtimeValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: runtimeY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
   runtimeValEl.textContent = '--:--';
+  // 秒は単位位置に小さく (生きてる感、刻々動く)
+  runtimeSecEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: runtimeY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
+  runtimeSecEl.textContent = '--';
 
   // Row 2: TRIP
   const tripY = IND_Y_START + IND_SPACING * 2;
@@ -458,7 +461,9 @@ export function updateIndicators(dom, d, conf) {
     const totalMin = Math.floor(runtimeSec / 60);
     const h = Math.floor(totalMin / 60);
     const m = totalMin % 60;
+    const s = runtimeSec % 60;
     runtimeValEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    runtimeSecEl.textContent = String(s).padStart(2, '0');
     let runCol;
     if (totalMin < 60)       runCol = '#69f0ae';  // <1h 緑 (fresh)
     else if (totalMin < 120) runCol = '#76ff03';  // 1-2h 黄緑
@@ -467,10 +472,13 @@ export function updateIndicators(dom, d, conf) {
     else                     runCol = '#f44336';  // 4h+ 赤
     runtimeValEl.setAttribute('fill', runCol);
     runtimeIconEl.setAttribute('fill', runCol);
+    runtimeSecEl.setAttribute('fill', runCol);
   } else {
     runtimeValEl.textContent = '--:--';
+    runtimeSecEl.textContent = '--';
     runtimeValEl.setAttribute('fill', '#fff');
     runtimeIconEl.setAttribute('fill', '#fff');
+    runtimeSecEl.setAttribute('fill', '#fff');
   }
 
   // TRIP
