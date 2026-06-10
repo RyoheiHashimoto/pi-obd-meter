@@ -43,6 +43,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		obd.PIDIntakeMAP,   // 0x0B — MAP (バキューム計、燃費計算)
 		obd.PIDFuelLevel,   // 0x2F — 燃料残量 (%)。ECU 非対応なら応答ゼロで害なし
 		obd.PIDAmbientTemp, // 0x46 — 外気温 (°C)。DY 廉価車は非対応の可能性大
+		obd.PIDRuntime,     // 0x1F — エンジン稼働時間 (秒、始動からの経過)
 	}
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）

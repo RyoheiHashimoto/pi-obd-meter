@@ -104,7 +104,8 @@ function svgEl(parent, tag, attrs) {
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
-const ICON_CLOCK = 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z';
+// ストップウォッチ/タイマー (エンジン稼働時間用)
+const ICON_TIMER = 'M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z';
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
 function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
@@ -135,19 +136,9 @@ let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
 let ecoValEl, ecoIconEls;
+let runtimeValEl, runtimeIconEl;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
-let clockValEl;
-
-// 時計を HH:MM:SS 形式で更新
-function updateClock() {
-  if (!clockValEl) return;
-  const d = new Date();
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  const s = String(d.getSeconds()).padStart(2, '0');
-  clockValEl.textContent = `${h}:${m}:${s}`;
-}
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
@@ -382,32 +373,30 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 1: TRIP
-  const tripY = IND_Y_START + IND_SPACING;
+  // Row 1: RUN (エンジン稼働時間、HH:MM、PID 0x1F 経由)
+  const runtimeY = IND_Y_START + IND_SPACING;
+  addIndPanel(runtimeY);
+  runtimeIconEl = createIconPath(svg, IND_X_ICON + 10, runtimeY - 8, ICON_TIMER, 40);
+  runtimeIconEl.setAttribute('fill', '#fff');
+  runtimeValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: runtimeY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
+  runtimeValEl.textContent = '--:--';
+
+  // Row 2: TRIP
+  const tripY = IND_Y_START + IND_SPACING * 2;
   addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
   tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
-  // Row 2: OIL
-  const oilY = IND_Y_START + IND_SPACING * 2;
+  // Row 3: OIL
+  const oilY = IND_Y_START + IND_SPACING * 3;
   addIndPanel(oilY);
   oilIconEl = createIconPath(svg, IND_X_ICON + 10, oilY - 8, ICON_OIL, 40);
   oilValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: oilY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   oilValEl.textContent = '--';
   oilLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: oilY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
   oilLabelEl.textContent = 'km';
-
-  // Row 3: 現在時刻 (HH:MM:SS、秒刻みで動く)
-  const clockY = IND_Y_START + IND_SPACING * 3;
-  addIndPanel(clockY);
-  const clockIconEl = createIconPath(svg, IND_X_ICON + 10, clockY - 8, ICON_CLOCK, 40);
-  clockIconEl.setAttribute('fill', '#fff');
-  // 8 文字 (HH:MM:SS) なので font-size を少し下げて行内に収める
-  clockValEl = svgEl(svg, 'text', { x: IND_X_VAL + 20, y: clockY + 6, class: 'g-num', fill: '#fff', 'font-size': 34, 'text-anchor': 'middle' });
-  updateClock();
-  setInterval(updateClock, 1000); // 1 秒ごと更新
 
   return {};
 }
@@ -462,6 +451,27 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
 
+
+  // RUN (エンジン稼働時間、PID 0x1F)、色は休憩時間目安
+  const runtimeSec = d.runtime_sec || 0;
+  if (runtimeSec > 0) {
+    const totalMin = Math.floor(runtimeSec / 60);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    runtimeValEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    let runCol;
+    if (totalMin < 60)       runCol = '#69f0ae';  // <1h 緑 (fresh)
+    else if (totalMin < 120) runCol = '#76ff03';  // 1-2h 黄緑
+    else if (totalMin < 180) runCol = '#fdd835';  // 2-3h 黄
+    else if (totalMin < 240) runCol = '#ff9800';  // 3-4h 橙
+    else                     runCol = '#f44336';  // 4h+ 赤
+    runtimeValEl.setAttribute('fill', runCol);
+    runtimeIconEl.setAttribute('fill', runCol);
+  } else {
+    runtimeValEl.textContent = '--:--';
+    runtimeValEl.setAttribute('fill', '#fff');
+    runtimeIconEl.setAttribute('fill', '#fff');
+  }
 
   // TRIP
   const tripKm = d.trip_km || 0;
