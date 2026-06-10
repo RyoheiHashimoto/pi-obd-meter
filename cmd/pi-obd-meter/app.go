@@ -57,6 +57,61 @@ type App struct {
 	retrySending atomic.Bool
 
 	startedAt time.Time
+
+	// エンジンセッション追跡 (CAN RPM 監視)
+	// PID 0x1F (Runtime) が ECU 非対応 or 一時的に取れない時のフォールバック
+	engineMu           sync.Mutex
+	engineSessionStart time.Time // 現セッション開始時刻 (zero = エンジン停止中)
+	engineLastRunning  time.Time // 最後に RPM >= 300 を観測した時刻
+}
+
+// updateEngineSession は CAN RPM とオプションの ECU runtime (PID 0x1F) を元に
+// エンジンセッションを追跡し、現在の稼働時間 (秒) を返す。
+//
+// ハイブリッド設計:
+//   - 表示値は内部の engineSessionStart からの経過 (CAN tracker、ms 精度で滑らか)
+//   - ECU 値 (ecuRuntimeSec) が有効なら、初期化時 or 大きなドリフト時に再同期
+//     → Pi 再起動後でも ECU の累積値で正しく復帰
+//
+// 判定:
+//   - RPM >= 300: エンジン稼働中 → 未開始ならセッション開始 (ECU 値があれば反映)
+//   - RPM < 100 が 3 秒以上継続: エンジン停止 → セッション終了 (リセット)
+//   - 既存セッション中の ECU 値が ±5 秒以上ズレ: 再同期
+func (app *App) updateEngineSession(rpm float64, ecuRuntimeSec int, now time.Time) int {
+	const (
+		startRPM     = 300.0
+		stopRPM      = 100.0
+		stopTimeout  = 3 * time.Second
+		driftAllowed = 5 // 秒以上ズレたら ECU 値で再同期
+	)
+	app.engineMu.Lock()
+	defer app.engineMu.Unlock()
+	if rpm >= startRPM {
+		app.engineLastRunning = now
+		if app.engineSessionStart.IsZero() {
+			// 新規セッション: ECU に値があればそれを使って復帰、なければ now から
+			if ecuRuntimeSec > 0 {
+				app.engineSessionStart = now.Add(-time.Duration(ecuRuntimeSec) * time.Second)
+			} else {
+				app.engineSessionStart = now
+			}
+		} else if ecuRuntimeSec > 0 {
+			// 既存セッションと ECU 値の差をチェック、大きいなら再同期
+			canSec := int(now.Sub(app.engineSessionStart).Seconds())
+			diff := canSec - ecuRuntimeSec
+			if diff < -driftAllowed || diff > driftAllowed {
+				app.engineSessionStart = now.Add(-time.Duration(ecuRuntimeSec) * time.Second)
+			}
+		}
+	} else if rpm < stopRPM {
+		if !app.engineSessionStart.IsZero() && now.Sub(app.engineLastRunning) > stopTimeout {
+			app.engineSessionStart = time.Time{}
+		}
+	}
+	if app.engineSessionStart.IsZero() {
+		return 0
+	}
+	return int(now.Sub(app.engineSessionStart).Seconds())
 }
 
 // newApp はアプリケーション状態を初期化する

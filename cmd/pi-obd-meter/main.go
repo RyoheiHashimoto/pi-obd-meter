@@ -287,7 +287,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				TimingAdvance:  data.TimingAdvance,
 				IntakeAirTemp:  data.IntakeAirTemp,
 				O2Voltage:      data.O2Voltage,
-				RuntimeSec:     data.RuntimeSec,
+				RuntimeSec:     app.updateEngineSession(data.RPM, data.RuntimeSec, time.Now()),
 				Gear:           data.Gear,
 				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,

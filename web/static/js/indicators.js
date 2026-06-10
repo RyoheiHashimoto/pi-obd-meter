@@ -463,7 +463,7 @@ export function updateIndicators(dom, d, conf) {
     const m = totalMin % 60;
     const s = runtimeSec % 60;
     runtimeValEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    runtimeSecEl.textContent = String(s).padStart(2, '0');
+    runtimeSecEl.textContent = `${String(s).padStart(2, '0')}s`;
     let runCol;
     if (totalMin < 60)       runCol = '#69f0ae';  // <1h 緑 (fresh)
     else if (totalMin < 120) runCol = '#76ff03';  // 1-2h 黄緑
@@ -472,10 +472,11 @@ export function updateIndicators(dom, d, conf) {
     else                     runCol = '#f44336';  // 4h+ 赤
     runtimeValEl.setAttribute('fill', runCol);
     runtimeIconEl.setAttribute('fill', runCol);
-    runtimeSecEl.setAttribute('fill', runCol);
+    // 秒と "s" は白固定 (色変化は HH:MM とアイコンのみ)
+    runtimeSecEl.setAttribute('fill', '#fff');
   } else {
     runtimeValEl.textContent = '--:--';
-    runtimeSecEl.textContent = '--';
+    runtimeSecEl.textContent = '--s';
     runtimeValEl.setAttribute('fill', '#fff');
     runtimeIconEl.setAttribute('fill', '#fff');
     runtimeSecEl.setAttribute('fill', '#fff');
