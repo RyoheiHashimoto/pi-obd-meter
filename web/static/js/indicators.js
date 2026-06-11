@@ -457,12 +457,8 @@ export function updateIndicators(dom, d, conf) {
   const rngKm = d.range_to_empty_km || 0;
   if (rngKm > 0) {
     rngValEl.textContent = Math.round(rngKm).toLocaleString();
-    let rngCol;
-    if (rngKm >= 200)      rngCol = '#69f0ae';  // 200km+ 緑 (余裕)
-    else if (rngKm >= 100) rngCol = '#76ff03';  // 100-200km 黄緑
-    else if (rngKm >= 50)  rngCol = '#fdd835';  // 50-100km 黄 (そろそろ給油)
-    else if (rngKm >= 25)  rngCol = '#ff9800';  // 25-50km 橙 (要給油)
-    else                   rngCol = '#f44336';  // <25km 赤 (緊急)
+    // TRIP と同じ 4 段階 (緑 / 黄 / 橙 / 赤)
+    const rngCol = rngKm >= 100 ? '#69f0ae' : rngKm >= 50 ? '#fdd835' : rngKm >= 25 ? '#ff9800' : '#f44336';
     rngValEl.setAttribute('fill', rngCol);
     rngIconEl.setAttribute('fill', rngCol);
   } else {
