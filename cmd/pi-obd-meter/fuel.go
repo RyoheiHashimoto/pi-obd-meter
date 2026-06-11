@@ -75,6 +75,22 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 	return kmL, fuelRateLH
 }
 
+// calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
+// 前提: 前回給油でタンクをほぼ満タンにした。trip_km は給油時にリセットされている。
+// 計算: 満タン時の航続距離 (タンク容量 × 累積平均燃費) − 給油後の走行距離。
+// avg_fuel_economy が未確定 (走行開始直後) なら 0 を返す。
+// 値は 0 でクリップ (タンク超過時の負値を避ける)。
+func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm float64) float64 {
+	if avgFuelEconomy <= 0.1 || fuelTankL <= 0 {
+		return 0
+	}
+	rng := fuelTankL*avgFuelEconomy - tripKm
+	if rng < 0 {
+		rng = 0
+	}
+	return rng
+}
+
 // calcDisplayFuelEco は ReadFast 時の表示用瞬間燃費を計算する。
 // スロットルとlastFuelRateから推定し、tracker には影響しない（表示専用）。
 func calcDisplayFuelEco(speed, throttle, lastRate, idlePct float64) float64 {

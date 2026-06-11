@@ -104,8 +104,8 @@ function svgEl(parent, tag, attrs) {
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
-// ストップウォッチ/タイマー (エンジン稼働時間用)
-const ICON_TIMER = 'M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z';
+// 給油ポンプ (給油までの残距離用)
+const ICON_FUELPUMP = 'M19.77 7.23l.01-.01-3.72-3.72L15 4.56l2.11 2.11c-.94.36-1.61 1.26-1.61 2.33 0 1.38 1.12 2.5 2.5 2.5.36 0 .69-.08 1-.21v7.21c0 .55-.45 1-1 1s-1-.45-1-1V14c0-1.1-.9-2-2-2h-1V5c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v16h10v-7.5h1.5v5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V9c0-.69-.28-1.32-.73-1.77zM12 10H6V5h6v5zm6 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z';
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
 function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
@@ -136,7 +136,7 @@ let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
 let ecoValEl, ecoIconEls;
-let runtimeValEl, runtimeIconEl, runtimeSecEl;
+let rngValEl, rngIconEl;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 
@@ -373,24 +373,22 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 1: RUN (エンジン稼働時間、HH:MM + SS、PID 0x1F 経由)
-  const runtimeY = IND_Y_START + IND_SPACING;
-  addIndPanel(runtimeY);
-  runtimeIconEl = createIconPath(svg, IND_X_ICON + 10, runtimeY - 8, ICON_TIMER, 40);
-  runtimeIconEl.setAttribute('fill', '#fff');
-  runtimeValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: runtimeY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
-  runtimeValEl.textContent = '--:--';
-  // 秒は単位位置に小さく (生きてる感、刻々動く)
-  runtimeSecEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: runtimeY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
-  runtimeSecEl.textContent = '--';
-
-  // Row 2: TRIP
-  const tripY = IND_Y_START + IND_SPACING * 2;
+  // Row 1: TRIP (今走った距離)
+  const tripY = IND_Y_START + IND_SPACING;
   addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
   tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
   tripValEl.textContent = '0';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
+
+  // Row 2: RNG (給油までの推定残距離、km)
+  const rngY = IND_Y_START + IND_SPACING * 2;
+  addIndPanel(rngY);
+  rngIconEl = createIconPath(svg, IND_X_ICON + 10, rngY - 8, ICON_FUELPUMP, 40);
+  rngIconEl.setAttribute('fill', '#fff');
+  rngValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: rngY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
+  rngValEl.textContent = '--';
+  svgEl(svg, 'text', { x: IND_X_UNIT, y: rngY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
   // Row 3: OIL
   const oilY = IND_Y_START + IND_SPACING * 3;
@@ -455,31 +453,22 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
 
 
-  // RUN (エンジン稼働時間、PID 0x1F)、色は休憩時間目安
-  const runtimeSec = d.runtime_sec || 0;
-  if (runtimeSec > 0) {
-    const totalMin = Math.floor(runtimeSec / 60);
-    const h = Math.floor(totalMin / 60);
-    const m = totalMin % 60;
-    const s = runtimeSec % 60;
-    runtimeValEl.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    runtimeSecEl.textContent = `${String(s).padStart(2, '0')}s`;
-    let runCol;
-    if (totalMin < 60)       runCol = '#69f0ae';  // <1h 緑 (fresh)
-    else if (totalMin < 120) runCol = '#76ff03';  // 1-2h 黄緑
-    else if (totalMin < 180) runCol = '#fdd835';  // 2-3h 黄
-    else if (totalMin < 240) runCol = '#ff9800';  // 3-4h 橙
-    else                     runCol = '#f44336';  // 4h+ 赤
-    runtimeValEl.setAttribute('fill', runCol);
-    runtimeIconEl.setAttribute('fill', runCol);
-    // 秒と "s" は白固定 (色変化は HH:MM とアイコンのみ)
-    runtimeSecEl.setAttribute('fill', '#fff');
+  // RNG (給油までの推定残距離) — 色は残量警告 (ZJ-VE 46L タンク基準)
+  const rngKm = d.range_to_empty_km || 0;
+  if (rngKm > 0) {
+    rngValEl.textContent = Math.round(rngKm).toLocaleString();
+    let rngCol;
+    if (rngKm >= 200)      rngCol = '#69f0ae';  // 200km+ 緑 (余裕)
+    else if (rngKm >= 100) rngCol = '#76ff03';  // 100-200km 黄緑
+    else if (rngKm >= 50)  rngCol = '#fdd835';  // 50-100km 黄 (そろそろ給油)
+    else if (rngKm >= 25)  rngCol = '#ff9800';  // 25-50km 橙 (要給油)
+    else                   rngCol = '#f44336';  // <25km 赤 (緊急)
+    rngValEl.setAttribute('fill', rngCol);
+    rngIconEl.setAttribute('fill', rngCol);
   } else {
-    runtimeValEl.textContent = '--:--';
-    runtimeSecEl.textContent = '--s';
-    runtimeValEl.setAttribute('fill', '#fff');
-    runtimeIconEl.setAttribute('fill', '#fff');
-    runtimeSecEl.setAttribute('fill', '#fff');
+    rngValEl.textContent = '--';
+    rngValEl.setAttribute('fill', '#fff');
+    rngIconEl.setAttribute('fill', '#fff');
   }
 
   // TRIP
