@@ -373,22 +373,22 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 1: TRIP (今走った距離)
-  const tripY = IND_Y_START + IND_SPACING;
-  addIndPanel(tripY);
-  tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
-  tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  tripValEl.textContent = '0';
-  svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
-
-  // Row 2: RNG (給油までの推定残距離、km)
-  const rngY = IND_Y_START + IND_SPACING * 2;
+  // Row 1: RNG (給油までの推定残距離、km)
+  const rngY = IND_Y_START + IND_SPACING;
   addIndPanel(rngY);
   rngIconEl = createIconPath(svg, IND_X_ICON + 10, rngY - 8, ICON_FUELPUMP, 40);
   rngIconEl.setAttribute('fill', '#fff');
   rngValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: rngY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
   rngValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: rngY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
+
+  // Row 2: TRIP (今走った距離)
+  const tripY = IND_Y_START + IND_SPACING * 2;
+  addIndPanel(tripY);
+  tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
+  tripValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tripY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
+  tripValEl.textContent = '0';
+  svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
   // Row 3: OIL
   const oilY = IND_Y_START + IND_SPACING * 3;
