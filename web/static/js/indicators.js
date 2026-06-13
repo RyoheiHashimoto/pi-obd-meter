@@ -456,7 +456,7 @@ export function updateIndicators(dom, d, conf) {
   // RNG (給油までの推定残距離) — 色は残量警告 (ZJ-VE 46L タンク基準)
   const rngKm = d.range_to_empty_km || 0;
   if (rngKm > 0) {
-    rngValEl.textContent = Math.round(rngKm).toLocaleString();
+    rngValEl.textContent = rngKm.toFixed(1);
     // TRIP と同じ 4 段階 (緑 / 黄 / 橙 / 赤)
     const rngCol = rngKm >= 100 ? '#69f0ae' : rngKm >= 50 ? '#fdd835' : rngKm >= 25 ? '#ff9800' : '#f44336';
     rngValEl.setAttribute('fill', rngCol);
