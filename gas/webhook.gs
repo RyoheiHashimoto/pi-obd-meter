@@ -66,8 +66,15 @@ function handleMaintenance(data) {
   }
   if (data.trip_km >= 0) {
     upsertSetting('trip_km', data.trip_km);
+    // last_refuel_km は recordManualRefuel / correctTrip で明示的にセットされた値が
+    // source of truth。初回ブートストラップ時 (未設定) のみ Pi の trip_km から推定する。
+    // ※ Pi が古い trip_km を送ってから trip_correction_km=0 を適用するレースで
+    //    給油直後の last_refuel_km が破壊される問題の防止 (給油 → 復活バグ対策)
     if (data.total_km > 0) {
-      upsertSetting('last_refuel_km', data.total_km - data.trip_km);
+      const existingLastRefuel = parseFloat(getSettingValue('last_refuel_km')) || 0;
+      if (existingLastRefuel <= 0) {
+        upsertSetting('last_refuel_km', data.total_km - data.trip_km);
+      }
     }
   }
 
