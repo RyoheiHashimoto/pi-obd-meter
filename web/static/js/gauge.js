@@ -536,7 +536,7 @@ export function buildSpeedGauge(svgId, cfg) {
   let rpmCur = 0, rpmTgt = 0, rpmRafId = 0;
   // dRPM/dt 追跡: EMA (時定数 0.3s) でシフトショック等の瞬間値を吸収
   let dRpmEma = 0, lastRpmEma = 0, lastRpmEmaTime = 0;
-  const D_RPM_THRESHOLD = 50;    // rpm/s 未満は両方非アクティブ (アイドル変動吸収)
+  const D_RPM_THRESHOLD = 150;   // rpm/s 未満は両方非アクティブ (アイドル変動/微振動吸収)
   const D_RPM_TAU = 0.3;          // EMA 時定数 (秒)
   function updateRpmArrows(rpm, dRpm) {
     const col = rpmColor(rpm);
