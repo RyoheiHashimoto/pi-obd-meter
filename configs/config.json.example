@@ -13,7 +13,7 @@
   "throttle_idle_pct": 1,
   "throttle_max_pct": 197,
   "fuel_tank_l": 46,
-  "fuel_rate_correction": 1.7,
+  "fuel_rate_correction": 1.3,
   "eco_gradient_max_kmpl": 15,
   "trip_warn_km": 300,
   "trip_danger_km": 400,
@@ -23,9 +23,9 @@
     "warning_max": 104
   },
   "oil_change": {
-    "interval_km": 3000,
-    "warning_km": 2500,
-    "danger_km": 4000
+    "interval_km": 4000,
+    "warning_km": 3000,
+    "danger_km": 5000
   },
   "websocket": {
     "enabled": true,

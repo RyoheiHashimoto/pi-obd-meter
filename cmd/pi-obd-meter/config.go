@@ -120,7 +120,7 @@ func loadConfig(path string) Config {
 		MaxTorqueRPM:        3500,
 		MaxPSRPM:            6000,
 		FuelTankL:           46,
-		FuelRateCorrection:  1.7,
+		FuelRateCorrection:  1.3,
 		Brightness:          display.DefaultConfig(),
 		WebSocket: WebSocketConfig{
 			Enabled:             true,

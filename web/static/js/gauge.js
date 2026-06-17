@@ -456,38 +456,41 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
-  // RPM 上昇/下降矢印 (r/min と同じライン、左=▼下降、右=▲上昇)
-  // 三角形 20px 幅、Y は r/min の視覚中央 (baseline - 8)
+  // RPM 上昇/下降矢印 (左=▼下降、右=▲上昇)
+  // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
   const arrowY = rpmReadY + 26;
-  const arrowOffsetX = 50;
-  const TRI_DOWN_D = 'M-10,-7 L10,-7 L0,7 Z';
-  const TRI_UP_D   = 'M-10,7  L10,7  L0,-7 Z';
+  const arrowOffsetX = 110;
+  const arrowDownX = cx - arrowOffsetX, arrowDownY_ = arrowY;
+  const arrowUpX   = cx + arrowOffsetX, arrowUpY_   = arrowY;
+  // 三角形 28px 幅
+  const TRI_DOWN_D = 'M-14,-10 L14,-10 L0,10 Z';
+  const TRI_UP_D   = 'M-14,10  L14,10  L0,-10 Z';
   function createRpmArrow(d, x, y) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'acc-dim');
     g.setAttribute('transform', `translate(${x}, ${y})`);
-    // bloom: ストロークで halo (LOCK label の bloomText と同じ発想)
+    // bloom: 右パネル OIL アイコンと同じパターン (細ストローク outline halo、常時表示)
     const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     bloom.setAttribute('d', d);
-    bloom.setAttribute('fill', '#333');
+    bloom.setAttribute('fill', 'none');
     bloom.setAttribute('stroke', '#333');
-    bloom.setAttribute('stroke-width', '5');
+    bloom.setAttribute('stroke-width', '4');
     bloom.setAttribute('stroke-linejoin', 'round');
-    bloom.setAttribute('opacity', '0.45');
+    bloom.setAttribute('opacity', '0.5');
     g.appendChild(bloom);
+    // main: solid fill のみ (OIL アイコンと同じく fill 主体)
     const main = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     main.setAttribute('d', d);
     main.setAttribute('fill', '#333');
     g.appendChild(main);
     svg.appendChild(g);
-    return { g, main, bloom, setColor(c) {
+    return { g, main, setColor(c) {
       main.setAttribute('fill', c);
-      bloom.setAttribute('fill', c);
       bloom.setAttribute('stroke', c);
     }};
   }
-  const rpmArrowDown = createRpmArrow(TRI_DOWN_D, cx - arrowOffsetX, arrowY);
-  const rpmArrowUp   = createRpmArrow(TRI_UP_D,   cx + arrowOffsetX, arrowY);
+  const rpmArrowDown = createRpmArrow(TRI_DOWN_D, arrowDownX, arrowDownY_);
+  const rpmArrowUp   = createRpmArrow(TRI_UP_D,   arrowUpX,   arrowUpY_);
 
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
@@ -536,24 +539,14 @@ export function buildSpeedGauge(svgId, cfg) {
   let rpmCur = 0, rpmTgt = 0, rpmRafId = 0;
   // dRPM/dt 追跡: EMA (時定数 0.3s) でシフトショック等の瞬間値を吸収
   let dRpmEma = 0, lastRpmEma = 0, lastRpmEmaTime = 0;
-  const D_RPM_THRESHOLD = 150;   // rpm/s 未満は両方非アクティブ (アイドル変動/微振動吸収)
-  const D_RPM_TAU = 0.3;          // EMA 時定数 (秒)
-  function updateRpmArrows(rpm, dRpm) {
+  const D_RPM_TAU = 0.3;          // EMA 時定数 (秒、シフトショック吸収用)
+  function updateRpmArrows(rpm, dRpm, speed) {
     const col = rpmColor(rpm);
-    const absDr = Math.abs(dRpm);
-    const downOn = dRpm < -D_RPM_THRESHOLD;
-    const upOn   = dRpm >  D_RPM_THRESHOLD;
-    function setBlink(g, on) {
-      g.classList.remove('rpm-arrow-blink-slow', 'rpm-arrow-blink-mid', 'rpm-arrow-blink-fast');
-      if (!on) return;
-      if (absDr >= 700)      g.classList.add('rpm-arrow-blink-fast');
-      else if (absDr >= 300) g.classList.add('rpm-arrow-blink-mid');
-      else                   g.classList.add('rpm-arrow-blink-slow');
-    }
+    const stopped = speed < 0.5;  // 0km/h 相当
+    const downOn = !stopped && dRpm < 0;
+    const upOn   = !stopped && dRpm > 0;
     rpmArrowDown.setColor(downOn ? col : '#333');
     rpmArrowUp.setColor(upOn ? col : '#333');
-    setBlink(rpmArrowDown.g, downOn);
-    setBlink(rpmArrowUp.g,   upOn);
   }
   function rpmLerp() {
     const delta = rpmTgt - rpmCur;
@@ -582,12 +575,12 @@ export function buildSpeedGauge(svgId, cfg) {
     }
     lastRpmEma = rpmCur;
     lastRpmEmaTime = now;
-    updateRpmArrows(active ? rpmCur : 0, active ? dRpmEma : 0);
+    updateRpmArrows(active ? rpmCur : 0, active ? dRpmEma : 0, spdAnimator.cur);
     rpmRafId = Math.abs(rpmCur - rpmTgt) > LERP_STOP ? requestAnimationFrame(rpmLerp) : 0;
     // LERP 終了時は dRPM を 0 に decay させて矢印を非アクティブに
     if (!rpmRafId) {
       dRpmEma = 0;
-      updateRpmArrows(active ? rpmCur : 0, 0);
+      updateRpmArrows(active ? rpmCur : 0, 0, spdAnimator.cur);
     }
   }
 
