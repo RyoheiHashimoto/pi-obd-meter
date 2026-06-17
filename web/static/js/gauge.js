@@ -458,8 +458,8 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // RPM 上昇/下降矢印 (左=▼下降、右=▲上昇)
   // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
-  const arrowY = rpmReadY + 26;
-  const arrowOffsetX = 110;
+  const arrowY = rpmReadY + 32;
+  const arrowOffsetX = 90;
   const arrowDownX = cx - arrowOffsetX, arrowDownY_ = arrowY;
   const arrowUpX   = cx + arrowOffsetX, arrowUpY_   = arrowY;
   // 三角形 28px 幅
