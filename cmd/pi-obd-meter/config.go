@@ -150,7 +150,7 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.FuelRateCorrection < 0 {
 		slog.Warn("fuel_rate_correction が負数、デフォルト使用", "value", cfg.FuelRateCorrection)
-		cfg.FuelRateCorrection = 1.7
+		cfg.FuelRateCorrection = 1.3
 	}
 	if cfg.FuelTankL <= 0 {
 		slog.Warn("fuel_tank_l が不正、デフォルト使用", "value", cfg.FuelTankL)
