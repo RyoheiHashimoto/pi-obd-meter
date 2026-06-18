@@ -456,41 +456,38 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
-  // RPM 上昇/下降矢印 (左=▼下降、右=▲上昇)
+  // RPM 上昇/下降インジケーター (左=下降、右=上昇)、形は LED ドット風の円
   // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
   const arrowY = rpmReadY + 32;
   const arrowOffsetX = 90;
-  const arrowDownX = cx - arrowOffsetX, arrowDownY_ = arrowY;
-  const arrowUpX   = cx + arrowOffsetX, arrowUpY_   = arrowY;
-  // 三角形 28px 幅
-  const TRI_DOWN_D = 'M-14,-10 L14,-10 L0,10 Z';
-  const TRI_UP_D   = 'M-14,10  L14,10  L0,-10 Z';
-  function createRpmArrow(d, x, y) {
+  const DOT_R = 12;
+  function createRpmDot(x, y) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'acc-dim');
     g.setAttribute('transform', `translate(${x}, ${y})`);
-    // bloom: 右パネル OIL アイコンと同じパターン (細ストローク outline halo、常時表示)
-    const bloom = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    bloom.setAttribute('d', d);
-    bloom.setAttribute('fill', 'none');
-    bloom.setAttribute('stroke', '#333');
-    bloom.setAttribute('stroke-width', '4');
-    bloom.setAttribute('stroke-linejoin', 'round');
-    bloom.setAttribute('opacity', '0.5');
-    g.appendChild(bloom);
-    // main: solid fill のみ (OIL アイコンと同じく fill 主体)
-    const main = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    main.setAttribute('d', d);
-    main.setAttribute('fill', '#333');
-    g.appendChild(main);
+    function makeCircle(r, fill, stroke, sw, opacity) {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', '0'); c.setAttribute('cy', '0'); c.setAttribute('r', String(r));
+      c.setAttribute('fill', fill);
+      if (stroke) c.setAttribute('stroke', stroke);
+      if (sw) c.setAttribute('stroke-width', String(sw));
+      if (opacity != null) c.setAttribute('opacity', String(opacity));
+      g.appendChild(c);
+      return c;
+    }
+    // 2 段 halo (外側=広く薄く ふわっと / 内側=狭くやや濃く はっきり) + main solid
+    const haloOuter = makeCircle(DOT_R, 'none', '#333', 16, 0.20);
+    const haloInner = makeCircle(DOT_R, 'none', '#333', 6,  0.50);
+    const main      = makeCircle(DOT_R, '#333', null, 0,   null);
     svg.appendChild(g);
     return { g, main, setColor(c) {
       main.setAttribute('fill', c);
-      bloom.setAttribute('stroke', c);
+      haloInner.setAttribute('stroke', c);
+      haloOuter.setAttribute('stroke', c);
     }};
   }
-  const rpmArrowDown = createRpmArrow(TRI_DOWN_D, arrowDownX, arrowDownY_);
-  const rpmArrowUp   = createRpmArrow(TRI_UP_D,   arrowUpX,   arrowUpY_);
+  const rpmArrowDown = createRpmDot(cx - arrowOffsetX, arrowY);
+  const rpmArrowUp   = createRpmDot(cx + arrowOffsetX, arrowY);
 
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
