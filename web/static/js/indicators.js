@@ -430,7 +430,7 @@ export function updateIndicators(dom, d, conf) {
   if (d.obd_connected !== false) {
     mapTgt = (mapKpa - 101.3) / 100;
   } else {
-    mapTgt = 0;
+    mapTgt = -1.0;
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
