@@ -79,6 +79,8 @@ function connectWebSocket() {
     ws = null;
     wsRetryCount++;
     reportError('ws_close', { retry: wsRetryCount });
+    // 切断時は即座に針を 0 / 大気圧へ (フリーズ対策)
+    applyData({ obd_connected: false, intake_map: 101.3 });
     if (!wsEverConnected || wsRetryCount >= WS_MAX_RETRIES) {
       // WS 未接続 or 再接続上限超過 → HTTP polling にフォールバック
       usingPolling = true;
@@ -107,6 +109,8 @@ async function fetchRealtime() {
     applyData(await resp.json());
   } catch {
     connected = false;
+    // polling 失敗時も切断状態として針を 0 / 大気圧へ
+    applyData({ obd_connected: false, intake_map: 101.3 });
   }
 }
 

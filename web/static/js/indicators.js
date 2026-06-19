@@ -426,9 +426,11 @@ const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red
 export function updateIndicators(dom, d, conf) {
   // バキューム (kPa → bar)
   const mapKpa = d.intake_map || 0;
-  // OBD 未接続時はバキューム値を更新しない (ACC→ON で針が最大値に張り付く問題の対策)
+  // OBD 未接続時 (ACC OFF) は大気圧 = 101.3 kPa (= 0 bar) に針を強制
   if (d.obd_connected !== false) {
     mapTgt = (mapKpa - 101.3) / 100;
+  } else {
+    mapTgt = 0;
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
