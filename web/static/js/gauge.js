@@ -460,9 +460,9 @@ export function buildSpeedGauge(svgId, cfg) {
   // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
   const arrowY = rpmReadY + 32;
   const arrowOffsetX = 90;
-  // 三角形 28px 幅
-  const TRI_DOWN_D = 'M-14,-10 L14,-10 L0,10 Z';
-  const TRI_UP_D   = 'M-14,10  L14,10  L0,-10 Z';
+  // 三角形 20px 幅 (r/min font-size 24 の視覚高に合わせる)
+  const TRI_DOWN_D = 'M-10,-8 L10,-8 L0,8 Z';
+  const TRI_UP_D   = 'M-10,8  L10,8  L0,-8 Z';
   function createRpmArrow(d, x, y) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'acc-dim');
@@ -480,9 +480,9 @@ export function buildSpeedGauge(svgId, cfg) {
       g.appendChild(p);
       return p;
     }
-    // 派手な 2 段 halo (針と同等以上、外側広く + 内側濃く)
-    const haloOuter = makePath('#333', 28, 'none', 0.28);
-    const haloInner = makePath('#333', 10, 'none', 0.55);
+    // 2 段 halo (外側=広く薄く ふわっと / 内側=狭くやや濃く はっきり) + main solid
+    const haloOuter = makePath('#333', 16, 'none', 0.20);
+    const haloInner = makePath('#333', 6,  'none', 0.50);
     const main      = makePath(null,   0,  '#333', null);
     svg.appendChild(g);
     return { g, main, setColor(c) {
