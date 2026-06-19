@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/internal/can"
-	"github.com/hashimoto/pi-obd-meter/internal/display"
 	"github.com/hashimoto/pi-obd-meter/internal/obd"
 )
 
@@ -76,11 +75,6 @@ func main() {
 	defer cancel()
 
 	app := newApp(cfg)
-
-	// --- 輝度制御 ---
-	brightness := display.NewBrightnessController(cfg.Brightness)
-	brightness.Start()
-	defer brightness.Stop()
 
 	// --- 自動更新（バックグラウンド） ---
 	go tryAutoUpdate(ctx)

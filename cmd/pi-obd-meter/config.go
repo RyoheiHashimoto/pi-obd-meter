@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-
-	"github.com/hashimoto/pi-obd-meter/internal/display"
 )
 
 // CoolantTempConfig は水温閾値のJSON設定
@@ -55,7 +53,6 @@ type Config struct {
 	TripDangerKm        float64                  `json:"trip_danger_km"`
 	CoolantTemp         CoolantTempConfig        `json:"coolant_temp"`
 	OilChange           OilChangeConfig          `json:"oil_change"`
-	Brightness          display.BrightnessConfig `json:"brightness"`
 	WebSocket           WebSocketConfig          `json:"websocket"`
 }
 
@@ -121,7 +118,6 @@ func loadConfig(path string) Config {
 		MaxPSRPM:            6000,
 		FuelTankL:           46,
 		FuelRateCorrection:  1.3,
-		Brightness:          display.DefaultConfig(),
 		WebSocket: WebSocketConfig{
 			Enabled:             true,
 			BroadcastIntervalMs: 50,

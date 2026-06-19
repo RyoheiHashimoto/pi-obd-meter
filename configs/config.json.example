@@ -31,15 +31,5 @@
     "enabled": true,
     "broadcast_interval_ms": 50,
     "max_clients": 3
-  },
-  "brightness": {
-    "hdmi_output": "HDMI-A-1",
-    "schedule": [
-      {"hour": 5,  "brightness": 0.6, "label": "早朝"},
-      {"hour": 7,  "brightness": 1.0, "label": "昼間"},
-      {"hour": 17, "brightness": 0.7, "label": "夕方"},
-      {"hour": 19, "brightness": 0.5, "label": "夜間"},
-      {"hour": 22, "brightness": 0.3, "label": "深夜"}
-    ]
   }
 }

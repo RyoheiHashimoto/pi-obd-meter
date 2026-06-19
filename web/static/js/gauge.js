@@ -456,29 +456,34 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
-  // RPM 上昇/下降インジケーター (左=下降、右=上昇)、形は LED ドット風の円
+  // RPM 上昇/下降インジケーター (左=▼下降、右=▲上昇)、三角形
   // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
   const arrowY = rpmReadY + 32;
   const arrowOffsetX = 90;
-  const DOT_R = 12;
-  function createRpmDot(x, y) {
+  // 三角形 28px 幅
+  const TRI_DOWN_D = 'M-14,-10 L14,-10 L0,10 Z';
+  const TRI_UP_D   = 'M-14,10  L14,10  L0,-10 Z';
+  function createRpmArrow(d, x, y) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', 'acc-dim');
     g.setAttribute('transform', `translate(${x}, ${y})`);
-    function makeCircle(r, fill, stroke, sw, opacity) {
-      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      c.setAttribute('cx', '0'); c.setAttribute('cy', '0'); c.setAttribute('r', String(r));
-      c.setAttribute('fill', fill);
-      if (stroke) c.setAttribute('stroke', stroke);
-      if (sw) c.setAttribute('stroke-width', String(sw));
-      if (opacity != null) c.setAttribute('opacity', String(opacity));
-      g.appendChild(c);
-      return c;
+    function makePath(stroke, sw, fill, opacity) {
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', fill);
+      if (stroke) {
+        p.setAttribute('stroke', stroke);
+        p.setAttribute('stroke-width', String(sw));
+        p.setAttribute('stroke-linejoin', 'round');
+      }
+      if (opacity != null) p.setAttribute('opacity', String(opacity));
+      g.appendChild(p);
+      return p;
     }
     // 2 段 halo (外側=広く薄く ふわっと / 内側=狭くやや濃く はっきり) + main solid
-    const haloOuter = makeCircle(DOT_R, 'none', '#333', 16, 0.20);
-    const haloInner = makeCircle(DOT_R, 'none', '#333', 6,  0.50);
-    const main      = makeCircle(DOT_R, '#333', null, 0,   null);
+    const haloOuter = makePath('#333', 16, 'none', 0.20);
+    const haloInner = makePath('#333', 6,  'none', 0.50);
+    const main      = makePath(null,   0,  '#333', null);
     svg.appendChild(g);
     return { g, main, setColor(c) {
       main.setAttribute('fill', c);
@@ -486,8 +491,8 @@ export function buildSpeedGauge(svgId, cfg) {
       haloOuter.setAttribute('stroke', c);
     }};
   }
-  const rpmArrowDown = createRpmDot(cx - arrowOffsetX, arrowY);
-  const rpmArrowUp   = createRpmDot(cx + arrowOffsetX, arrowY);
+  const rpmArrowDown = createRpmArrow(TRI_DOWN_D, cx - arrowOffsetX, arrowY);
+  const rpmArrowUp   = createRpmArrow(TRI_UP_D,   cx + arrowOffsetX, arrowY);
 
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
