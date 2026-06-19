@@ -480,9 +480,9 @@ export function buildSpeedGauge(svgId, cfg) {
       g.appendChild(p);
       return p;
     }
-    // 2 段 halo (外側=広く薄く ふわっと / 内側=狭くやや濃く はっきり) + main solid
-    const haloOuter = makePath('#333', 16, 'none', 0.20);
-    const haloInner = makePath('#333', 6,  'none', 0.50);
+    // 派手な 2 段 halo (針と同等以上、外側広く + 内側濃く)
+    const haloOuter = makePath('#333', 28, 'none', 0.28);
+    const haloInner = makePath('#333', 10, 'none', 0.55);
     const main      = makePath(null,   0,  '#333', null);
     svg.appendChild(g);
     return { g, main, setColor(c) {
