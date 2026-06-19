@@ -66,9 +66,24 @@ function handleMaintenance(data) {
   }
   if (data.trip_km >= 0) {
     upsertSetting('trip_km', data.trip_km);
+    // last_refuel_km は recordManualRefuel / correctTrip で明示的にセットされた値が
+    // source of truth。初回ブートストラップ時 (未設定) のみ Pi の trip_km から推定する。
+    // ※ Pi が古い trip_km を送ってから trip_correction_km=0 を適用するレースで
+    //    給油直後の last_refuel_km が破壊される問題の防止 (給油 → 復活バグ対策)
     if (data.total_km > 0) {
-      upsertSetting('last_refuel_km', data.total_km - data.trip_km);
+      const existingLastRefuel = parseFloat(getSettingValue('last_refuel_km')) || 0;
+      if (existingLastRefuel <= 0) {
+        upsertSetting('last_refuel_km', data.total_km - data.trip_km);
+      }
     }
+  }
+
+  // Pi 計算の平均燃費と補正係数を保存 (給油時に記録して実測と突合 → 精度向上の検証用)
+  if (data.avg_fuel_economy != null && data.avg_fuel_economy >= 0) {
+    upsertSetting('pi_avg_fuel_economy', data.avg_fuel_economy);
+  }
+  if (data.fuel_rate_correction != null && data.fuel_rate_correction > 0) {
+    upsertSetting('pi_fuel_rate_correction', data.fuel_rate_correction);
   }
 
   // ODO補正適用確認: Piが補正を適用したら設定をクリア
@@ -123,9 +138,9 @@ function handleRestore() {
 
 // === 手動給油記録 (ダッシュボードから呼ばれる) ===
 function recordManualRefuel({ amount: rawAmount }) {
-  const sheet = getOrCreateSheet('給油記録', [
-    '日時', '距離(km)', '燃費(km/L)', '給油量(L)'
-  ]);
+  const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%'];
+  const sheet = getOrCreateSheet('給油記録', HEADERS);
+  ensureHeaders(sheet, HEADERS);  // 既存シートのヘッダーを最新にマイグレート
 
   const amount = parseFloat(rawAmount) || 0;
   if (amount <= 0) {
@@ -137,11 +152,22 @@ function recordManualRefuel({ amount: rawAmount }) {
   const distance = (currentKm > 0 && lastKm > 0) ? currentKm - lastKm : 0;
   const fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
 
+  // Pi 表示燃費・補正係数 (Pi が直近で送ってきた値、給油時のスナップショット)
+  const piAvgFuelEco = parseFloat(getSettingValue('pi_avg_fuel_economy')) || 0;
+  const piFuelRateCorrection = parseFloat(getSettingValue('pi_fuel_rate_correction')) || 0;
+  // 誤差% = (Pi表示 - 実測) / 実測 * 100 (Pi が過大評価ならプラス)
+  const errorPct = (fuelEconomy > 0 && piAvgFuelEco > 0)
+    ? round((piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
+    : 0;
+
   sheet.appendRow([
     new Date(),
     round(distance, 1),
     fuelEconomy,
-    round(amount, 1)
+    round(amount, 1),
+    round(piAvgFuelEco, 2),
+    round(piFuelRateCorrection, 3),
+    errorPct,
   ]);
 
   if (currentKm > 0) {
@@ -626,6 +652,21 @@ function getOrCreateSheet(name, headers) {
   }
 
   return sheet;
+}
+
+// ensureHeaders は既存シートのヘッダー行に不足列がある場合、追加列を appended する。
+// 既存データは保持される (列のみ追加)。列順は HEADERS と合致する前提。
+function ensureHeaders(sheet, headers) {
+  if (!sheet || headers.length === 0) return;
+  const lastCol = sheet.getLastColumn();
+  if (lastCol >= headers.length) return; // すでに十分
+
+  // 不足列を追加
+  const missing = headers.slice(lastCol);
+  sheet.getRange(1, lastCol + 1, 1, missing.length).setValues([missing]);
+  sheet.getRange(1, 1, 1, headers.length)
+    .setFontWeight('bold')
+    .setBackground('#e8eaf6');
 }
 
 function round(val, decimals) {

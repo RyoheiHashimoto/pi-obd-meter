@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-
-	"github.com/hashimoto/pi-obd-meter/internal/display"
 )
 
 // CoolantTempConfig は水温閾値のJSON設定
@@ -31,32 +29,31 @@ type WebSocketConfig struct {
 
 // Config はアプリケーション設定
 type Config struct {
-	CANInterface        string                   `json:"can_interface"`
-	SerialPort          string                   `json:"serial_port"`
-	WebhookURL          string                   `json:"webhook_url"`
-	PollIntervalMs      int                      `json:"poll_interval_ms"`
-	LocalAPIPort        int                      `json:"local_api_port"`
-	MaintenancePath     string                   `json:"maintenance_path"`
-	WebStaticDir        string                   `json:"web_static_dir"`
-	MaxSpeedKmh         int                      `json:"max_speed_kmh"`
-	OBDProtocol         string                   `json:"obd_protocol"`
-	EngineDisplacementL float64                  `json:"engine_displacement_l"`
-	InitialOdometerKm   float64                  `json:"initial_odometer_km"`
-	ThrottleIdlePct     float64                  `json:"throttle_idle_pct"`
-	ThrottleMaxPct      float64                  `json:"throttle_max_pct"`
-	FuelTankL           float64                  `json:"fuel_tank_l"`
-	FuelRateCorrection  float64                  `json:"fuel_rate_correction"`
-	MaxPS               float64                  `json:"max_ps"`
-	MaxTorqueKgfm       float64                  `json:"max_torque_kgfm"`
-	MaxTorqueRPM        int                      `json:"max_torque_rpm"`
-	MaxPSRPM            int                      `json:"max_ps_rpm"`
-	EcoGradientMaxKmpl  float64                  `json:"eco_gradient_max_kmpl"`
-	TripWarnKm          float64                  `json:"trip_warn_km"`
-	TripDangerKm        float64                  `json:"trip_danger_km"`
-	CoolantTemp         CoolantTempConfig        `json:"coolant_temp"`
-	OilChange           OilChangeConfig          `json:"oil_change"`
-	Brightness          display.BrightnessConfig `json:"brightness"`
-	WebSocket           WebSocketConfig          `json:"websocket"`
+	CANInterface        string            `json:"can_interface"`
+	SerialPort          string            `json:"serial_port"`
+	WebhookURL          string            `json:"webhook_url"`
+	PollIntervalMs      int               `json:"poll_interval_ms"`
+	LocalAPIPort        int               `json:"local_api_port"`
+	MaintenancePath     string            `json:"maintenance_path"`
+	WebStaticDir        string            `json:"web_static_dir"`
+	MaxSpeedKmh         int               `json:"max_speed_kmh"`
+	OBDProtocol         string            `json:"obd_protocol"`
+	EngineDisplacementL float64           `json:"engine_displacement_l"`
+	InitialOdometerKm   float64           `json:"initial_odometer_km"`
+	ThrottleIdlePct     float64           `json:"throttle_idle_pct"`
+	ThrottleMaxPct      float64           `json:"throttle_max_pct"`
+	FuelTankL           float64           `json:"fuel_tank_l"`
+	FuelRateCorrection  float64           `json:"fuel_rate_correction"`
+	MaxPS               float64           `json:"max_ps"`
+	MaxTorqueKgfm       float64           `json:"max_torque_kgfm"`
+	MaxTorqueRPM        int               `json:"max_torque_rpm"`
+	MaxPSRPM            int               `json:"max_ps_rpm"`
+	EcoGradientMaxKmpl  float64           `json:"eco_gradient_max_kmpl"`
+	TripWarnKm          float64           `json:"trip_warn_km"`
+	TripDangerKm        float64           `json:"trip_danger_km"`
+	CoolantTemp         CoolantTempConfig `json:"coolant_temp"`
+	OilChange           OilChangeConfig   `json:"oil_change"`
+	WebSocket           WebSocketConfig   `json:"websocket"`
 }
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
@@ -81,6 +78,7 @@ type RealtimeData struct {
 	IntakeAirTemp  float64 `json:"intake_air_temp"`
 	O2Voltage      float64 `json:"o2_voltage"`
 	RuntimeSec     int     `json:"runtime_sec"`
+	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (タンク満タン × ECO − TRIP)
 	Gear           int     `json:"gear"`
 	GearRatio      float64 `json:"gear_ratio"`
 	ATRange        int     `json:"at_range"`
@@ -120,7 +118,6 @@ func loadConfig(path string) Config {
 		MaxPSRPM:            6000,
 		FuelTankL:           46,
 		FuelRateCorrection:  1.3,
-		Brightness:          display.DefaultConfig(),
 		WebSocket: WebSocketConfig{
 			Enabled:             true,
 			BroadcastIntervalMs: 50,

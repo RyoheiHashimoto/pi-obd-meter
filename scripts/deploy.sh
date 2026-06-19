@@ -18,8 +18,17 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cmd_build() {
   echo "Building for ARM64..."
   cd "$ROOT"
-  GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-meter ./cmd/pi-obd-meter
-  GOOS=linux GOARCH=arm64 go build -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
+  # version 文字列を一意化: dev-<shortSHA>[-dirty]-<HHMMSS>
+  # ブラウザの startVersionCheck がデプロイ毎にバージョン変化を検知して自動リロードする
+  local SHORT_SHA DIRTY BUILD_TS VERSION
+  SHORT_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+  DIRTY=""
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then DIRTY="-dirty"; fi
+  BUILD_TS=$(date +%H%M%S)
+  VERSION="dev-${SHORT_SHA}${DIRTY}-${BUILD_TS}"
+  echo "  version: ${VERSION}"
+  GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${VERSION}" -o bin/pi-obd-meter ./cmd/pi-obd-meter
+  GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=${VERSION}" -o bin/pi-obd-scanner ./cmd/pi-obd-scanner
   echo "✓ bin/pi-obd-meter, bin/pi-obd-scanner"
 }
 
@@ -31,7 +40,9 @@ cmd_deploy() {
   rsync -avz "$ROOT/web/static/" "${PI}:${DEST}/web/static/"
   ssh "$PI" "mkdir -p ${DEST}/scripts"
   rsync -avz "$ROOT/scripts/auto-update.sh" "${PI}:${DEST}/scripts/auto-update.sh"
-  ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"
+  # kiosk (cog) は systemd 配下ではなく labwc autostart 経由なので再起動不要。
+  # ブラウザは startVersionCheck がバージョン変化を検知して 30 秒以内に自動リロードする。
+  ssh "$PI" "sudo systemctl restart ${SERVICE}"
   echo "✓ デプロイ完了"
 }
 
@@ -63,7 +74,7 @@ cmd_setup() {
 cmd_ssh()           { ssh "$PI"; }
 cmd_logs()          { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
 cmd_status()        { ssh "$PI" "systemctl status ${SERVICE}"; }
-cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE} && sudo systemctl restart kiosk"; }
+cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
 cmd_kiosk_logs()    { ssh "$PI" "journalctl -u kiosk -f"; }
 cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart kiosk"; }
 cmd_shutdown()      { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }

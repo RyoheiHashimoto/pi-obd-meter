@@ -1,0 +1,12 @@
+[Unit]
+Description=Pi OBD Meter cold-start CAN capture (armed via /var/lib/pi-obd-meter/cold-candump-armed)
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pi-obd-meter/scripts/cold-start-candump.sh
+RemainAfterExit=no
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

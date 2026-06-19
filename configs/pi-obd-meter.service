@@ -6,7 +6,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStartPre=-/sbin/ip link set can0 down
-ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100
+# 注意: listen-only ON は MAP/MAF の OBD2 リクエスト (PID 0x0B/0x10) を物理ブロックし
+# バキューム計と MAF 燃費計算が死ぬため、現状 OFF。セキュリティはコードレベル防御に依存:
+#   - pi-obd-meter は Mode 01 read (PID 0x0B/0x10) のみ送信
+#   - Mode 04/08/22/27/2E 等の書き込み・制御コマンドは未実装
+ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100 listen-only off
 ExecStartPre=-/sbin/ip link set can0 up
 ExecStart=/opt/pi-obd-meter/pi-obd-meter -config /opt/pi-obd-meter/configs/config.json
 Restart=always

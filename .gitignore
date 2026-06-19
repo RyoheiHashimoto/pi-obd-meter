@@ -30,5 +30,8 @@ node_modules/
 package-lock.json
 
 # Secrets (実際のURLが入ったconfig)
+# config.json.example をコピーして config.json を作成し、webhook_url を埋める運用
+configs/config.json
+configs/config.mac.json
 configs/config.local.json
 

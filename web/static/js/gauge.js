@@ -220,7 +220,11 @@ class ArcAnimator {
 // --- ギアポジション表示 ---
 let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
 
-export function updateGear(gear, range, hold, tcLocked) {
+// TCC ロック率の閾値: 95% 以上は完全ロック(緑)、未満はスリップロック(青)
+// median ≈ 97% (車両固有の設計スリップ。タイヤ周長や減速比の補正は不要)
+const TCC_FULL_LOCK_THRESHOLD = 95;
+
+export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
   if (!gearEl) return;
   const color = range === 'P' ? '#ffffff' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
 
@@ -230,7 +234,7 @@ export function updateGear(gear, range, hold, tcLocked) {
   } else if (gear >= 1 && gear <= 4) {
     gearEl.textContent = String(gear);
   } else {
-    gearEl.textContent = '-';
+    gearEl.textContent = '--';
   }
   gearEl.setAttribute('fill', color);
   applyGlow(gearEl, color, 'strong');
@@ -247,10 +251,14 @@ export function updateGear(gear, range, hold, tcLocked) {
     holdLabelEl.setAttribute('fill', hold ? '#fdd835' : '#333');
     if (hold) applyGlow(holdLabelEl, '#fdd835', 'strong'); else removeGlow(holdLabelEl);
   }
-  // LOCK label
+  // LOCK label: OFF=灰 / ロック中=緑 (スリップ時は点滅)
   if (lockLabelEl) {
-    lockLabelEl.setAttribute('fill', tcLocked ? '#69f0ae' : '#333');
-    if (tcLocked) applyGlow(lockLabelEl, '#69f0ae', 'strong'); else removeGlow(lockLabelEl);
+    const lockColor = tcLocked ? '#69f0ae' : '#333';
+    const isSlip = tcLocked && tccLockPct != null && tccLockPct < TCC_FULL_LOCK_THRESHOLD;
+    lockLabelEl.setAttribute('fill', lockColor);
+    if (tcLocked) applyGlow(lockLabelEl, lockColor, 'strong'); else removeGlow(lockLabelEl);
+    lockLabelEl.classList.toggle('lock-slip-blink', isSlip);
+    if (lockLabelEl._bloom) lockLabelEl._bloom.classList.toggle('lock-slip-blink', isSlip);
   }
 }
 
@@ -448,6 +456,44 @@ export function buildSpeedGauge(svgId, cfg) {
   const rpmUnitEl = svgEl(svg, 'text', { x: cx, y: rpmReadY + 34, class: 'g-unit', fill: '#333', 'font-size': 24, 'text-anchor': 'middle' });
   rpmUnitEl.textContent = 'r/min';
 
+  // RPM 上昇/下降インジケーター (左=▼下降、右=▲上昇)、三角形
+  // 配置: 高さ = r/min ラベルの視覚中央、横は数値端より少し外
+  const arrowY = rpmReadY + 32;
+  const arrowOffsetX = 90;
+  // 三角形 20px 幅 (r/min font-size 24 の視覚高に合わせる)
+  const TRI_DOWN_D = 'M-10,-8 L10,-8 L0,8 Z';
+  const TRI_UP_D   = 'M-10,8  L10,8  L0,-8 Z';
+  function createRpmArrow(d, x, y) {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', 'acc-dim');
+    g.setAttribute('transform', `translate(${x}, ${y})`);
+    function makePath(stroke, sw, fill, opacity) {
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', d);
+      p.setAttribute('fill', fill);
+      if (stroke) {
+        p.setAttribute('stroke', stroke);
+        p.setAttribute('stroke-width', String(sw));
+        p.setAttribute('stroke-linejoin', 'round');
+      }
+      if (opacity != null) p.setAttribute('opacity', String(opacity));
+      g.appendChild(p);
+      return p;
+    }
+    // 2 段 halo (外側=広く薄く ふわっと / 内側=狭くやや濃く はっきり) + main solid
+    const haloOuter = makePath('#333', 16, 'none', 0.20);
+    const haloInner = makePath('#333', 6,  'none', 0.50);
+    const main      = makePath(null,   0,  '#333', null);
+    svg.appendChild(g);
+    return { g, main, setColor(c) {
+      main.setAttribute('fill', c);
+      haloInner.setAttribute('stroke', c);
+      haloOuter.setAttribute('stroke', c);
+    }};
+  }
+  const rpmArrowDown = createRpmArrow(TRI_DOWN_D, cx - arrowOffsetX, arrowY);
+  const rpmArrowUp   = createRpmArrow(TRI_UP_D,   cx + arrowOffsetX, arrowY);
+
   // Number display (ドロップシャドウ付き)
   const numY = cy + r * 0.35;
   const nm = svgEl(svg, 'text', { x: cx, y: numY, class: 'g-num', fill: cfg.color, 'font-size': numSz });
@@ -493,6 +539,17 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // RPM 中央アーク + 針 LERP (RPM色で描画)
   let rpmCur = 0, rpmTgt = 0, rpmRafId = 0;
+  // dRPM/dt 追跡: EMA (時定数 0.3s) でシフトショック等の瞬間値を吸収
+  let dRpmEma = 0, lastRpmEma = 0, lastRpmEmaTime = 0;
+  const D_RPM_TAU = 0.3;          // EMA 時定数 (秒、シフトショック吸収用)
+  function updateRpmArrows(rpm, dRpm, speed) {
+    const col = rpmColor(rpm);
+    const stopped = speed < 0.5;  // 0km/h 相当
+    const downOn = !stopped && dRpm < 0;
+    const upOn   = !stopped && dRpm > 0;
+    rpmArrowDown.setColor(downOn ? col : '#333');
+    rpmArrowUp.setColor(upOn ? col : '#333');
+  }
   function rpmLerp() {
     const delta = rpmTgt - rpmCur;
     rpmCur = Math.abs(delta) > LERP_THRESHOLD ? rpmCur + delta * LERP_SPEED : rpmTgt;
@@ -500,7 +557,7 @@ export function buildSpeedGauge(svgId, cfg) {
     const angle = ARC_START + (pct / 100) * ARC_SWEEP;
     rpmArc.setAttribute('d', pct > 0.5 ? arcPath(cx, cy, r, ARC_START, angle) : '');
     const active = rpmCur > 100;
-    const col = active ? rpmColor(rpmCur) : '#222';
+    const col = active ? rpmColor(rpmCur) : '#78909c';
     rpmArc.setAttribute('stroke', col);
     nd.setAttribute('stroke', col);
     rotateWithBloom(nd, `rotate(${angle - ARC_START}deg)`);
@@ -508,7 +565,25 @@ export function buildSpeedGauge(svgId, cfg) {
     rpmValEl.textContent = active ? Math.round(rpmCur).toLocaleString() : '--';
     rpmValEl.setAttribute('fill', col);
     rpmUnitEl.setAttribute('fill', '#fff');
+    // dRPM/dt EMA → 矢印更新
+    const now = performance.now();
+    if (lastRpmEmaTime > 0) {
+      const dt = Math.min((now - lastRpmEmaTime) / 1000, 0.5);
+      if (dt > 0.001) {
+        const dRpmInstant = (rpmCur - lastRpmEma) / dt;
+        const alpha = 1 - Math.exp(-dt / D_RPM_TAU);
+        dRpmEma = dRpmEma + (dRpmInstant - dRpmEma) * alpha;
+      }
+    }
+    lastRpmEma = rpmCur;
+    lastRpmEmaTime = now;
+    updateRpmArrows(active ? rpmCur : 0, active ? dRpmEma : 0, spdAnimator.cur);
     rpmRafId = Math.abs(rpmCur - rpmTgt) > LERP_STOP ? requestAnimationFrame(rpmLerp) : 0;
+    // LERP 終了時は dRPM を 0 に decay させて矢印を非アクティブに
+    if (!rpmRafId) {
+      dRpmEma = 0;
+      updateRpmArrows(active ? rpmCur : 0, 0, spdAnimator.cur);
+    }
   }
 
   // 起動アニメ用 直接アニメーション (LERP なし)

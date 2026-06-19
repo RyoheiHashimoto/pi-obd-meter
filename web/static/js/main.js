@@ -40,7 +40,7 @@ function applyData(d) {
   const rpm = obdOn ? (d.rpm || 0) : 0;
   gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '-') : '-', obdOn && (d.hold || false), obdOn && (d.tc_locked || false));
+  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
   updateIndicators(dom, d, conf);
 }
 
@@ -79,6 +79,8 @@ function connectWebSocket() {
     ws = null;
     wsRetryCount++;
     reportError('ws_close', { retry: wsRetryCount });
+    // 切断時は即座に針を 0 / 大気圧へ (フリーズ対策)
+    applyData({ obd_connected: false, intake_map: 0 });
     if (!wsEverConnected || wsRetryCount >= WS_MAX_RETRIES) {
       // WS 未接続 or 再接続上限超過 → HTTP polling にフォールバック
       usingPolling = true;
@@ -107,6 +109,8 @@ async function fetchRealtime() {
     applyData(await resp.json());
   } catch {
     connected = false;
+    // polling 失敗時も切断状態として針を 0 / 大気圧へ
+    applyData({ obd_connected: false, intake_map: 0 });
   }
 }
 
@@ -185,6 +189,8 @@ async function initApp() {
 
   // フリーズ検知 watchdog (rAF 停止時 自動リロード)
   startWatchdog();
+  // バージョン更新検知 (auto-update 後に自動リロード)
+  startVersionCheck();
 
   // WebSocket 優先、失敗時は HTTP polling にフォールバック
   connectWebSocket();
@@ -227,7 +233,7 @@ function bootAnimation(gauge) {
         gauge.setDirect(0, '#78909c');
         gauge.setSpeedDirect(0, '#222');
         gauge.setThrDirect(0, '#333');
-        setMapDirect(0, '#333');
+        setMapDirect(0, '#42a5f5');
         // 一度だけ class 除去 (CSS で 800ms フェード開始)
         document.body.classList.remove('booting');
         requestAnimationFrame(frame);
@@ -240,6 +246,24 @@ function bootAnimation(gauge) {
     }
     requestAnimationFrame(frame);
   });
+}
+
+// バージョン検知: auto-update 後にページ自動リロード
+function startVersionCheck() {
+  let currentVersion = null;
+  setInterval(async () => {
+    try {
+      const resp = await fetch('/api/config');
+      if (!resp.ok) return;
+      const cfg = await resp.json();
+      if (!cfg.version) return;
+      if (currentVersion === null) { currentVersion = cfg.version; return; }
+      if (cfg.version !== currentVersion) {
+        console.log('version changed:', currentVersion, '→', cfg.version, '→ reload');
+        location.reload();
+      }
+    } catch {}
+  }, 30000); // 30秒ごとにチェック
 }
 
 // フリーズ検知 watchdog: rAF が 3 秒以上止まったら自動リロード

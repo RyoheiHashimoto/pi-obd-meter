@@ -149,3 +149,12 @@ body {
 .g-unit { font-family: var(--font-mono);    font-weight: 700; text-anchor: middle; }
 .tk-lbl { font-family: var(--font-mono);    font-weight: 700; text-anchor: middle; dominant-baseline: middle; }
 
+/* TCC スリップロック時 LOCK ラベル点滅 */
+@keyframes lock-slip-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
+.lock-slip-blink { animation: lock-slip-blink 0.6s ease-in-out infinite; }
+
+/* RPM 上昇/下降矢印の点滅 (dRPM/dt 絶対値で 3 段階) */
+.rpm-arrow-blink-slow { animation: lock-slip-blink 0.6s ease-in-out infinite; }
+.rpm-arrow-blink-mid  { animation: lock-slip-blink 0.3s ease-in-out infinite; }
+.rpm-arrow-blink-fast { animation: lock-slip-blink 0.18s ease-in-out infinite; }
+

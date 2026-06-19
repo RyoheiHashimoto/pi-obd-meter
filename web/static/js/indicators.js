@@ -102,10 +102,10 @@ function svgEl(parent, tag, attrs) {
 
 // --- アイコンパス (24x24 viewBox) ---
 const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
-const ICON_THERMO = 'M12 2C10.34 2 9 3.34 9 5v8.59c-1.22.73-2 2.05-2 3.41 0 2.76 2.24 5 5 5s5-2.24 5-5c0-1.36-.78-2.68-2-3.41V5c0-1.66-1.34-3-3-3zm0 2c.55 0 1 .45 1 1v9.13l.5.29C14.46 15 15 15.96 15 17c0 1.65-1.35 3-3 3s-3-1.35-3-3c0-1.04.54-2 1.5-2.58l.5-.29V5c0-.55.45-1 1-1z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
-
+// 給油ポンプ (給油までの残距離用)
+const ICON_FUELPUMP = 'M19.77 7.23l.01-.01-3.72-3.72L15 4.56l2.11 2.11c-.94.36-1.61 1.26-1.61 2.33 0 1.38 1.12 2.5 2.5 2.5.36 0 .69-.08 1-.21v7.21c0 .55-.45 1-1 1s-1-.45-1-1V14c0-1.1-.9-2-2-2h-1V5c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v16h10v-7.5h1.5v5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V9c0-.69-.28-1.32-.73-1.77zM12 10H6V5h6v5zm6 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z';
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
 function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol, midCol, outerCol) {
@@ -136,11 +136,11 @@ let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 
 let ecoValEl, ecoIconEls;
-let tempValEl, tempIconEl;
+let rngValEl, rngIconEl;
 let tripValEl, tripIconEl;
 let oilValEl, oilIconEl, oilLabelEl;
 
-// 閾値（config から設定可能）
+// 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
 let coolantNormalMax = 100;
 let coolantWarningMax = 104;
@@ -358,13 +358,13 @@ export function createIndicators(panelEl) {
   mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
-  // === 4行インジケーター ===
+  // === 3行インジケーター ===
   // ガラスパネル（各行に角丸背景 + 色付きボーダー）
   function addIndPanel(y) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: ECO
+  // Row 0: ECO (葉アイコン、色 = 瞬間燃費ベース)
   const ecoY = IND_Y_START;
   addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
@@ -373,15 +373,16 @@ export function createIndicators(panelEl) {
   ecoValEl.textContent = '--';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: ecoY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km/L';
 
-  // Row 1: TEMP
-  const tempY = IND_Y_START + IND_SPACING;
-  addIndPanel(tempY);
-  tempIconEl = createIconPath(svg, IND_X_ICON + 10, tempY - 8, ICON_THERMO, 40);
-  tempValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: tempY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  tempValEl.textContent = '--';
-  svgEl(svg, 'text', { x: IND_X_UNIT, y: tempY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = '°C';
+  // Row 1: RNG (給油までの推定残距離、km)
+  const rngY = IND_Y_START + IND_SPACING;
+  addIndPanel(rngY);
+  rngIconEl = createIconPath(svg, IND_X_ICON + 10, rngY - 8, ICON_FUELPUMP, 40);
+  rngIconEl.setAttribute('fill', '#fff');
+  rngValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: rngY + 6, class: 'g-num', fill: '#fff', 'font-size': 40, 'text-anchor': 'middle' });
+  rngValEl.textContent = '--';
+  svgEl(svg, 'text', { x: IND_X_UNIT, y: rngY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
-  // Row 2: TRIP
+  // Row 2: TRIP (今走った距離)
   const tripY = IND_Y_START + IND_SPACING * 2;
   addIndPanel(tripY);
   tripIconEl = createIconPath(svg, IND_X_ICON + 10, tripY - 8, ICON_ROAD, 40);
@@ -425,13 +426,18 @@ const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red
 export function updateIndicators(dom, d, conf) {
   // バキューム (kPa → bar)
   const mapKpa = d.intake_map || 0;
-  mapTgt = (mapKpa - 101.3) / 100;
+  // OBD 未接続時 (ACC OFF) は大気圧 = 101.3 kPa (= 0 bar) に針を強制
+  if (d.obd_connected !== false) {
+    mapTgt = (mapKpa - 101.3) / 100;
+  } else {
+    mapTgt = -1.0;
+  }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // ECO (平均燃費の数値、色は瞬間燃費)
-  const avgEco = Math.min(d.avg_fuel_economy || 0, 99.9);
+  // ECO 累積平均 (Row 1) — 色は瞬間燃費ベース (元の仕様)
+  const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
   const instantEco = d.fuel_economy || 0;
-  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(1) : '--';
+  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
   let ecoCol;
   if (instantEco < 0 || instantEco < 0.1) {
     // エンブレ/停車: VACUUM 計と同じ色に同期
@@ -447,20 +453,20 @@ export function updateIndicators(dom, d, conf) {
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
   ecoIconEls.stem.setAttribute('stroke', ecoCol);
-  // アイコン glow は Pi 4 軽量化のため廃止（色だけで表現）
 
-  // TEMP
-  const coolant = d.coolant_temp || 0;
-  if (coolant > 0) {
-    tempValEl.textContent = Math.round(coolant);
-    const col = coolant < coolantColdMax ? '#29b6f6' : coolant <= coolantNormalMax ? '#69f0ae' : coolant <= coolantWarningMax ? '#ff9800' : '#f44336';
-    tempValEl.setAttribute('fill', col);
-    tempIconEl.setAttribute('fill', col);
+
+  // RNG (給油までの推定残距離) — 色は残量警告 (ZJ-VE 46L タンク基準)
+  const rngKm = d.range_to_empty_km || 0;
+  if (rngKm > 0) {
+    rngValEl.textContent = rngKm.toFixed(1);
+    // TRIP (350/400/450) と等価な閾値、満タン 500km 想定
+    const rngCol = rngKm >= 150 ? '#69f0ae' : rngKm >= 100 ? '#fdd835' : rngKm >= 50 ? '#ff9800' : '#f44336';
+    rngValEl.setAttribute('fill', rngCol);
+    rngIconEl.setAttribute('fill', rngCol);
   } else {
-    tempValEl.textContent = '--';
-    tempValEl.setAttribute('fill', '#333');
-    tempIconEl.setAttribute('fill', '#333');
-    setFilter(tempIconEl.parentNode, '');
+    rngValEl.textContent = '--';
+    rngValEl.setAttribute('fill', '#fff');
+    rngIconEl.setAttribute('fill', '#fff');
   }
 
   // TRIP

@@ -177,7 +177,14 @@ hdmi_cvt 800 480 60 6 0 0 0
 
 ## 車両設定
 
-`configs/config.json` で車両ごとのパラメータを設定する。全パラメータの詳細は [docs/configuration.md](docs/configuration.md) を参照。
+初回セットアップ:
+```bash
+cp configs/config.json.example configs/config.json
+cp configs/config.mac.json.example configs/config.mac.json  # Mac demo 用 (任意)
+# webhook_url を実際の GAS Webhook URL に書き換える
+```
+
+`configs/config.json` は **.gitignore で除外**されている (実 URL を含むため)。全パラメータの詳細は [docs/configuration.md](docs/configuration.md) を参照。
 
 ```json
 {
@@ -332,6 +339,15 @@ NetworkManager 遅延起動 (10s timer) + plymouth 削除 + 不要サービス�
 | [docs/configuration.md](docs/configuration.md) | config.json 全パラメータ、車種チューニング |
 | [docs/calculation-logic.md](docs/calculation-logic.md) | 燃費推定・インジケーター・閾値の算出ロジック |
 | [docs/wifi-troubleshooting.md](docs/wifi-troubleshooting.md) | Wi-Fi 接続問題の診断・復旧手順 |
+
+## ⚠ Disclaimer
+
+- 本ソフトウェアは MIT License のもと「無保証 (AS IS)」で提供されます。使用により生じた車両故障・事故・データ消失等について、作者はいかなる責任も負いません
+- OBD-2 ポート / CAN バスへの接続および本ソフトウェアの導入は、**すべて利用者の自己責任**で行ってください
+- 本ソフトウェアは ECU/ATCU への**書き込み系コマンド (Mode 04 / 08 / 27 / 2E 等) を一切実装していません**。受動受信および読み出し (Mode 01 / 03) のみ
+- 受動受信であっても CAN HAT 経由で誤った接続をするとバス通信に影響を与え得るため、**OBD-2 ピン配列・電気仕様を理解した上で接続**してください
+- 動作確認は **マツダ DY デミオ (DBA-DY3W, ZJ-VE 1.3L, 4AT)** のみ。他車種では CAN フレーム ID / バイト位置・スケーリングが異なるため、想定外の表示・動作が起こり得ます
+- 公道走行中の操作は最低限に。**画面の凝視および長押し操作 (キオスク終了) は安全な停車中**に行ってください
 
 ## ライセンス
 

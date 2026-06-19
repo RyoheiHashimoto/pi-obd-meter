@@ -8,8 +8,9 @@
 
 PI_HOST="${PI_HOST:-laurel@pi-obd-meter.local}"
 DATE=$(date +%Y%m%d)
-REMOTE_CAN_DIR="$HOME/can-logs"
-REMOTE_SS_DIR="$HOME/meter-screenshots"
+# Pi 側のパス (Mac 側で展開されないよう単一引用符)
+REMOTE_CAN_DIR='~/can-logs'
+REMOTE_SS_DIR='~/meter-screenshots'
 LOCAL_DIR="$HOME/Desktop/drive_test_${DATE}"
 
 ssh_cmd() {
