@@ -29,31 +29,31 @@ type WebSocketConfig struct {
 
 // Config はアプリケーション設定
 type Config struct {
-	CANInterface        string                   `json:"can_interface"`
-	SerialPort          string                   `json:"serial_port"`
-	WebhookURL          string                   `json:"webhook_url"`
-	PollIntervalMs      int                      `json:"poll_interval_ms"`
-	LocalAPIPort        int                      `json:"local_api_port"`
-	MaintenancePath     string                   `json:"maintenance_path"`
-	WebStaticDir        string                   `json:"web_static_dir"`
-	MaxSpeedKmh         int                      `json:"max_speed_kmh"`
-	OBDProtocol         string                   `json:"obd_protocol"`
-	EngineDisplacementL float64                  `json:"engine_displacement_l"`
-	InitialOdometerKm   float64                  `json:"initial_odometer_km"`
-	ThrottleIdlePct     float64                  `json:"throttle_idle_pct"`
-	ThrottleMaxPct      float64                  `json:"throttle_max_pct"`
-	FuelTankL           float64                  `json:"fuel_tank_l"`
-	FuelRateCorrection  float64                  `json:"fuel_rate_correction"`
-	MaxPS               float64                  `json:"max_ps"`
-	MaxTorqueKgfm       float64                  `json:"max_torque_kgfm"`
-	MaxTorqueRPM        int                      `json:"max_torque_rpm"`
-	MaxPSRPM            int                      `json:"max_ps_rpm"`
-	EcoGradientMaxKmpl  float64                  `json:"eco_gradient_max_kmpl"`
-	TripWarnKm          float64                  `json:"trip_warn_km"`
-	TripDangerKm        float64                  `json:"trip_danger_km"`
-	CoolantTemp         CoolantTempConfig        `json:"coolant_temp"`
-	OilChange           OilChangeConfig          `json:"oil_change"`
-	WebSocket           WebSocketConfig          `json:"websocket"`
+	CANInterface        string            `json:"can_interface"`
+	SerialPort          string            `json:"serial_port"`
+	WebhookURL          string            `json:"webhook_url"`
+	PollIntervalMs      int               `json:"poll_interval_ms"`
+	LocalAPIPort        int               `json:"local_api_port"`
+	MaintenancePath     string            `json:"maintenance_path"`
+	WebStaticDir        string            `json:"web_static_dir"`
+	MaxSpeedKmh         int               `json:"max_speed_kmh"`
+	OBDProtocol         string            `json:"obd_protocol"`
+	EngineDisplacementL float64           `json:"engine_displacement_l"`
+	InitialOdometerKm   float64           `json:"initial_odometer_km"`
+	ThrottleIdlePct     float64           `json:"throttle_idle_pct"`
+	ThrottleMaxPct      float64           `json:"throttle_max_pct"`
+	FuelTankL           float64           `json:"fuel_tank_l"`
+	FuelRateCorrection  float64           `json:"fuel_rate_correction"`
+	MaxPS               float64           `json:"max_ps"`
+	MaxTorqueKgfm       float64           `json:"max_torque_kgfm"`
+	MaxTorqueRPM        int               `json:"max_torque_rpm"`
+	MaxPSRPM            int               `json:"max_ps_rpm"`
+	EcoGradientMaxKmpl  float64           `json:"eco_gradient_max_kmpl"`
+	TripWarnKm          float64           `json:"trip_warn_km"`
+	TripDangerKm        float64           `json:"trip_danger_km"`
+	CoolantTemp         CoolantTempConfig `json:"coolant_temp"`
+	OilChange           OilChangeConfig   `json:"oil_change"`
+	WebSocket           WebSocketConfig   `json:"websocket"`
 }
 
 // RealtimeData はリアルタイムAPIのレスポンス（LCD用）
