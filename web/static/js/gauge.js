@@ -269,8 +269,8 @@ export function rpmColor(rpm) {
   if (rpm >= 4000) return '#ff9800';  // 橙
   if (rpm >= 3500) return '#fdd835';  // 黄
   if (rpm >= 3000) return '#76ff03';  // 黄緑（パワーバンド突入）
-  if (rpm >= 2000) return '#69f0ae';  // 緑（通常走行）
-  if (rpm >= 1500) return '#26c6da';  // 水色（街中走行）
+  if (rpm >= 2500) return '#69f0ae';  // 緑（通常走行）
+  if (rpm >= 2000) return '#26c6da';  // 水色（街中走行）
   if (rpm >= 1000) return '#42a5f5';  // 青（アイドル付近）
   return '#78909c';                    // 非アクティブ
 }
