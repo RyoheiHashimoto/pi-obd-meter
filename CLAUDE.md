@@ -170,8 +170,9 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 ### 給油記録（手動 — スマホダッシュボード経由）
 - スマホからGASダッシュボードにアクセスし、日付・距離・給油量を入力
 - GAS側で燃費を自動算出し Google Sheets に記録
-- 給油記録時にトリップリセットを GAS → Pi に通知（`pending_resets` レスポンス経由）
-- Pi は次回メンテナンス送信時にレスポンスから `trip_reset` を検出してトリップをリセット
+- 給油記録時に GAS が `trip_correction_km = 0` をセットし、次回メンテナンス送信のレスポンスで Pi に通知
+- Pi は `trip_correction_km` を受け取って `tracker.SetDistance()` でトリップをリセット（反映まで最大5分）
+- GAS は `trip_correction_km` を1回返した時点でクリアするため、Pi 側は同一レスポンス内で ODO補正より先に適用する
 
 ### GAS Webダッシュボード
 - `doGet` で `HtmlService.createHtmlOutput()` によるモバイル対応HTMLを返す
@@ -182,7 +183,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 
 ### Pi ↔ GAS 通信サイクル
 - Pi はエンジン始動時 + 5分間隔でメンテナンス状態を GAS に送信
-- GAS のレスポンスに `pending_resets`（メンテリセット）、`odo_correction`（ODO補正）、`trip_reset` が含まれる
+- GAS のレスポンスに `pending_resets`（メンテリセット）、`odometer_correction`（ODO補正）、`trip_correction_km`（トリップ補正・給油時は0）が含まれる
 - Pi はレスポンスを処理し、リセット適用後に即座に再送信してGAS側を最新に更新
 
 ### 瞬間燃費推定（3段階フォールバック）

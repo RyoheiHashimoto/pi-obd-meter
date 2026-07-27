@@ -256,15 +256,16 @@ func TestSendMaintenanceStatus_OdometerCorrection(t *testing.T) {
 	}
 }
 
-func TestSendMaintenanceStatus_TripReset(t *testing.T) {
+func TestSendMaintenanceStatus_TripResetOnRefuel(t *testing.T) {
+	// 給油記録時、GASは trip_correction_km=0 を返してトリップをリセットする
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte(`{"trip_reset":true}`))
+		w.Write([]byte(`{"trip_correction_km":0}`))
 	}))
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.tracker.Update(60, 0) // トリップに走行データを追加
+	app.tracker.SetDistance(300) // 給油前: 前回給油から300km走行
 	app.totalKmAccum = 100.0
 
 	app.sendMaintenanceStatus(context.Background())
@@ -300,29 +301,36 @@ func TestSendMaintenanceStatus_TripCorrection(t *testing.T) {
 	}
 }
 
-func TestSendMaintenanceStatus_TripCorrectionOverridesReset(t *testing.T) {
-	// trip_correction_km と trip_reset の両方がある場合、correction が優先
+func TestSendMaintenanceStatus_OdometerAndTripCorrection(t *testing.T) {
+	// ODO補正とトリップリセットが同一レスポンスに乗る場合、両方適用される。
+	// GASは trip_correction_km を返した時点でクリアするため、ODO補正の
+	// 再送信を待ってからトリップ補正を処理すると指示が失われる。
+	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
 		w.WriteHeader(200)
-		w.Write([]byte(`{"trip_correction_km":100,"trip_reset":true}`))
+		if callCount == 1 {
+			w.Write([]byte(`{"odometer_correction":50000,"trip_correction_km":0}`))
+		} else {
+			w.Write([]byte(`{}`)) // GASは両方クリア済み
+		}
 	}))
 	defer srv.Close()
 
 	app := newTestApp(t, srv.URL)
-	app.tracker.Update(60, 0)
-	time.Sleep(20 * time.Millisecond)
-	app.tracker.Update(60, 0)
+	app.tracker.SetDistance(300) // 給油前: 前回給油から300km走行
 	app.totalKmAccum = 100.0
 
 	app.sendMaintenanceStatus(context.Background())
 
-	// correction が優先されるのでリセット(0)ではなく100km
-	diff := app.tracker.DistanceKm() - 100
-	if diff < 0 {
-		diff = -diff
+	if app.totalKmAccum != 50000 {
+		t.Errorf("totalKm should be corrected to 50000, got %.1f", app.totalKmAccum)
 	}
-	if diff > 0.01 {
-		t.Errorf("trip_correction_km should take priority: got %.1f km", app.tracker.DistanceKm())
+	if app.tracker.DistanceKm() > 0.001 {
+		t.Errorf("trip should be reset even with a pending ODO correction, got %.4f km", app.tracker.DistanceKm())
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 calls (initial + re-send after ODO correction), got %d", callCount)
 	}
 }
 

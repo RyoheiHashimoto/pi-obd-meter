@@ -30,8 +30,9 @@ type oilStatusPayload struct {
 type gasMaintenanceResponse struct {
 	PendingResets      []string `json:"pending_resets"`
 	OdometerCorrection *float64 `json:"odometer_correction"`
-	TripCorrectionKm   *float64 `json:"trip_correction_km"`
-	TripReset          bool     `json:"trip_reset"`
+	// TripCorrectionKm はトリップ距離の補正値。給油記録時は 0（リセット）が入る。
+	// GAS は1回返した時点で設定をクリアするので、取りこぼすと二度と届かない。
+	TripCorrectionKm *float64 `json:"trip_correction_km"`
 }
 
 // App はアプリケーション全体の状態を管理する
@@ -201,6 +202,15 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			}
 		}
 
+		// トリップ補正処理
+		// ODO補正より先に適用する。GASはtrip_correction_kmを返した時点で設定を
+		// クリアするため、ODO補正の再送信(continue)を待つと補正指示が失われる。
+		if gasResp.TripCorrectionKm != nil {
+			km := *gasResp.TripCorrectionKm
+			app.tracker.SetDistance(km)
+			slog.Info("トリップ補正", "km", km)
+		}
+
 		// ODO補正処理
 		if gasResp.OdometerCorrection != nil && *gasResp.OdometerCorrection > 0 {
 			newOdo := *gasResp.OdometerCorrection
@@ -218,16 +228,6 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			app.odoApplied = false
 		}
 		app.totalKmMu.Unlock()
-
-		// トリップ補正処理
-		if gasResp.TripCorrectionKm != nil {
-			km := *gasResp.TripCorrectionKm
-			app.tracker.SetDistance(km)
-			slog.Info("トリップ補正", "km", km)
-		} else if gasResp.TripReset {
-			app.tracker.ManualReset()
-			slog.Info("トリップリセット", "reason", "給油記録")
-		}
 
 		return
 	}
