@@ -303,7 +303,7 @@ function buildDashboardHtml() {
   if (recentFuel.length > 0) {
     html += '<div class="card">';
     html += '<h2>📊 給油履歴</h2>';
-    html += '<div class="tbl-wrap"><table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th></tr>';
+    html += '<div class="tbl-wrap"><table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th><th>Pi燃費</th><th>誤差</th></tr>';
     const fuelLimit = Math.min(5, recentFuel.length);
     for (let i = 0; i < fuelLimit; i++) {
       html += renderFuelRow(recentFuel[i]);
@@ -612,9 +612,20 @@ function renderStatItem(label, value, color) {
 function renderFuelRow(r) {
   let dateStr = '-';
   try { dateStr = Utilities.formatDate(new Date(r[0]), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { /* skip */ }
+  // r[4]=Pi表示燃費, r[6]=誤差% （2026-08 以前の行は空）
+  const piEco = parseFloat(r[4]) || 0;
+  const errPct = parseFloat(r[6]) || 0;
+  const piCell = piEco > 0 ? `${round(piEco, 1)}` : '-';
+  let errCell = '-';
+  if (piEco > 0) {
+    const abs = Math.abs(errPct);
+    const col = abs >= 15 ? '#ff5252' : (abs >= 8 ? '#ffb74d' : '#9e9e9e');
+    errCell = `<span style="color:${col}">${errPct > 0 ? '+' : ''}${round(errPct, 1)}%</span>`;
+  }
   return `<tr><td>${dateStr}</td><td>${round(r[1] || 0, 0)}km</td>`
     + `<td style="color:#69f0ae;font-weight:600">${round(r[2] || 0, 1)}</td>`
-    + `<td>${round(r[3] || 0, 1)}L</td></tr>`;
+    + `<td>${round(r[3] || 0, 1)}L</td>`
+    + `<td>${piCell}</td><td>${errCell}</td></tr>`;
 }
 
 // === ユーティリティ: シートデータ取得 ===
