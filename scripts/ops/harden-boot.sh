@@ -107,6 +107,26 @@ RuntimeMaxUse=32M
 CONF
 note "journald: RAM運用 (Storage=volatile, 上限32M)"
 
+# 既存の設定と競合していないか確認する。conf.d はファイル名順に読まれ、
+# 後に読まれた方が勝つ。Raspberry Pi OS には persistent.conf が入って
+# いることがあり、名前次第では上書きされてしまう。
+conflict=$(grep -l "^Storage=persistent" /etc/systemd/journald.conf.d/*.conf 2>/dev/null | grep -v pi-obd-volatile || true)
+if [ -n "$conflict" ]; then
+    for c in $conflict; do
+        if [ "$(basename "$c")" \> "pi-obd-volatile.conf" ]; then
+            die "$c が後に読まれるため volatile が効かない。ファイル名を見直すこと"
+        fi
+        note "  $c があるが pi-obd-volatile.conf が後勝ちするので問題ない"
+    done
+fi
+
+# RAM運用に切り替えたので、SDに残った過去のジャーナルは不要。
+if [ -d /var/log/journal ]; then
+    sz=$(du -sh /var/log/journal 2>/dev/null | cut -f1)
+    rm -rf /var/log/journal
+    note "  /var/log/journal を削除 ($sz 回収)"
+fi
+
 # ------------------------------------------------------- 4. swap を無効化
 if systemctl list-unit-files 2>/dev/null | grep -q dphys-swapfile; then
     systemctl disable --now dphys-swapfile 2>/dev/null || true
