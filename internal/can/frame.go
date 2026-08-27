@@ -105,8 +105,12 @@ func DecodeATCtrl(data [8]byte) (gear int, gearRatio float64) {
 	gearRatio = float64(data[2]) / 100.0
 
 	// 1速と R だけ 8bit を超えるのでラップを戻す。
+	//
+	// 閾値は 0.5 とする。ラップ後の生値は1速で 0.26、R で 0.14 と十分小さい
+	// 一方、変速の過渡では 0.95 のような中途半端な値が現れる。閾値を 1.0 に
+	// すると後者まで補正して 3.51 という存在しないギア比を出してしまう。
 	if gear == 1 || raw == 0x10 {
-		if gearRatio < 1.0 {
+		if gearRatio < 0.5 {
 			gearRatio += 2.56
 		}
 	}

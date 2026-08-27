@@ -48,6 +48,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	var pulseCounter can.PulseCounter
 	// トルコン滑りの校正器。ロックアップ中のサンプルから k を学習する。
 	slipCal := can.NewSlipCalibrator()
+	// 変速中に保持するロック率
+	var lastLockPct float64
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
 	connect := func() *can.Socket {
@@ -313,11 +315,18 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			}
 
 			// 車速の下限を 20km/h とする。それ以下ではトルコンが大きく滑り、
-			// ロック率に意味が無い。変速中も過渡値になるため出さない。
-			var tccLockPct float64
-			if currentSpeed > 20 && rpm > 300 && mech > 0 && !shifting {
-				tccLockPct = slipCal.LockPct(rpm, currentSpeed, mech)
+			// ロック率に意味が無い。
+			//
+			// 変速中は回転が過渡状態にあり計算値が暴れるので、直前の値を保持
+			// する。0 に落とすと変速のたびに指針が振り切れて読めなくなる。
+			if currentSpeed > 20 && rpm > 300 && mech > 0 {
+				if !shifting {
+					lastLockPct = slipCal.LockPct(rpm, currentSpeed, mech)
+				}
+			} else {
+				lastLockPct = 0
 			}
+			tccLockPct := lastLockPct
 
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
