@@ -24,8 +24,8 @@ func TestParseOBDResponse22(t *testing.T) {
 		t.Errorf("PID = 0x%04X, want 0x17B3", pid)
 	}
 	tempC, ok := DecodeATFTemp(data)
-	if !ok || tempC != 82 {
-		t.Errorf("油温 = %.1f℃, want 82.0", tempC)
+	if !ok || tempC < 64.3 || tempC > 64.5 {
+		t.Errorf("油温 = %.2f℃, want 64.4 付近", tempC)
 	}
 }
 
@@ -50,22 +50,23 @@ func TestParseOBDResponse22_Rejects(t *testing.T) {
 
 // 実測値で換算を固定する。
 func TestDecodeATFTemp_Measured(t *testing.T) {
+	// ScanGauge の公式定義 °F = raw × 42/25 − 57 を℃に直した値で固定する。
+	// 当初は他の温度PIDからの類推で raw − 40 としていたが誤りだった。
 	tests := []struct {
 		raw   byte
 		wantC float64
 		note  string
 	}{
-		{106, 66, "8/27 21:07 停車暖機の開始"},
-		{108, 68, "同 15分後。水温は23℃上がったのに2℃しか上がらない"},
-		{122, 82, "8/28 00:00 走行前の停車中"},
-		{132, 92, "同 100km/h 走行後"},
-		{40, 0, "氷点"},
-		{0, -40, "下限"},
+		{106, 49.5, "8/27 21:07 停車暖機の開始"},
+		{108, 51.4, "同 15分後。水温は23℃上がったのに2℃しか上がらない"},
+		{122, 64.4, "8/28 00:00 走行前の停車。マツダの油量点検温度65℃とほぼ一致"},
+		{160, 99.9, "首都高での最高。水温より +1.3℃ で実車報告と一致"},
+		{53, 0.0, "氷点付近"},
 	}
 	for _, tt := range tests {
 		got, ok := DecodeATFTemp([]byte{tt.raw})
-		if !ok || got != tt.wantC {
-			t.Errorf("%s: raw=%d → %.1f℃, want %.1f", tt.note, tt.raw, got, tt.wantC)
+		if !ok || got < tt.wantC-0.6 || got > tt.wantC+0.6 {
+			t.Errorf("%s: raw=%d → %.2f℃, want %.1f", tt.note, tt.raw, got, tt.wantC)
 		}
 	}
 	if _, ok := DecodeATFTemp(nil); ok {
