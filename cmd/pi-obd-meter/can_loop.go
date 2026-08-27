@@ -44,6 +44,9 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		obd.PIDIntakeMAP,  // 0x0B — MAP (バキューム計、燃費計算)
 	}
 
+	// 距離パルスの累積カウンタ。CAN再接続のたびに基準値を捨てる。
+	var pulseCounter can.PulseCounter
+
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
 	connect := func() *can.Socket {
 		// interface が DOWN の場合に備えて UP を試みる
@@ -57,6 +60,9 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			return nil
 		}
 		slog.Info("CAN接続完了", "interface", ifname)
+		// 断絶中に進んだパルスは追えないため、基準値を捨てる。
+		// 累積値は保持されるので、失われるのは断絶中の距離だけ。
+		pulseCounter.Invalidate()
 		return sock
 	}
 
@@ -140,8 +146,11 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDATStatus:
 					_, atRange, hold, tcLocked, shifting = can.DecodeATStatus(frame.Data)
 				case can.IDCoolant:
-					ct, _ := can.DecodeCoolant(frame.Data)
+					ct, pulse := can.DecodeCoolant(frame.Data)
 					coolantTemp = ct
+					// 距離パルス (8bit ローリング) を累積する。
+					// 車速の積分と違い計数なので誤差が蓄積しない。
+					pulseCounter.Add(pulse)
 				case can.IDElectric:
 					_, voltage, baroKPa = can.DecodeElectric(frame.Data)
 				case can.IDWheels:
@@ -301,31 +310,33 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
 			data := &obd.OBDData{
-				RPM:           rpm,
-				SpeedKmh:      currentSpeed,
-				EngineLoad:    engineLoad,
-				ThrottlePos:   engineLoad, // LOADをスロットル表示に使用（CAN 0x201 B6）
-				CoolantTemp:   coolantTemp,
-				IntakeMAP:     intakeMAP,
-				MAFAirFlow:    mafAirFlow,
-				Voltage:       voltage,
-				FuelLevel:     fuelLevel,
-				AmbientTemp:   ambientTemp,
-				ShortFuelTrim: shortFuelTrim,
-				LongFuelTrim:  longFuelTrim,
-				TimingAdvance: timingAdvance,
-				IntakeAirTemp: intakeAirTemp,
-				O2Voltage:     o2Voltage,
-				RuntimeSec:    runtimeSec,
-				Gear:          gear,
-				GearRatio:     gearRatio,
-				ATRange:       int(atRange),
-				Hold:          hold,
-				TCLocked:      tcLocked,
-				Shifting:      shifting,
-				HasMAF:        hasMAF,
-				TCCLockPct:    tccLockPct,
-				BaroKPa:       baroKPa,
+				RPM:             rpm,
+				SpeedKmh:        currentSpeed,
+				EngineLoad:      engineLoad,
+				ThrottlePos:     engineLoad, // LOADをスロットル表示に使用（CAN 0x201 B6）
+				CoolantTemp:     coolantTemp,
+				IntakeMAP:       intakeMAP,
+				MAFAirFlow:      mafAirFlow,
+				PulseDistanceKm: pulseCounter.DistanceKm(),
+				PulseValid:      pulseCounter.Valid(),
+				Voltage:         voltage,
+				FuelLevel:       fuelLevel,
+				AmbientTemp:     ambientTemp,
+				ShortFuelTrim:   shortFuelTrim,
+				LongFuelTrim:    longFuelTrim,
+				TimingAdvance:   timingAdvance,
+				IntakeAirTemp:   intakeAirTemp,
+				O2Voltage:       o2Voltage,
+				RuntimeSec:      runtimeSec,
+				Gear:            gear,
+				GearRatio:       gearRatio,
+				ATRange:         int(atRange),
+				Hold:            hold,
+				TCLocked:        tcLocked,
+				Shifting:        shifting,
+				HasMAF:          hasMAF,
+				TCCLockPct:      tccLockPct,
+				BaroKPa:         baroKPa,
 			}
 			currentHasMAP := hasMAP
 			mu.Unlock()

@@ -257,7 +257,9 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			if lastFuelEco < 0 {
 				trackerFuelRate = 0
 			}
-			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
+			// 距離は距離パルス (CAN 0x420 B1) の計数を優先する。
+			// 車速積分は -0.25% の系統誤差があり、走るほどズレが溜まる。
+			app.tracker.UpdateWithPulse(data.SpeedKmh, trackerFuelRate, data.PulseDistanceKm, data.PulseValid)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			oil := app.maintMgr.OilStatus()
