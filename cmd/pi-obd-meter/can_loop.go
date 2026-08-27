@@ -46,6 +46,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 
 	// 距離パルスの累積カウンタ。CAN再接続のたびに基準値を捨てる。
 	var pulseCounter can.PulseCounter
+	// トルコン滑りの校正器。ロックアップ中のサンプルから k を学習する。
+	slipCal := can.NewSlipCalibrator()
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
 	connect := func() *can.Socket {
@@ -300,31 +302,21 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				currentSpeed = speedKmh // フォールバック
 			}
 
-			// ロック率計算: 実効ギア比 (0x230 B2) から直接求める。
-			// ロック率 = 機械ギア比 / 実効ギア比 × 100 (100% = 滑りゼロ = 完全ロック)
+			// ロック率計算: rpm と車速から実際の滑りを求める。
+			// 0x230 B2 のギア比には滑りが含まれないため使えない (#132)。
 			//
-			// 実効ギア比はトルコンの滑りを含むため、滑るほど大きくなる。
-			// 従来は理論RPMを逆算していたが、タイヤ周長と最終減速比という
-			// 2つの校正定数を必要とし、タイヤの摩耗や銘柄変更で狂った。
-			// 実測ではロック中に 96.71% (真値 99.56%) と systematically 低く、
-			// ばらつきも σ=11 と大きかった。実効ギア比を使えば定数は不要で、
-			// ロック中の滑り比は 1.0000 ± 0.0008 に収まる (#121)。
-			//
+			// 校正定数はロックアップ係合中のサンプルから自動学習するので、
+			// タイヤ周長や最終減速比を定数で持つ必要がない。
+			mech := can.MechGearRatio(gear)
+			if tcLocked && !shifting && currentSpeed > 30 && rpm > 300 && mech > 0 {
+				slipCal.Observe(rpm, currentSpeed, mech)
+			}
+
 			// 車速の下限を 20km/h とする。それ以下ではトルコンが大きく滑り、
-			// 実効ギア比が2回以上ラップして値が確定しない (実測: 1速・10km/h未満で
-			// 3.5%発生、20km/h以上では皆無)。そもそも発進直後のロック率に
-			// 意味は無いため、表示対象から外す。
+			// ロック率に意味が無い。変速中も過渡値になるため出さない。
 			var tccLockPct float64
-			if currentSpeed > 20 && rpm > 300 && gear >= 1 && gear <= 4 && gearRatio > 0 {
-				if mech := can.MechGearRatio(gear); mech > 0 {
-					tccLockPct = mech / gearRatio * 100
-					if tccLockPct > 100 {
-						tccLockPct = 100
-					}
-					if tccLockPct < 0 {
-						tccLockPct = 0
-					}
-				}
+			if currentSpeed > 20 && rpm > 300 && mech > 0 && !shifting {
+				tccLockPct = slipCal.LockPct(rpm, currentSpeed, mech)
 			}
 
 			// CAN直結では全データが常時取得可能なため常にIsFull
