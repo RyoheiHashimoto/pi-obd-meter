@@ -32,12 +32,17 @@ type Device interface {
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
-	RPM           float64 // rpm
-	SpeedKmh      float64 // km/h
-	EngineLoad    float64 // 0-100%
-	CoolantTemp   float64 // ℃
-	IntakeMAP     float64 // kPa (0=非対応)
-	MAFAirFlow    float64 // g/s (0=非対応)
+	RPM         float64 // rpm
+	SpeedKmh    float64 // km/h
+	EngineLoad  float64 // 0-100%
+	CoolantTemp float64 // ℃
+	IntakeMAP   float64 // kPa (0=非対応)
+	MAFAirFlow  float64 // g/s (0=非対応)
+	// 距離パルス (CAN 0x420 B1) による起動からの累積距離 (km)。
+	// 車速の積分と違い計数のため誤差が蓄積しない (実測 ±0.02%)。
+	PulseDistanceKm float64
+	// PulseDistanceKm が信頼できるか。CAN断からの復帰直後は false。
+	PulseValid    bool
 	ThrottlePos   float64 // 0-100%
 	Voltage       float64 // バッテリー電圧 (V) — OBD PID 0x42
 	FuelLevel     float64 // 燃料レベル (%) — OBD PID 0x2F
