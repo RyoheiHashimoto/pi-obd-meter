@@ -260,6 +260,10 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 距離は距離パルス (CAN 0x420 B1) の計数を優先する。
 			// 車速積分は -0.25% の系統誤差があり、走るほどズレが溜まる。
 			app.tracker.UpdateWithPulse(data.SpeedKmh, trackerFuelRate, data.PulseDistanceKm, data.PulseValid)
+
+			// 給油の自動検出 (#120)。
+			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
+			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			oil := app.maintMgr.OilStatus()
