@@ -78,6 +78,17 @@ function handleMaintenance(data) {
     }
   }
 
+  // 給油の自動検出 (#120)。Pi が燃料残量の跳躍から検出したものを記録する。
+  // 手動入力と同じシートに書き、自動/手動を区別できるようメモを残す。
+  if (data.refuel_amount_l != null && data.refuel_amount_l > 0) {
+    try {
+      recordManualRefuel({ amount: data.refuel_amount_l, auto: true,
+                           deltaPt: data.refuel_delta_pt, fullTank: data.refuel_full_tank });
+    } catch (e) {
+      // 給油記録に失敗しても他の更新は続ける
+    }
+  }
+
   // Pi 計算の平均燃費と補正係数を保存 (給油時に記録して実測と突合 → 精度向上の検証用)
   if (data.avg_fuel_economy != null && data.avg_fuel_economy >= 0) {
     upsertSetting('pi_avg_fuel_economy', data.avg_fuel_economy);
@@ -137,8 +148,8 @@ function handleRestore() {
 }
 
 // === 手動給油記録 (ダッシュボードから呼ばれる) ===
-function recordManualRefuel({ amount: rawAmount }) {
-  const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%'];
+function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
+  const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%', '検出方法'];
   const sheet = getOrCreateSheet('給油記録', HEADERS);
   ensureHeaders(sheet, HEADERS);  // 既存シートのヘッダーを最新にマイグレート
 
@@ -160,6 +171,14 @@ function recordManualRefuel({ amount: rawAmount }) {
     ? round((piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
     : 0;
 
+  // 自動検出の場合は跳躍量と満タン判定を残す。
+  // 燃料センダーは両端でクリップするため自動算出値には ±20% 程度の誤差が乗る。
+  // レシートによる手動上書きの余地を残すための情報 (#120)。
+  let method = '手動';
+  if (auto) {
+    method = `自動 ${round(deltaPt || 0, 1)}pt` + (fullTank ? ' 満タン' : ' 部分');
+  }
+
   sheet.appendRow([
     new Date(),
     round(distance, 1),
@@ -168,6 +187,7 @@ function recordManualRefuel({ amount: rawAmount }) {
     round(piAvgFuelEco, 2),
     round(piFuelRateCorrection, 3),
     errorPct,
+    method,
   ]);
 
   if (currentKm > 0) {

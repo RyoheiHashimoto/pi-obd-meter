@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"path/filepath"
+
+	"github.com/hashimoto/pi-obd-meter/internal/fuel"
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
@@ -24,6 +27,11 @@ type oilStatusPayload struct {
 	AvgFuelEconomy     float64   `json:"avg_fuel_economy,omitempty"`     // Pi 計算の現在の平均燃費 (km/L)
 	FuelRateCorrection float64   `json:"fuel_rate_correction,omitempty"` // 補正係数 (config の値)
 	SentAt             time.Time `json:"sent_at"`
+
+	// 給油の自動検出 (#120)。検出時のみ載せる。
+	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × 0.51 L/pt
+	RefuelDeltaPt  float64 `json:"refuel_delta_pt,omitempty"`  // 燃料残量の跳躍量 (ポイント)
+	RefuelFullTank bool    `json:"refuel_full_tank,omitempty"` // 満タンに達したか (燃費検算の可否)
 }
 
 // gasMaintenanceResponse はGASからのメンテナンスレスポンス
@@ -41,6 +49,8 @@ type App struct {
 	maintMgr *maintenance.Manager
 	tracker  *trip.Tracker
 	wsHub    *WSHub
+	// 給油の自動検出。起動時の燃料残量の跳躍から給油を判定する (#120)
+	refuel *fuel.Detector
 
 	dataMu     sync.RWMutex
 	latestData RealtimeData
@@ -70,11 +80,15 @@ func newApp(cfg Config) *App {
 		oilCfg = maintenance.DefaultOilConfig()
 	}
 
+	// 給油検出の状態はメンテ状態と同じ場所に置く
+	refuelStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "fuel_state.json")
+
 	app := &App{
 		cfg:       cfg,
 		client:    sender.NewClient(cfg.WebhookURL),
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{}),
+		refuel:    fuel.NewDetector(refuelStatePath),
 		startedAt: time.Now(),
 	}
 
@@ -177,11 +191,30 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			SentAt:             time.Now(),
 		}
 
+		// 給油を検出していれば相乗りさせる。送信経路を増やさない。
+		refuelEvent := app.refuel.Event()
+		if refuelEvent != nil {
+			payload.RefuelAmountL = refuelEvent.AmountL
+			payload.RefuelDeltaPt = refuelEvent.DeltaPt
+			payload.RefuelFullTank = refuelEvent.FullTank
+			slog.Info("給油を自動検出",
+				"before_pt", refuelEvent.BeforePt,
+				"after_pt", refuelEvent.AfterPt,
+				"delta_pt", refuelEvent.DeltaPt,
+				"amount_l", refuelEvent.AmountL,
+				"full_tank", refuelEvent.FullTank)
+		}
+
 		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
 		if err != nil {
 			return
 		}
 		slog.Info("メンテナンス状態送信完了")
+
+		// 送信できた給油イベントは消す。重複記録を防ぐ。
+		if refuelEvent != nil {
+			app.refuel.ClearEvent()
+		}
 
 		if len(respBody) == 0 {
 			return
