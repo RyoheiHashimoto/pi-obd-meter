@@ -12,7 +12,7 @@ set -u
 IF=${IF:-can0}
 FROM=${1:-00}
 TO=${2:-FF}
-OUT=/tmp/scan22_full_$(date +%Y%m%d_%H%M%S).log
+OUT=${OUT:-/var/log/can-verify/scan22_full_$(date +%Y%m%d_%H%M%S).log}
 STEP=${STEP:-0.03}
 
 command -v cansend >/dev/null || { echo "cansend が無い"; exit 1; }
