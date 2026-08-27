@@ -84,47 +84,44 @@ $SSH "$USER@$HOST" '
 note ""
 
 # ================================================================= 段階 1
-note "===== 段階1: fsck が終了コード4 を返す状況を再現する (破損リスク ゼロ) ====="
-note "8月に起動を止めた直接の原因を、ファイルシステムを壊さずに作る"
+note "===== 段階1: systemd が終了コード4 を成功として扱うか (破損リスク ゼロ) ====="
+note "8月に起動を止めた直接の原因は fsck の終了コード4 だった"
+note ""
+note "当初は fsck を偽物に差し替えて4を返させる設計にしていたが、これには"
+note "詰みの筋があった。対策が効かなかった場合 emergency に落ち、90秒後に"
+note "再起動し、また偽fsckが4を返す無限ループになる。fsck の時点で root は"
+note "読み取り専用なので、偽物が自分を戻すこともできない。SDを抜くしかなくなる。"
+note ""
+note "代わりに、同じ SuccessExitStatus を持つ試験ユニットを作って"
+note "終了コード4 で終わらせ、systemd がそれを成功と扱うか直接確かめる。"
+note "SuccessExitStatus の解釈は systemd 共通なので、これで判定できる。"
 
-$SSH "$USER@$HOST" 'sudo sh -c "
-  # 本物を退避し、4 を返すだけの偽物を置く
-  [ -e /sbin/fsck.ext4.real ] || cp /sbin/fsck.ext4 /sbin/fsck.ext4.real
-  printf \"#!/bin/sh\nexit 4\n\" > /sbin/fsck.ext4
-  chmod +x /sbin/fsck.ext4
-  # 次回起動の1回だけ使い、起動後に自動で本物へ戻す
-  cat > /etc/systemd/system/restore-fsck.service <<CONF
+want=$($SSH "$USER@$HOST" 'systemctl show systemd-fsck-root -p SuccessExitStatus --value' 2>/dev/null)
+note "systemd-fsck-root の設定値: [$want]"
+echo "$want" | grep -q 4 || fail "終了コード4 が成功扱いになっていない。harden-boot.sh を先に実行すること"
+
+$SSH "$USER@$HOST" "sudo sh -c '
+  cat > /etc/systemd/system/fsck-exit4-test.service <<CONF
 [Unit]
-Description=fsck を本物に戻す (検証用の後片付け)
-DefaultDependencies=no
-After=local-fs.target
+Description=終了コード4 が成功扱いになるかの試験
 [Service]
 Type=oneshot
-ExecStart=/bin/sh -c \"mv -f /sbin/fsck.ext4.real /sbin/fsck.ext4; systemctl disable restore-fsck.service\"
-RemainAfterExit=yes
-[Install]
-WantedBy=multi-user.target
+ExecStart=/bin/sh -c \"exit 4\"
+SuccessExitStatus=$want
 CONF
-  systemctl enable restore-fsck.service >/dev/null 2>&1
-  sync
-"' || fail "fsck の偽装に失敗"
-note "fsck.ext4 を「必ず4を返す」偽物に差し替えた (起動後に自動で戻る)"
+  systemctl daemon-reload
+  systemctl start fsck-exit4-test.service
+'" 2>/dev/null
 
-note "再起動する"
-$SSH "$USER@$HOST" 'sudo systemctl reboot' 2>/dev/null || true
-sleep 10
-printf '[verify] 復帰を待つ'
-wait_for_pi 240 || fail "段階1で戻ってこなかった。SDをMacに挿し、cmdline.txt を $SAFE_DIR/cmdline.txt.current に戻すこと"
-note "SSH 復帰"
-wait_for_meter || fail "段階1でメーターが起動しなかった"
-note "メーター起動を確認"
-note "→ fsck が4を返しても起動する。8月の障害は再発しない"
+result=$($SSH "$USER@$HOST" 'systemctl is-failed fsck-exit4-test.service 2>/dev/null; systemctl show fsck-exit4-test.service -p ExecMainStatus --value' 2>/dev/null)
+note "試験ユニットの結果: $result"
+$SSH "$USER@$HOST" 'sudo sh -c "systemctl reset-failed fsck-exit4-test.service 2>/dev/null; rm -f /etc/systemd/system/fsck-exit4-test.service; systemctl daemon-reload"' 2>/dev/null
 
-$SSH "$USER@$HOST" '
-  echo "  fsck の状態: $(systemctl show systemd-fsck-root -p ExecMainStatus --value 2>/dev/null) (4 なら再現できていた)"
-  echo "  fsck 復元  : $([ -e /sbin/fsck.ext4.real ] && echo 未完了 || echo 完了)"
-'
-$SSH "$USER@$HOST" 'sudo sh -c "[ -e /sbin/fsck.ext4.real ] && mv -f /sbin/fsck.ext4.real /sbin/fsck.ext4; systemctl disable restore-fsck.service >/dev/null 2>&1; rm -f /etc/systemd/system/restore-fsck.service; sync"' 2>/dev/null || true
+echo "$result" | grep -q '^failed' && fail "終了コード4 が失敗扱いのまま。8月と同じ状況で起動が止まる"
+note "→ 終了コード4 は成功として扱われる。8月の停止条件は解消している"
+note ""
+note "なお cmdline.txt 側も fsck.repair=preen に変えてあるため、"
+note "そもそも fsck が4を返す状況自体が起きにくくなっている (二重の対策)"
 note ""
 
 # ================================================================= 段階 2
