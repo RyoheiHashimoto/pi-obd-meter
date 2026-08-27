@@ -132,6 +132,12 @@ func (app *App) startLocalAPI(ctx context.Context) {
 	})
 
 	// --- リアルタイムAPI（デバッグ/フォールバック用） ---
+	// Pi 本体の健全性 (#124)。電圧降下・SoC温度・不正終了の累計を返す。
+	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(app.health.Status())
+	})
+
 	mux.HandleFunc("GET /api/realtime", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, app.getRealtimeData())
 	})
