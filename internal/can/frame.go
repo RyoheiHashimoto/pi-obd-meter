@@ -37,23 +37,59 @@ func DecodeEngine(data [8]byte) (rpm, speedKmh, load float64) {
 
 // DecodeElectric は 0x430 フレームをデコードする
 //
-//	B0: オルタネーター負荷 (raw / 2.55 = %)
-//	B1: バッテリー電圧 (raw * 0.08 V)
-//	B4-5: 大気圧 (raw / 100 kPa)
-func DecodeElectric(data [8]byte) (altLoadPct, voltageV, baroKPa float64) {
-	altLoadPct = float64(data[0]) / 2.55
-	voltageV = float64(data[1]) * 0.08
-	rawBaro := uint16(data[4])<<8 | uint16(data[5])
-	baroKPa = float64(rawBaro) / 100.0
+//	B0: 未確定。燃料残量の可能性が高い (raw / 2.55 = %)。issue #119 で検証中
+//	B1: 未確定。電圧に連動するが電圧そのものではない。issue #119 で検証中
+//	B4-5: オドメーター (raw * 10 km)。実機検証済み
+//
+// B0 と B1 は独立した2つの量ではなく B0 + 2*B1 ≒ 418 の拘束を受ける。
+// 電圧は OBD-2 標準 PID 0x42 (Control module voltage) を使用すること。
+func DecodeElectric(data [8]byte) (rawB0Pct, rawB1 float64, odometerKm float64) {
+	rawB0Pct = float64(data[0]) / 2.55
+	rawB1 = float64(data[1])
+	rawOdo := uint16(data[4])<<8 | uint16(data[5])
+	odometerKm = float64(rawOdo) * 10.0
 	return
+}
+
+// MechGearRatio は FN4A-EL の機械ギア比を返す (1-4速、範囲外は0)。
+//
+// 0x230 B2 が返すのはトルコンの滑りを含む「実効ギア比」であり、
+// これを機械ギア比で割ればトルコンの滑り比が求まる。
+// 実効ギア比のオーバーフロー判定にも使う。
+func MechGearRatio(gear int) float64 {
+	switch gear {
+	case 1:
+		return 2.816
+	case 2:
+		return 1.498
+	case 3:
+		return 1.000
+	case 4:
+		return 0.726
+	}
+	return 0
 }
 
 // DecodeATCtrl は 0x230 フレームをデコードする
 //
 //	B0: ギア (0x01-0x04=1-4速, 0x10=R, 0xF0=N/P)
-//	B1: ギア係合状態 (0x00/0x01)
-//	B2: ギア比 (×0.01、1バイトオーバーフロー: 1速/Rはギア比>2.55のため+256して解釈)
-func DecodeATCtrl(data [8]byte) (gear int, gearRatio float64) {
+//	B1: 1速 または N/P のフラグ (ギア段から導けるため独立した情報は無い)
+//	B2: 実効ギア比 ×100 — 固定のギア比ではなく、トルコンの滑りを含む
+//
+// 実効ギア比は常に機械ギア比以上になる (滑りは減速側にしか働かない)。
+// 1バイトのため 2.55 を超えるとラップするので、機械ギア比を下限として補正する。
+// 実測では 2速の 11.4%、3速の 2.2% でラップが発生していた (発進時など滑りが
+// 大きい場面)。従来は1速とRにしか補正していなかったため、これらで
+// 4速より小さい不正な値を出力していた。
+//
+// ロックアップ係合中は滑りがゼロになるため、実効ギア比は機械ギア比と一致する。
+// 実測で 3速ロックアップ中の滑り比は 1.0000 ± 0.0008 だった (#121)。
+//
+// 制約: ラップ回数は B2 単体では決定できない。滑りが極端に大きいと 2回以上
+// ラップするが、1回補正した値も機械ギア比を超えるため区別がつかない。
+// 実測では 1速・車速10km/h未満でのみ発生し (3.5%)、20km/h以上では皆無だった。
+// したがって本値は概ね 20km/h 以上で信頼できる。低速域では参考値とすること。
+func DecodeATCtrl(data [8]byte) (gear int, effectiveRatio float64) {
 	raw := data[0]
 	switch raw {
 	case 0x01:
@@ -67,12 +103,20 @@ func DecodeATCtrl(data [8]byte) (gear int, gearRatio float64) {
 	default:
 		gear = 0 // N/P or transition
 	}
-	b2 := int(data[2])
-	// 1速(gear=1)またはR(B0=0x10): ギア比>2.55で1バイトオーバーフロー
-	if gear == 1 || raw == 0x10 {
-		b2 += 256
+
+	effectiveRatio = float64(data[2]) / 100.0
+
+	// 1バイト(2.55)を超えた分のラップを戻す。
+	// 0.97 の余裕は、ロックアップ時に実効比が機械比をわずかに下回る
+	// 測定誤差 (実測で最大 -0.02) を許容するため。
+	if mech := MechGearRatio(gear); mech > 0 {
+		if effectiveRatio < mech*0.97 {
+			effectiveRatio += 2.56
+		}
+	} else if raw == 0x10 {
+		// R: ギア比 2.7 前後で常にオーバーフローする
+		effectiveRatio += 2.56
 	}
-	gearRatio = float64(b2) / 100.0
 	return
 }
 

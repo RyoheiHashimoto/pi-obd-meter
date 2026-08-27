@@ -87,7 +87,9 @@ type RealtimeData struct {
 	TCLocked       bool    `json:"tc_locked"`
 	TCCLockPct     float64 `json:"tcc_lock_pct"`
 	Shifting       bool    `json:"shifting"`
-	BaroPressure   float64 `json:"barometric_pressure"`
+	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
+	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
+	ElecB1Raw      float64 `json:"elec_b1_raw"`     // 0x430 B1 生値（未確定）
 	OilAlert       string  `json:"oil_alert"`
 	OilCurrentKm   float64 `json:"oil_current_km"`
 	OilRemainingKm float64 `json:"oil_remaining_km"`
