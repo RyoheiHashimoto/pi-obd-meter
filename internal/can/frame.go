@@ -37,14 +37,17 @@ func DecodeEngine(data [8]byte) (rpm, speedKmh, load float64) {
 
 // DecodeElectric は 0x430 フレームをデコードする
 //
-//	B0: オルタネーター負荷 (raw / 2.55 = %)
-//	B1: バッテリー電圧 (raw * 0.08 V)
-//	B4-5: 大気圧 (raw / 100 kPa)
-func DecodeElectric(data [8]byte) (altLoadPct, voltageV, baroKPa float64) {
-	altLoadPct = float64(data[0]) / 2.55
-	voltageV = float64(data[1]) * 0.08
-	rawBaro := uint16(data[4])<<8 | uint16(data[5])
-	baroKPa = float64(rawBaro) / 100.0
+//	B0: 未確定。燃料残量の可能性が高い (raw / 2.55 = %)。issue #119 で検証中
+//	B1: 未確定。電圧に連動するが電圧そのものではない。issue #119 で検証中
+//	B4-5: オドメーター (raw * 10 km)。実機検証済み
+//
+// B0 と B1 は独立した2つの量ではなく B0 + 2*B1 ≒ 418 の拘束を受ける。
+// 電圧は OBD-2 標準 PID 0x42 (Control module voltage) を使用すること。
+func DecodeElectric(data [8]byte) (rawB0Pct, rawB1 float64, odometerKm float64) {
+	rawB0Pct = float64(data[0]) / 2.55
+	rawB1 = float64(data[1])
+	rawOdo := uint16(data[4])<<8 | uint16(data[5])
+	odometerKm = float64(rawOdo) * 10.0
 	return
 }
 

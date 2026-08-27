@@ -45,19 +45,20 @@ func TestDecodeEngine_Moving(t *testing.T) {
 func TestDecodeElectric(t *testing.T) {
 	// candump: 0x430 [7] 72 99 00 00 26 6D 60
 	data := [8]byte{0x72, 0x99, 0x00, 0x00, 0x26, 0x6D, 0x60, 0x00}
-	altLoad, voltage, baro := DecodeElectric(data)
+	b0Pct, b1, odoKm := DecodeElectric(data)
 
-	// Alt load: 0x72=114, /2.55 = 44.7%
-	if math.Abs(altLoad-44.7) > 0.1 {
-		t.Errorf("AltLoad = %f, want ~44.7", altLoad)
+	// B0: 0x72=114, /2.55 = 44.7%（燃料残量の可能性・未確定）
+	if math.Abs(b0Pct-44.7) > 0.1 {
+		t.Errorf("B0Pct = %f, want ~44.7", b0Pct)
 	}
-	// Voltage: 0x99=153, *0.08 = 12.24V
-	if math.Abs(voltage-12.24) > 0.01 {
-		t.Errorf("Voltage = %f, want ~12.24", voltage)
+	// B1: 0x99=153（生値のまま返す）
+	if math.Abs(b1-153) > 0.01 {
+		t.Errorf("B1 = %f, want 153", b1)
 	}
-	// Baro: 0x266D=9837, /100 = 98.37 kPa
-	if math.Abs(baro-98.37) > 0.01 {
-		t.Errorf("Baro = %f, want ~98.37", baro)
+	// オドメーター: 0x266D=9837, *10 = 98,370 km
+	// このキャプチャ採取時の実走行距離。2026-08 時点では 108,120 km まで進んでおり整合する。
+	if math.Abs(odoKm-98370) > 0.01 {
+		t.Errorf("OdometerKm = %f, want 98370", odoKm)
 	}
 }
 
