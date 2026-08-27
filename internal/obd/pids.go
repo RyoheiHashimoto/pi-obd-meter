@@ -40,6 +40,12 @@ type OBDData struct {
 	MAFAirFlow  float64 // g/s (0=非対応)
 	// 距離パルス (CAN 0x420 B1) による起動からの累積距離 (km)。
 	// 車速の積分と違い計数のため誤差が蓄積しない (実測 ±0.02%)。
+	// ATF 油温 (℃)。Mode 22 の 0x17B3 から取得する (2026-08-28 同定)。
+	// 標準PIDには無く、この車両では PCM の拡張データにのみ存在する。
+	ATFTempC float64
+	// ATFTempC が取得できたか。応答が無い環境では false。
+	HasATF bool
+
 	PulseDistanceKm float64
 	// PulseDistanceKm が信頼できるか。CAN断からの復帰直後は false。
 	PulseValid    bool
