@@ -100,24 +100,29 @@ want=$($SSH "$USER@$HOST" 'systemctl show systemd-fsck-root -p SuccessExitStatus
 note "systemd-fsck-root の設定値: [$want]"
 echo "$want" | grep -q 4 || fail "終了コード4 が成功扱いになっていない。harden-boot.sh を先に実行すること"
 
+# A/B で比べる。SuccessExitStatus 無しなら failed、有りなら success に
+# なることを両方見せる。ExecMainStatus は Type=oneshot では当てにならない
+# ので (終了コード4 でも 0 と報告される)、is-failed と Result で判定する。
 $SSH "$USER@$HOST" "sudo sh -c '
-  cat > /etc/systemd/system/fsck-exit4-test.service <<CONF
-[Unit]
-Description=終了コード4 が成功扱いになるかの試験
-[Service]
-Type=oneshot
-ExecStart=/bin/sh -c \"exit 4\"
-SuccessExitStatus=$want
-CONF
+  printf \"#!/bin/sh\\nexit 4\\n\" > /usr/local/bin/exit4-probe
+  chmod +x /usr/local/bin/exit4-probe
+  for v in without with; do
+    if [ \$v = with ]; then extra=\"SuccessExitStatus=$want\"; else extra=\"\"; fi
+    printf \"[Unit]\\nDescription=exit4 %s\\n[Service]\\nType=oneshot\\nExecStart=/usr/local/bin/exit4-probe\\n%s\\n\" \$v \"\$extra\" > /etc/systemd/system/exit4-\$v.service
+  done
   systemctl daemon-reload
-  systemctl start fsck-exit4-test.service
+  for v in without with; do systemctl start exit4-\$v.service >/dev/null 2>&1; done
 '" 2>/dev/null
 
-result=$($SSH "$USER@$HOST" 'systemctl is-failed fsck-exit4-test.service 2>/dev/null; systemctl show fsck-exit4-test.service -p ExecMainStatus --value' 2>/dev/null)
-note "試験ユニットの結果: $result"
-$SSH "$USER@$HOST" 'sudo sh -c "systemctl reset-failed fsck-exit4-test.service 2>/dev/null; rm -f /etc/systemd/system/fsck-exit4-test.service; systemctl daemon-reload"' 2>/dev/null
+res_without=$($SSH "$USER@$HOST" 'systemctl is-failed exit4-without.service 2>/dev/null')
+res_with=$($SSH "$USER@$HOST" 'systemctl is-failed exit4-with.service 2>/dev/null')
+note "  SuccessExitStatus なし → $res_without   (8月に起きたこと)"
+note "  SuccessExitStatus あり → $res_with   (対策後)"
 
-echo "$result" | grep -q '^failed' && fail "終了コード4 が失敗扱いのまま。8月と同じ状況で起動が止まる"
+$SSH "$USER@$HOST" 'sudo sh -c "systemctl reset-failed exit4-without.service exit4-with.service 2>/dev/null; rm -f /etc/systemd/system/exit4-*.service /usr/local/bin/exit4-probe; systemctl daemon-reload"' 2>/dev/null
+
+[ "$res_without" = "failed" ] || fail "対照実験が成立していない (SuccessExitStatus 無しでも failed にならない)"
+[ "$res_with" = "failed" ] && fail "終了コード4 が失敗扱いのまま。8月と同じ状況で起動が止まる"
 note "→ 終了コード4 は成功として扱われる。8月の停止条件は解消している"
 note ""
 note "なお cmdline.txt 側も fsck.repair=preen に変えてあるため、"
