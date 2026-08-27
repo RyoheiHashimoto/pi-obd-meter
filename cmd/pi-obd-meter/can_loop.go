@@ -291,17 +291,24 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				currentSpeed = speedKmh // フォールバック
 			}
 
-			// ロック率計算: RPM÷車速 から TC スリップを算出
-			// ロック率 = 理論RPM / 実RPM × 100 (100% = 完全ロック)
-			// 理論RPM = 車速(km/h) / 3.6 / タイヤ周長(m) × 60 × 最終減速比 × ギア比
-			const tireCircM = 1.832  // 175/65R14 タイヤ周長
-			const finalRatio = 4.147 // 最終減速比
+			// ロック率計算: 実効ギア比 (0x230 B2) から直接求める。
+			// ロック率 = 機械ギア比 / 実効ギア比 × 100 (100% = 滑りゼロ = 完全ロック)
+			//
+			// 実効ギア比はトルコンの滑りを含むため、滑るほど大きくなる。
+			// 従来は理論RPMを逆算していたが、タイヤ周長と最終減速比という
+			// 2つの校正定数を必要とし、タイヤの摩耗や銘柄変更で狂った。
+			// 実測ではロック中に 96.71% (真値 99.56%) と systematically 低く、
+			// ばらつきも σ=11 と大きかった。実効ギア比を使えば定数は不要で、
+			// ロック中の滑り比は 1.0000 ± 0.0008 に収まる (#121)。
+			//
+			// 車速の下限を 20km/h とする。それ以下ではトルコンが大きく滑り、
+			// 実効ギア比が2回以上ラップして値が確定しない (実測: 1速・10km/h未満で
+			// 3.5%発生、20km/h以上では皆無)。そもそも発進直後のロック率に
+			// 意味は無いため、表示対象から外す。
 			var tccLockPct float64
-			if currentSpeed > 5 && rpm > 300 && gear >= 1 && gear <= 4 {
-				gearRatios := [5]float64{0, 2.816, 1.498, 1.000, 0.726}
-				theoreticalRPM := currentSpeed / 3.6 / tireCircM * 60 * finalRatio * gearRatios[gear]
-				if theoreticalRPM > 0 {
-					tccLockPct = theoreticalRPM / rpm * 100
+			if currentSpeed > 20 && rpm > 300 && gear >= 1 && gear <= 4 && gearRatio > 0 {
+				if mech := can.MechGearRatio(gear); mech > 0 {
+					tccLockPct = mech / gearRatio * 100
 					if tccLockPct > 100 {
 						tccLockPct = 100
 					}
