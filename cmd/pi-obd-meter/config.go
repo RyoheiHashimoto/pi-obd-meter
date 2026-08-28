@@ -65,6 +65,8 @@ type RealtimeData struct {
 	FuelEconomy    float64 `json:"fuel_economy"`
 	FuelRateLH     float64 `json:"fuel_rate_lh"`
 	AvgFuelEconomy float64 `json:"avg_fuel_economy"`
+	ATFTempC       float64 `json:"atf_temp_c"`
+	ATFAlert       string  `json:"atf_alert,omitempty"`
 	TripKm         float64 `json:"trip_km"`
 	CoolantTemp    float64 `json:"coolant_temp"`
 	IntakeMAP      float64 `json:"intake_map"`

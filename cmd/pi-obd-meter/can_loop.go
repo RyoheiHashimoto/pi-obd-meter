@@ -78,6 +78,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	// 最新値の保持（CANフレーム受信ごとに更新）
 	var (
 		mu            sync.Mutex
+		atfTempC      float64
+		hasATF        bool
 		rpm           float64
 		speedKmh      float64
 		engineLoad    float64
@@ -162,6 +164,15 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDWheels:
 					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
 				case can.IDOBDResponse:
+					// Mode 22 (拡張診断データ) の応答。ATF油温はここから来る。
+					if pid22, data, ok := can.ParseOBDResponse22(frame); ok {
+						if pid22 == can.PID22ATFTemp {
+							if t, ok := can.DecodeATFTemp(data); ok {
+								atfTempC = t
+								hasATF = true
+							}
+						}
+					}
 					// OBD-2 レスポンス処理
 					if pid, data, ok := can.ParseOBDResponse(frame); ok {
 						switch pid {
@@ -270,6 +281,12 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				_ = sock.WriteFrame(can.OBDRequestFrame(obd.PIDControlModuleV))
 			}
 
+			// ATF油温 (Mode 22)。油は熱容量が大きく分解能も1℃しかないため、
+			// 2秒に1回で十分。実測では停車4分間まったく動かなかった。
+			if tickCount%max(1, 2000/intervalMs) == 0 {
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22ATFTemp))
+			}
+
 			mu.Lock()
 			if !hasData {
 				mu.Unlock()
@@ -338,6 +355,8 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				CoolantTemp:     coolantTemp,
 				IntakeMAP:       intakeMAP,
 				MAFAirFlow:      mafAirFlow,
+				ATFTempC:        atfTempC,
+				HasATF:          hasATF,
 				PulseDistanceKm: pulseCounter.DistanceKm(),
 				PulseValid:      pulseCounter.Valid(),
 				Voltage:         voltage,
