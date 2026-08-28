@@ -32,16 +32,39 @@ func recoverSSH() {
 }
 
 // checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
+// checkWiFi はネットワークが使える状態かを返す。
+//
+// 以前は "wlan0" を名前で決め打ちしていた。2026-08 に内蔵WiFiを無効化して
+// USB アダプタ (wlan1) に切り替えたところ、wlan0 は存在するが DOWN のままに
+// なり、常に false を返すようになった。その結果、起動時の GAS 初回送信が
+// 毎回スキップされ、給油の自動検出が送信されずに失われかけた。
+//
+// インターフェース名に依存せず、ループバック以外で UP かつグローバルな
+// IP を持つものが1つでもあれば良しとする。有線に差し替えても動く。
 func checkWiFi() bool {
-	iface, err := net.InterfaceByName("wlan0")
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return false
 	}
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return false
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			if ipnet.IP.To4() != nil {
+				return true
+			}
+		}
 	}
-	return len(addrs) > 0
+	return false
 }
 
 func main() {
