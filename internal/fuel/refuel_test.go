@@ -184,3 +184,53 @@ func TestDetector_IgnoresMovingSamplesInWindow(t *testing.T) {
 		t.Errorf("値 = %.2f, want 50 (走行中の20が混ざってはいけない)", got)
 	}
 }
+
+// 満タン時は給油量を出さない。センダーが上限に張り付いていて根拠が無い。
+//
+// 2026-08-28 の給油では 40.69L と算出したが実際は 35.29L で15%過大だった。
+// 給油直後から11分間 95.29 に張り付き、燃料が減って測定範囲に戻ってから
+// ようやく 90.6 という実測値になった。満タン時の読みは「上限に達した」
+// という以上の情報を持たない。
+func TestDetector_NoAmountWhenFullTank(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	feed(NewDetector(p), 15.5, settleSamples)
+
+	d := NewDetector(p)
+	feed(d, 95.29, settleSamples) // センダーの上限
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("検出できていない")
+	}
+	if !ev.FullTank {
+		t.Error("満タンと判定されていない")
+	}
+	if ev.AmountL != 0 {
+		t.Errorf("満タンなのに給油量 %.2fL を出した。根拠が無い値は出さない", ev.AmountL)
+	}
+	// 跳躍量は残す。較正の材料になる。
+	if ev.DeltaPt < 79 || ev.DeltaPt > 80 {
+		t.Errorf("跳躍 = %.2f, want 79.8 付近", ev.DeltaPt)
+	}
+}
+
+// 部分給油なら量を出す。上限に達していないので測れている。
+func TestDetector_AmountWhenPartialRefuel(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	feed(NewDetector(p), 20, settleSamples)
+
+	d := NewDetector(p)
+	feed(d, 60, settleSamples)
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("検出できていない")
+	}
+	if ev.FullTank {
+		t.Error("満タンと誤判定した")
+	}
+	want := 40 * LitersPerPoint
+	if ev.AmountL < want-0.2 || ev.AmountL > want+0.2 {
+		t.Errorf("給油量 = %.2fL, want %.2f", ev.AmountL, want)
+	}
+}
