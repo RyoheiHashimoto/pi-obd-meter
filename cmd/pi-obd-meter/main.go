@@ -275,8 +275,9 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				FuelEconomy:    displayFuelEco,
 				FuelRateLH:     lastFuelRate,
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
-				ATFTempC:       data.ATFTempC,
-				ATFAlert:       can.ATFAlert(data.ATFTempC),
+				ATFTempC:       atfTempOrZero(data),
+				ATFValid:       data.HasATF,
+				ATFAlert:       atfAlertOrEmpty(data),
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
@@ -342,4 +343,24 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			return
 		}
 	}
+}
+
+// atfTempOrZero は ATF 油温を返す。未取得なら 0 を返す。
+//
+// 未取得のまま 0 を流すと「0℃」と区別できない。換算後の 0℃ は raw 53 に
+// 対応する実在しうる値なので、冬場に本物の低温と紛れる。読む側が判断できる
+// よう ATFValid を併せて出す。
+func atfTempOrZero(d *obd.OBDData) float64 {
+	if !d.HasATF {
+		return 0
+	}
+	return d.ATFTempC
+}
+
+// atfAlertOrEmpty は未取得のときに警告を出さない。
+func atfAlertOrEmpty(d *obd.OBDData) string {
+	if !d.HasATF {
+		return ""
+	}
+	return can.ATFAlert(d.ATFTempC)
 }
