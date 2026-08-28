@@ -35,10 +35,13 @@ jobs:
 
       - name: Package
         run: |
+          # scripts/ も同梱する。ロガーや auto-update.sh 自身がバイナリと
+          # 一緒に更新されないと、リポジトリを直しても Pi 上は古いまま動き続ける。
           tar czf pi-obd-meter-dev.tar.gz \
             pi-obd-meter \
             pi-obd-scanner \
-            web/static/
+            web/static/ \
+            scripts/
 
       - name: Update dev-latest release
         env:

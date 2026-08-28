@@ -30,6 +30,55 @@ fi
 
 mkdir -p "$STATE_DIR"
 
+# --- scripts/ の更新 ---
+#
+# 実行中のシェルスクリプト自身を上書きすると、bash が続きを読み込む際に
+# 壊れた内容を読む恐れがある。同一ファイルシステム上の一時ファイルへ書いて
+# mv で差し替えれば、ディレクトリエントリだけが入れ替わり、実行中のプロセス
+# は元の inode を読み続けるので安全。
+install_scripts() {
+    local src="$1/scripts"
+    [ -d "$src" ] || return 0
+
+    mkdir -p "${DEST}/scripts"
+    local f rel dst
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        dst="${DEST}/scripts/${rel}"
+        mkdir -p "$(dirname "$dst")"
+        if ! cmp -s "$f" "$dst"; then
+            if cp "$f" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
+                log "scripts 更新: $rel"
+            else
+                rm -f "${dst}.new"
+                log_warn "scripts 更新失敗: $rel"
+            fi
+        fi
+    done < <(find "$src" -type f)
+
+    # ロガーは /usr/local/bin から起動しているので、変わっていれば入れ替えて
+    # サービスを再起動する。再起動しないと古いコードのまま動き続ける。
+    local pair name unit
+    for pair in "ops/drive-verify.py:drive-verify" "ops/poll22-lean.py:poll22"; do
+        name="${pair%%:*}"; unit="${pair##*:}"
+        [ -f "${DEST}/scripts/${name}" ] || continue
+        dst="/usr/local/bin/$(basename "$name")"
+        if ! cmp -s "${DEST}/scripts/${name}" "$dst"; then
+            # 失敗したまま再起動すると、古いコードのまま止まるだけ損をする。
+            # 入れ替えが成功したときだけ再起動する。
+            if cp "${DEST}/scripts/${name}" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
+                log "ロガー更新: $(basename "$name")"
+                if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+                    systemctl restart "$unit" 2>/dev/null || log_warn "$unit の再起動に失敗"
+                fi
+            else
+                rm -f "${dst}.new"
+                log_warn "ロガー更新失敗: $(basename "$name")"
+            fi
+        fi
+    done
+}
+
 # --- Stable release チェック ---
 check_stable() {
     local latest_json
@@ -142,6 +191,13 @@ check_dev() {
         cp "${tmpdir}/pi-obd-scanner" "${DEST}/pi-obd-scanner"
         chmod +x "${DEST}/pi-obd-scanner"
     fi
+    # scripts/ を更新する。
+    #
+    # バイナリだけが自動更新され scripts/ が手動だと、リポジトリを直しても
+    # Pi 上は古いまま動き続ける。実際 drive-verify.py は修正後も手で配る
+    # まで古いままだった。auto-update.sh 自身もここで更新される。
+    install_scripts "$tmpdir"
+
     # web/static を更新（開発用ファイルシステム配信）
     if [ -d "${tmpdir}/web/static" ]; then
         mkdir -p "${DEST}/web/static"
