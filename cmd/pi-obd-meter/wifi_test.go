@@ -9,8 +9,7 @@ import (
 //
 // 以前は "wlan0" 決め打ちだった。2026-08 に内蔵WiFiを無効化して USB アダプタ
 // (wlan1) に切り替えたところ、wlan0 は存在するが DOWN のままになり、常に
-// false を返すようになった。起動時の GAS 初回送信が毎回スキップされ、
-// 給油の自動検出が送信されずに失われかけた。
+// false を返すようになった。起動時の GAS 初回送信が毎回スキップされる。
 func TestCheckWiFi_DoesNotDependOnInterfaceName(t *testing.T) {
 	// 実行環境に何らかのネットワークがあれば true になるはず。
 	// 名前で決め打ちしていると、wlan0 が無い環境では必ず false になる。
