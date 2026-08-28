@@ -119,6 +119,7 @@ func TestDecodeATCtrl_ShiftTransientIsNotWrapped(t *testing.T) {
 		want   float64
 	}{
 		{"3速なのにB2が4速の値", 0x03, 73, 0.73},
+		{"1速なのにB2が過渡値0.95", 0x01, 95, 0.95},
 		{"2速なのにB2が3速の値", 0x02, 100, 1.00},
 		{"4速なのにB2が3速の値", 0x04, 100, 1.00},
 	}
