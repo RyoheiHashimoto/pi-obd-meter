@@ -64,6 +64,17 @@ type Event struct {
 type state struct {
 	LastSettledPt float64   `json:"last_settled_pt"`
 	SavedAt       time.Time `json:"saved_at"`
+
+	// 未送信の給油イベント。
+	//
+	// 検出しても GAS へ送れるとは限らない。起動直後は WiFi が繋がるまで
+	// 時間がかかり、実際 2026-08-28 の給油では「WiFi接続待ちタイムアウト」で
+	// 初回送信がスキップされた。そのままエンジンを切っていれば、給油記録は
+	// 永久に失われていた。last_settled_pt は既に給油後の値に更新されており、
+	// 次回起動では跳躍が検出できないからである。
+	//
+	// 送信が成功するまでファイルに残し、再起動をまたいで持ち越す。
+	PendingEvent *Event `json:"pending_event,omitempty"`
 }
 
 // Detector は起動時の燃料残量の跳躍から給油を検出する。
@@ -103,9 +114,13 @@ func NewDetector(statePath string) *Detector {
 	d := &Detector{statePath: statePath, window: make([]float64, settleSamples)}
 	if b, err := os.ReadFile(statePath); err == nil {
 		var s state
-		if json.Unmarshal(b, &s) == nil && s.LastSettledPt > 0 {
-			d.prev = s.LastSettledPt
-			d.prevValid = true
+		if json.Unmarshal(b, &s) == nil {
+			if s.LastSettledPt > 0 {
+				d.prev = s.LastSettledPt
+				d.prevValid = true
+			}
+			// 前回送れなかった給油を引き継ぐ
+			d.event = s.PendingEvent
 		}
 	}
 	return d
@@ -148,14 +163,24 @@ func (d *Detector) Update(levelPt float64, stopped bool) {
 		if d.prevValid {
 			delta := d.current - d.prev
 			if delta >= DetectThresholdPt {
+				before := d.prev
+				// 前回の給油をまだ送れていなければ、そちらの給油前残量を使う。
+				// 2回分をまとめて1件として記録すれば取りこぼさない。
+				if d.event != nil {
+					before = d.event.BeforePt
+				}
 				d.event = &Event{
 					DetectedAt: time.Now(),
-					BeforePt:   d.prev,
+					BeforePt:   before,
 					AfterPt:    d.current,
-					DeltaPt:    delta,
-					AmountL:    delta * LitersPerPoint,
+					DeltaPt:    d.current - before,
+					AmountL:    (d.current - before) * LitersPerPoint,
 					FullTank:   d.current >= FullTankPt,
 				}
+				// 検出は間引かず即座に保存する。ここで電源が落ちても失わない。
+				d.save(d.current)
+				d.lastSaved = d.current
+				d.lastSaveAt = time.Now()
 			}
 		}
 	}
@@ -188,6 +213,12 @@ func (d *Detector) ClearEvent() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.event = nil
+	// 送信できたので不揮発からも消す。次回起動で二重に記録しない。
+	if d.settled {
+		d.save(d.current)
+	} else if d.prevValid {
+		d.save(d.prev)
+	}
 }
 
 // Settled は落ち着いた値が得られたかを返す。
@@ -204,7 +235,11 @@ func (d *Detector) save(pt float64) {
 	if d.statePath == "" {
 		return
 	}
-	b, err := json.Marshal(state{LastSettledPt: pt, SavedAt: time.Now()})
+	b, err := json.Marshal(state{
+		LastSettledPt: pt,
+		SavedAt:       time.Now(),
+		PendingEvent:  d.event,
+	})
 	if err != nil {
 		return
 	}
