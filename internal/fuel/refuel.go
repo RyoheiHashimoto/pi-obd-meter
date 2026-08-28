@@ -3,6 +3,7 @@ package fuel
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -35,6 +36,19 @@ const (
 	// settleSamples は「落ち着いた値」とみなすのに必要なサンプル数。
 	// 走行中はスロッシングで 24〜33ポイント振れるため、停車時のみ採る。
 	settleSamples = 20
+
+	// saveInterval は状態ファイルを書く最短間隔。
+	//
+	// Update は 50ms 周期 (毎秒20回) で呼ばれる。停車のたびに毎回保存すると
+	// アイドリング20分で 24,000 回 SD に書くことになる。atomicfile は
+	// 一時ファイル作成→書込→fsync→rename を行うため1回が重く、車載機は
+	// エンジン停止で毎回不正電断するため、書き込み量がそのまま破損リスクになる。
+	//
+	// 燃料残量は分単位でしか動かないので、30秒間隔で十分。
+	saveInterval = 30 * time.Second
+
+	// saveMinDeltaPt は保存するに値する変化量。これ未満なら書かない。
+	saveMinDeltaPt = 0.5
 )
 
 // Event は検出した給油を表す。
@@ -63,9 +77,22 @@ type Detector struct {
 	prev      float64 // 前回起動時に保存された落ち着いた値
 	prevValid bool
 
-	sum, n  float64 // 今回起動後の停車中サンプルの平均を取る
+	// 直近 settleSamples 個の停車中サンプルを保持するリングバッファ。
+	//
+	// 当初は起動後の全停車サンプルの累積平均を使っていたが、走行中に燃料が
+	// 減るため、平均は実際の残量より高く出る。長距離ほど乖離が大きく、
+	// 90pt で出発し 40pt で到着した場合の保存値は約 65pt になり、満タン給油
+	// 時の跳躍が 55pt ではなく 30pt と算出されてしまう (給油量が45%過少)。
+	// 直近の窓だけを見れば、常に「今の残量」になる。
+	window []float64
+	wi     int
+	filled bool
+
 	current float64
 	settled bool
+
+	lastSaved  float64
+	lastSaveAt time.Time
 
 	checked bool   // 判定は起動につき1回だけ
 	event   *Event // 検出した給油 (無ければ nil)
@@ -73,7 +100,7 @@ type Detector struct {
 
 // NewDetector は不揮発の状態を読み込んで検出器を作る。
 func NewDetector(statePath string) *Detector {
-	d := &Detector{statePath: statePath}
+	d := &Detector{statePath: statePath, window: make([]float64, settleSamples)}
 	if b, err := os.ReadFile(statePath); err == nil {
 		var s state
 		if json.Unmarshal(b, &s) == nil && s.LastSettledPt > 0 {
@@ -95,14 +122,28 @@ func (d *Detector) Update(levelPt float64, stopped bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.sum += levelPt
-	d.n++
-	d.current = d.sum / d.n
-
-	if d.n >= settleSamples {
-		d.settled = true
+	if len(d.window) != settleSamples {
+		d.window = make([]float64, settleSamples)
 	}
-	if d.settled && !d.checked {
+	d.window[d.wi] = levelPt
+	d.wi++
+	if d.wi >= settleSamples {
+		d.wi = 0
+		d.filled = true
+	}
+	if !d.filled {
+		return // まだ窓が埋まっていない
+	}
+
+	var sum float64
+	for _, v := range d.window {
+		sum += v
+	}
+	d.current = sum / float64(settleSamples)
+	d.settled = true
+
+	// 給油判定は起動につき1回だけ。最初に落ち着いた値で判断する。
+	if !d.checked {
 		d.checked = true
 		if d.prevValid {
 			delta := d.current - d.prev
@@ -118,10 +159,14 @@ func (d *Detector) Update(levelPt float64, stopped bool) {
 			}
 		}
 	}
-	// 落ち着いた後は、常に最新の落ち着いた値を保存しておく
-	// (次回起動時の比較対象になる)
-	if d.settled {
+
+	// 次回起動時の比較対象を保存する。ただし書きすぎない。
+	now := time.Now()
+	if d.lastSaveAt.IsZero() ||
+		(now.Sub(d.lastSaveAt) >= saveInterval && math.Abs(d.current-d.lastSaved) >= saveMinDeltaPt) {
 		d.save(d.current)
+		d.lastSaved = d.current
+		d.lastSaveAt = now
 	}
 }
 
