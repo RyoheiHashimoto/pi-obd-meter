@@ -159,24 +159,51 @@ function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
   }
 
   const currentKm = parseFloat(getSettingValue('total_km')) || 0;
+
+  // --- 自動検出の行を手動のレシート値で上書きする (#120) ---
+  //
+  // 自動検出が走ると last_refuel_km が現在地に更新されトリップが 0 になる。
+  // その後レシートを見て手動入力すると、距離ほぼ 0 の2行目が追加され、
+  // 燃費が壊れ、トリップがもう一度リセットされてしまう。
+  //
+  // 直前の行が自動検出で、走行距離がほとんど進んでいないなら、
+  // それは「同じ給油の記録」とみなして上書きする。
+  if (!auto) {
+    const last = readLastRefuelRow(sheet);
+    if (last && String(last.method || '').indexOf('自動') === 0) {
+      const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
+      // 自動検出後にほとんど走っていない = 同じ給油
+      if (lastRefuelKm > 0 && currentKm > 0 && currentKm - lastRefuelKm < 50) {
+        return overwriteRefuelRow(sheet, last, amount);
+      }
+    }
+  }
+
   const lastKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
   const distance = (currentKm > 0 && lastKm > 0) ? currentKm - lastKm : 0;
-  const fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
 
   // Pi 表示燃費・補正係数 (Pi が直近で送ってきた値、給油時のスナップショット)
   const piAvgFuelEco = parseFloat(getSettingValue('pi_avg_fuel_economy')) || 0;
   const piFuelRateCorrection = parseFloat(getSettingValue('pi_fuel_rate_correction')) || 0;
-  // 誤差% = (Pi表示 - 実測) / 実測 * 100 (Pi が過大評価ならプラス)
-  const errorPct = (fuelEconomy > 0 && piAvgFuelEco > 0)
+
+  // --- 自動検出では燃費と誤差%を出さない ---
+  //
+  // 燃料センダーは両端でクリップするため、満タンにした分の一部が数えられず、
+  // 自動算出の給油量は過少に出る (±20%程度)。その量で距離を割れば燃費は
+  // 過大になる。さらに誤差% の列は燃料モデルの検証に使ってきたもので、
+  // レシートの実数だからこそ信頼できた。推定値を混ぜると使えなくなる。
+  //
+  // 給油量だけ参考値として残し、燃費と誤差% は空欄にする。
+  // レシートを手動入力すればこの行が上書きされ、そのとき初めて計算される。
+  let method = '手動';
+  let fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
+  let errorPct = (fuelEconomy > 0 && piAvgFuelEco > 0)
     ? round((piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
     : 0;
-
-  // 自動検出の場合は跳躍量と満タン判定を残す。
-  // 燃料センダーは両端でクリップするため自動算出値には ±20% 程度の誤差が乗る。
-  // レシートによる手動上書きの余地を残すための情報 (#120)。
-  let method = '手動';
   if (auto) {
     method = `自動 ${round(deltaPt || 0, 1)}pt` + (fullTank ? ' 満タン' : ' 部分');
+    fuelEconomy = '';
+    errorPct = '';
   }
 
   sheet.appendRow([
@@ -198,6 +225,44 @@ function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
   upsertSetting('trip_km', 0);
 
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1) };
+}
+
+// 給油記録シートの最終行を読む。行が無ければ null。
+function readLastRefuelRow(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return null;  // ヘッダーのみ
+  const v = sheet.getRange(last, 1, 1, 8).getValues()[0];
+  return {
+    row: last,
+    date: v[0],
+    distance: parseFloat(v[1]) || 0,
+    amount: parseFloat(v[3]) || 0,
+    piAvgFuelEco: parseFloat(v[4]) || 0,
+    correction: parseFloat(v[5]) || 0,
+    method: v[7],
+  };
+}
+
+// 自動検出で作られた行を、レシートの実数で上書きする。
+//
+// 自動検出は「給油があったこと」と「トリップのリセット」を担い、
+// 給油量は推定値にすぎない。レシートが入った時点で確定値に差し替え、
+// そこで初めて燃費と誤差% を計算する。行を増やさないので二重記録に
+// ならず、last_refuel_km とトリップも再リセットしない。
+function overwriteRefuelRow(sheet, last, amount) {
+  const distance = last.distance;
+  const fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
+  const errorPct = (fuelEconomy > 0 && last.piAvgFuelEco > 0)
+    ? round((last.piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
+    : 0;
+  const method = String(last.method || '') + ' → 手動確定';
+
+  sheet.getRange(last.row, 3).setValue(fuelEconomy);
+  sheet.getRange(last.row, 4).setValue(round(amount, 1));
+  sheet.getRange(last.row, 7).setValue(errorPct);
+  sheet.getRange(last.row, 8).setValue(method);
+
+  return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1), overwrote: true };
 }
 
 // === ODO補正 (ダッシュボードから呼ばれる) ===
