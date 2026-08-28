@@ -152,14 +152,28 @@ func (d *Detector) Update(levelPt float64, stopped bool) {
 		if d.prevValid {
 			delta := d.current - d.prev
 			if delta >= DetectThresholdPt {
-				d.event = &Event{
+				full := d.current >= FullTankPt
+				ev := &Event{
 					DetectedAt: time.Now(),
 					BeforePt:   d.prev,
 					AfterPt:    d.current,
 					DeltaPt:    delta,
-					AmountL:    delta * LitersPerPoint,
-					FullTank:   d.current >= FullTankPt,
+					FullTank:   full,
 				}
+				// 満タンのときは給油量を出さない。
+				//
+				// センダーが上限に張り付いているので、給油後の残量が実際に
+				// どこまで行ったか分からない。跳躍量は「最低これだけ」で
+				// あって真の値ではなく、そこから計算した量には根拠が無い。
+				// 2026-08-28 の給油では 40.69L と算出したが実際は 35.29L で、
+				// 15%過大だった。
+				//
+				// 分からないものは出さない。満タン法の燃費計算にはレシートの
+				// 実数が要るので実害は無く、トリップのリセットは変わらず働く。
+				if !full {
+					ev.AmountL = delta * LitersPerPoint
+				}
+				d.event = ev
 			}
 		}
 	}

@@ -34,8 +34,10 @@ func TestDetector_Refuel(t *testing.T) {
 	if diff := ev.DeltaPt - 86.7; diff > 0.1 || diff < -0.1 {
 		t.Errorf("跳躍量 = %.1f, want 86.7", ev.DeltaPt)
 	}
-	if want := 86.7 * LitersPerPoint; ev.AmountL < want-0.1 || ev.AmountL > want+0.1 {
-		t.Errorf("給油量 = %.1f L, want %.1f L", ev.AmountL, want)
+	// 満タンなので給油量は出さない。センダーが上限に張り付いており、
+	// 給油後の残量が実際どこまで行ったか分からないため根拠が無い。
+	if ev.AmountL != 0 {
+		t.Errorf("満タンなのに給油量 %.1f L を出した", ev.AmountL)
 	}
 	if !ev.FullTank {
 		t.Error("95.3%% は満タンと判定されるべき")
