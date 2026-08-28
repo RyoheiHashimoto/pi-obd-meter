@@ -1,6 +1,7 @@
 package fuel
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -88,5 +89,98 @@ func TestDetector_IgnoresMoving(t *testing.T) {
 	}
 	if d.Settled() {
 		t.Error("走行中のサンプルで落ち着いたと判定した")
+	}
+}
+
+// 保存値は「起動後の全平均」ではなく「直近の残量」でなければならない。
+//
+// 当初は累積平均だったため、走行中に燃料が減ると保存値が実際より高く出て、
+// 次回給油時の跳躍が小さく算出されていた。
+func TestDetector_BaselineIsRecentNotSessionAverage(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	d := NewDetector(p)
+
+	// 90pt で停車 (出発前)
+	for i := 0; i < settleSamples; i++ {
+		d.Update(90, true)
+	}
+	if got := d.current; got < 89.9 || got > 90.1 {
+		t.Fatalf("出発前の値 = %.2f, want 90", got)
+	}
+
+	// 走って燃料を消費し、40pt で停車 (到着後)
+	for i := 0; i < settleSamples; i++ {
+		d.Update(40, true)
+	}
+	if got := d.current; got < 39.9 || got > 40.1 {
+		t.Errorf("到着後の値 = %.2f, want 40 (累積平均なら65付近になってしまう)", got)
+	}
+}
+
+// 停車中に毎サンプル保存すると SD を痛める。書き込みを間引くこと。
+func TestDetector_DoesNotWriteEverySample(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	d := NewDetector(p)
+
+	// 窓を埋めて最初の保存を起こす
+	for i := 0; i < settleSamples; i++ {
+		d.Update(50, true)
+	}
+	st, err := os.Stat(p)
+	if err != nil {
+		t.Fatalf("最初の保存が行われていない: %v", err)
+	}
+	first := st.ModTime()
+
+	// 50ms 周期で 10秒ぶん = 200回。値も変わらない。
+	for i := 0; i < 200; i++ {
+		d.Update(50, true)
+	}
+	st2, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st2.ModTime().Equal(first) {
+		t.Error("値が変わっていないのに再保存された。SDへの書き込みを間引けていない")
+	}
+}
+
+// 窓が埋まるまでは判定も保存もしない。
+func TestDetector_NeedsFullWindow(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	d := NewDetector(p)
+	for i := 0; i < settleSamples-1; i++ {
+		d.Update(50, true)
+	}
+	if d.Settled() {
+		t.Error("窓が埋まる前に settled になっている")
+	}
+	if _, err := os.Stat(p); err == nil {
+		t.Error("窓が埋まる前に保存された")
+	}
+	d.Update(50, true)
+	if !d.Settled() {
+		t.Error("窓が埋まったのに settled にならない")
+	}
+}
+
+// 走行中のサンプルは窓に入れない (スロッシングで振れるため)。
+func TestDetector_IgnoresMovingSamplesInWindow(t *testing.T) {
+	dir := t.TempDir()
+	d := NewDetector(filepath.Join(dir, "s.json"))
+	for i := 0; i < 100; i++ {
+		d.Update(20, false) // 走行中の暴れた値
+	}
+	if d.Settled() {
+		t.Fatal("走行中のサンプルで settled になった")
+	}
+	for i := 0; i < settleSamples; i++ {
+		d.Update(50, true)
+	}
+	if got := d.current; got < 49.9 || got > 50.1 {
+		t.Errorf("値 = %.2f, want 50 (走行中の20が混ざってはいけない)", got)
 	}
 }
