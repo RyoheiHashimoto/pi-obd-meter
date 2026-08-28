@@ -152,10 +152,24 @@ check_dev() {
     # ヘルスチェック（10秒以内にプロセスが生存しているか）
     sleep 10
     if ! systemctl is-active --quiet "$SERVICE"; then
-        log_warn "dev ビルド起動失敗、ロールバック"
+        log_warn "dev ビルド起動失敗、ロールバック: $published"
         cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
         systemctl start "$SERVICE"
         rm -rf "$tmpdir"
+
+        # 失敗したバージョンも記録する。
+        #
+        # 記録しないと dev-version が古いままになり、2分後のタイマーで
+        # 同じビルドを「新しい」と判定して再度ダウンロードし、また失敗する。
+        # 12MB のダウンロードとメーターの10秒停止が延々と繰り返され、
+        # 走行記録に穴が空き、SD への書き込みも増え続ける。
+        #
+        # 実際 2026-08-28 に GET /api/health の二重登録で起動できない
+        # ビルドを出してしまい、この筋を踏みかけた。
+        #
+        # 同じビルドは二度と試さない。次の新しいビルドが出れば自動で試す。
+        echo "$published" > "$STATE_DIR/dev-version"
+        log_warn "このビルドは再試行しない。次のビルドを待つ"
         return 1
     fi
 

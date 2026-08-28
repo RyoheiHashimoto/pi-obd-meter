@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# 走行データを1行/0.5秒でCSVに記録する。
+# 走行データを1行/0.2秒でCSVに記録する。
 #
 # 記録先: /var/log/drive-verify/drive-MMDD-HHMM.csv
 # systemd の drive-verify.service から常時起動する。
@@ -20,7 +20,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 path = os.path.join(OUT_DIR, "drive-%s.csv" % time.strftime("%m%d-%H%M"))
 f = open(path, "w", buffering=1)
 f.write("t,speed,rpm,gear,ratio,mech,slip,tcc,locked,hold,range,shifting,"
-        "atf,trip_km,fuel_pt,coolant,map,load\n")
+        "atf,volt,odo,trip_km,fuel_pt,coolant,map,load\n")
 print("記録先: %s" % path, flush=True)
 
 while True:
@@ -33,13 +33,18 @@ while True:
     mech = MECH.get(g, 0)
     r = d.get("gear_ratio") or 0
     slip = (r / mech) if (mech > 0 and r > 0) else 0
-    f.write("%.1f,%.2f,%.1f,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.5f,%.2f,%.1f,%.1f,%.1f\n" % (
+    f.write("%.1f,%.2f,%.1f,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.1f,%.1f,%.1f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, r, mech, slip,
         d.get("tcc_lock_pct") or 0, d.get("tc_locked"),
         d.get("hold"), d.get("at_range_str"), d.get("shifting"),
         d.get("atf_temp_c") or 0,
+        d.get("voltage") or 0,
+        d.get("odometer_can_km") or 0,
         d.get("trip_km") or 0, d.get("elec_b0_pct") or 0,
         d.get("coolant_temp") or 0, d.get("intake_map") or 0,
         d.get("engine_load") or 0))
-    time.sleep(0.5)
+    # 0.2秒周期。加速度を差分から求めるため、0.5秒では全開加速のサンプルが
+    # 数点しか取れずトルク推定の分解能が足りなかった。書き込み量は
+    # 0.6MB/時 → 1.5MB/時 で、SDへの負担は許容範囲。
+    time.sleep(0.2)
