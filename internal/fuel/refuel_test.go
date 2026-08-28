@@ -196,12 +196,10 @@ func TestDetector_EventSurvivesRestart(t *testing.T) {
 	p := filepath.Join(dir, "s.json")
 
 	// 前回: 残量 15pt で終了
-	d := NewDetector(p)
-	feed(d, 15, settleSamples)
-	d = nil
+	feed(NewDetector(p), 15, settleSamples)
 
 	// 給油して再起動。95pt を検出する。
-	d = NewDetector(p)
+	d := NewDetector(p)
 	feed(d, 95, settleSamples)
 	ev := d.Event()
 	if ev == nil {
