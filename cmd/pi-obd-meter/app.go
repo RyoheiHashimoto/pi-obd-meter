@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/hashimoto/pi-obd-meter/internal/fuel"
+	"github.com/hashimoto/pi-obd-meter/internal/health"
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
@@ -27,6 +28,15 @@ type oilStatusPayload struct {
 	AvgFuelEconomy     float64   `json:"avg_fuel_economy,omitempty"`     // Pi 計算の現在の平均燃費 (km/L)
 	FuelRateCorrection float64   `json:"fuel_rate_correction,omitempty"` // 補正係数 (config の値)
 	SentAt             time.Time `json:"sent_at"`
+
+	// Pi 本体の健全性 (#124)。電圧降下と不正終了の蓄積を追う。
+	PiSoCTempC       float64 `json:"pi_soc_temp_c,omitempty"`
+	PiUnderVoltage   bool    `json:"pi_under_voltage,omitempty"`
+	PiThrottled      bool    `json:"pi_throttled,omitempty"`
+	PiUncleanShutdns int     `json:"pi_unclean_shutdowns,omitempty"`
+	PiBootCount      int     `json:"pi_boot_count,omitempty"`
+	PiDiskWrittenGB  float64 `json:"pi_disk_written_gb,omitempty"`
+	PiHealthAlert    string  `json:"pi_health_alert,omitempty"`
 
 	// 給油の自動検出 (#120)。検出時のみ載せる。
 	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × 0.51 L/pt
@@ -51,6 +61,8 @@ type App struct {
 	wsHub    *WSHub
 	// 給油の自動検出。起動時の燃料残量の跳躍から給油を判定する (#120)
 	refuel *fuel.Detector
+	// Pi 本体の健全性。電圧降下と不正終了を記録する (#124)
+	health *health.Monitor
 
 	dataMu     sync.RWMutex
 	latestData RealtimeData
@@ -82,6 +94,7 @@ func newApp(cfg Config) *App {
 
 	// 給油検出の状態はメンテ状態と同じ場所に置く
 	refuelStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "fuel_state.json")
+	healthStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "health_state.json")
 
 	app := &App{
 		cfg:       cfg,
@@ -89,6 +102,7 @@ func newApp(cfg Config) *App {
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{}),
 		refuel:    fuel.NewDetector(refuelStatePath),
+		health:    health.NewMonitor(healthStatePath),
 		startedAt: time.Now(),
 	}
 
@@ -189,6 +203,21 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			AvgFuelEconomy:     app.tracker.AvgFuelEconomy(),
 			FuelRateCorrection: app.cfg.FuelRateCorrection,
 			SentAt:             time.Now(),
+		}
+
+		// Pi の健全性を相乗りさせる。送信経路を増やさない。
+		h := app.health.Status()
+		payload.PiSoCTempC = h.SoCTempC
+		payload.PiUnderVoltage = h.UnderVoltageNow || h.UnderVoltageEver
+		payload.PiThrottled = h.ThrottledNow || h.ThrottledEver
+		payload.PiUncleanShutdns = h.UncleanShutdowns
+		payload.PiBootCount = h.BootCount
+		payload.PiDiskWrittenGB = h.DiskWrittenGB
+		payload.PiHealthAlert = h.Alert()
+		if payload.PiHealthAlert != "" {
+			slog.Warn("Pi健全性の警告", "alert", payload.PiHealthAlert,
+				"soc_temp_c", h.SoCTempC, "unclean_shutdowns", h.UncleanShutdowns,
+				"boot_count", h.BootCount)
 		}
 
 		// 給油を検出していれば相乗りさせる。送信経路を増やさない。

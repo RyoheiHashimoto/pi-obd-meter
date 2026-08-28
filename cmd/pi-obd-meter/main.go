@@ -322,6 +322,8 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 
 		case sig := <-sigCh:
 			slog.Info("シグナル受信、シャットダウン開始", "signal", sig)
+			// 正常終了を記録する。次回起動で不正終了と数えられないようにする。
+			app.health.MarkCleanShutdown()
 			cancel() // obdReaderLoop + HTTP サーバーにキャンセルを通知
 			done := make(chan struct{})
 			go func() {
