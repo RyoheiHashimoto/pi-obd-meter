@@ -20,7 +20,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 path = os.path.join(OUT_DIR, "drive-%s.csv" % time.strftime("%m%d-%H%M"))
 f = open(path, "w", buffering=1)
 f.write("t,speed,rpm,gear,ratio,mech,slip,tcc,locked,hold,range,shifting,"
-        "atf,volt,odo,trip_km,fuel_pt,coolant,map,load\n")
+        "atf,volt,odo,trip_km,fuel_pt,rate_lh,eco,coolant,map,load\n")
 print("記録先: %s" % path, flush=True)
 
 while True:
@@ -33,7 +33,7 @@ while True:
     mech = MECH.get(g, 0)
     r = d.get("gear_ratio") or 0
     slip = (r / mech) if (mech > 0 and r > 0) else 0
-    f.write("%.1f,%.2f,%.1f,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.1f,%.1f,%.1f\n" % (
+    f.write("%.1f,%.2f,%.1f,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, r, mech, slip,
         d.get("tcc_lock_pct") or 0, d.get("tc_locked"),
@@ -42,6 +42,11 @@ while True:
         d.get("voltage") or 0,
         d.get("odometer_can_km") or 0,
         d.get("trip_km") or 0, d.get("elec_b0_pct") or 0,
+        # 燃料消費レート (L/h)。これを時間積分すれば消費量が出る。
+        # 燃料計の pt と対にすることで「残量域ごとの L/pt」が求まり、
+        # センダーの非線形を含んだ変換表を走行データだけから作れる。
+        # 給油記録と違い、上端で振り切れている区間を避けて集められる。
+        d.get("fuel_rate_lh") or 0, d.get("avg_fuel_economy") or 0,
         d.get("coolant_temp") or 0, d.get("intake_map") or 0,
         d.get("engine_load") or 0))
     # 0.2秒周期。加速度を差分から求めるため、0.5秒では全開加速のサンプルが

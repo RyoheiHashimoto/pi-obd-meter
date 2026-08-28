@@ -80,7 +80,10 @@ function handleMaintenance(data) {
 
   // 給油の自動検出 (#120)。Pi が燃料残量の跳躍から検出したものを記録する。
   // 手動入力と同じシートに書き、自動/手動を区別できるようメモを残す。
-  if (data.refuel_amount_l != null && data.refuel_amount_l > 0) {
+  // 満タン時はセンダーが上限に張り付き給油量を出せないため、量ではなく
+  // refuel_detected を起点にする。量を条件にすると満タン給油が記録されず、
+  // トリップのリセットも失われる。
+  if (data.refuel_detected || (data.refuel_amount_l != null && data.refuel_amount_l > 0)) {
     try {
       recordManualRefuel({ amount: data.refuel_amount_l, auto: true,
                            deltaPt: data.refuel_delta_pt, fullTank: data.refuel_full_tank });
@@ -154,7 +157,10 @@ function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
   ensureHeaders(sheet, HEADERS);  // 既存シートのヘッダーを最新にマイグレート
 
   const amount = parseFloat(rawAmount) || 0;
-  if (amount <= 0) {
+  // 自動検出は量が無くても記録する。満タン時はセンダーが上限に張り付いて
+  // いて給油量を出せないが、給油があった事実とトリップのリセットは必要。
+  // 手動入力は量が無ければ意味がないので従来どおり弾く。
+  if (amount <= 0 && !auto) {
     throw new Error('給油量を入力してください');
   }
 
@@ -210,7 +216,7 @@ function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
     new Date(),
     round(distance, 1),
     fuelEconomy,
-    round(amount, 1),
+    amount > 0 ? round(amount, 1) : '',
     round(piAvgFuelEco, 2),
     round(piFuelRateCorrection, 3),
     errorPct,

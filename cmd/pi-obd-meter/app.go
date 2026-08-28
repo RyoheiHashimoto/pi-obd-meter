@@ -39,6 +39,11 @@ type oilStatusPayload struct {
 	PiHealthAlert    string  `json:"pi_health_alert,omitempty"`
 
 	// 給油の自動検出 (#120)。検出時のみ載せる。
+	//
+	// 満タン時は燃料センダーが上限に張り付き給油量を出せないため、
+	// 量ではなく RefuelDetected を記録の起点にする。量を条件にすると
+	// 満タン給油が丸ごと記録されず、トリップのリセットも失われる。
+	RefuelDetected bool    `json:"refuel_detected,omitempty"`
 	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × 0.51 L/pt
 	RefuelDeltaPt  float64 `json:"refuel_delta_pt,omitempty"`  // 燃料残量の跳躍量 (ポイント)
 	RefuelFullTank bool    `json:"refuel_full_tank,omitempty"` // 満タンに達したか (燃費検算の可否)
@@ -223,6 +228,7 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		// 給油を検出していれば相乗りさせる。送信経路を増やさない。
 		refuelEvent := app.refuel.Event()
 		if refuelEvent != nil {
+			payload.RefuelDetected = true
 			payload.RefuelAmountL = refuelEvent.AmountL
 			payload.RefuelDeltaPt = refuelEvent.DeltaPt
 			payload.RefuelFullTank = refuelEvent.FullTank
