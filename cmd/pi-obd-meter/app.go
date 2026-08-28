@@ -301,15 +301,37 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 		app.totalKmMu.Unlock()
 	}
 
-	// トリップ距離をGASの給油記録と同期
-	if restored.LastRefuelKm > 0 && restored.TotalKm > restored.LastRefuelKm {
-		tripKm := restored.TotalKm - restored.LastRefuelKm
-		localTrip := app.tracker.DistanceKm()
-		if localTrip == 0 {
-			slog.Info("ローカルトリップ0、GAS復元スキップ", "gas_trip_km", tripKm)
-		} else if tripKm > localTrip {
-			app.tracker.SetDistance(tripKm)
-			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
-		}
+	// トリップ距離をGASの給油記録と同期する。
+	//
+	// last_refuel_km は GAS 側で給油記録から決まる source of truth なので、
+	// 累計走行距離との差がそのままトリップ距離になる。
+	// 累計はローカルで維持されており走行で増えていくため、この式なら
+	// 復元のタイミングがいつでも正しい値になる。
+	if tripKm, ok := calcRestoredTripKm(app.maintMgr.TotalKm(), restored.LastRefuelKm); ok {
+		app.tracker.SetDistance(tripKm)
+		slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
 	}
+}
+
+// calcRestoredTripKm は起動時に復元すべきトリップ距離を返す。
+//
+//	トリップ距離 = 現在の累計走行距離 − 前回給油時の累計走行距離
+//
+// 従来は GAS の trip_km が手元の値より大きいときだけ上書きしていた (#118)。
+// これには2つの問題があった。
+//
+//  1. 一方向にしか動かない。給油直後で GAS 側が小さい値を持っていても
+//     反映されず、古い大きな値が残り続ける。
+//  2. WiFi 接続を待つ間 (最大60秒) に走った分だけ手元の値が増えるため、
+//     復元されるかどうかが接続の速さに左右されるレースになっていた。
+//     さらに「手元が0なら復元しない」という分岐があったため、WiFi が
+//     すぐ繋がって一度も動いていない場合は復元自体が起きなかった。
+//
+// 累計走行距離から引く形にすれば、いつ呼んでも結果が同じになり、
+// 上書きの向きを問う必要も無くなる。
+func calcRestoredTripKm(totalKm, lastRefuelKm float64) (float64, bool) {
+	if lastRefuelKm <= 0 || totalKm <= lastRefuelKm {
+		return 0, false
+	}
+	return totalKm - lastRefuelKm, true
 }
