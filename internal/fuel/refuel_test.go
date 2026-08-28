@@ -236,3 +236,85 @@ func TestDetector_AmountWhenPartialRefuel(t *testing.T) {
 		t.Errorf("給油量 = %.2fL, want %.2f", ev.AmountL, want)
 	}
 }
+
+// 送信できなかった給油イベントは再起動をまたいで保持すること。
+//
+// 2026-08-28 の給油では起動時に WiFi が間に合わず初回送信がスキップされた。
+// イベントがメモリ上にしか無かったため、そのままエンジンを切っていれば
+// 給油記録は永久に失われていた。last_settled_pt は既に給油後の値に
+// 更新されており、次回起動では跳躍が検出できないからである。
+func TestDetector_EventSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+
+	// 前回: 残量 15pt で終了
+	feed(NewDetector(p), 15, settleSamples)
+
+	// 給油して再起動。95pt を検出する。
+	d := NewDetector(p)
+	feed(d, 95, settleSamples)
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("給油を検出できていない")
+	}
+	if ev.DeltaPt < 79 || ev.DeltaPt > 81 {
+		t.Fatalf("跳躍 = %.1f, want 80 付近", ev.DeltaPt)
+	}
+
+	// 送信できないまま電源が落ちた。次の起動で引き継げること。
+	d2 := NewDetector(p)
+	ev2 := d2.Event()
+	if ev2 == nil {
+		t.Fatal("未送信のイベントが失われた")
+	}
+	if ev2.DeltaPt != ev.DeltaPt || ev2.AmountL != ev.AmountL {
+		t.Errorf("引き継いだ内容が違う: %+v vs %+v", ev2, ev)
+	}
+}
+
+// 送信できたら不揮発からも消す。次回起動で二重記録しない。
+func TestDetector_ClearedEventDoesNotSurvive(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	d := NewDetector(p)
+	feed(d, 15, settleSamples)
+	d = NewDetector(p)
+	feed(d, 95, settleSamples)
+	if d.Event() == nil {
+		t.Fatal("検出できていない")
+	}
+	d.ClearEvent()
+
+	if d2 := NewDetector(p); d2.Event() != nil {
+		t.Error("送信済みのイベントが復活した。二重記録になる")
+	}
+}
+
+// 送れないうちに2回給油したら、まとめて1件にする。
+func TestDetector_MergesUnsentRefuels(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	d := NewDetector(p)
+	feed(d, 20, settleSamples)
+
+	// 1回目の給油: 20 → 60 (未送信のまま電源断)
+	d = NewDetector(p)
+	feed(d, 60, settleSamples)
+	if d.Event() == nil {
+		t.Fatal("1回目を検出できていない")
+	}
+
+	// 2回目の給油: 60 → 95
+	d = NewDetector(p)
+	feed(d, 95, settleSamples)
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("2回目を検出できていない")
+	}
+	if ev.BeforePt < 19 || ev.BeforePt > 21 {
+		t.Errorf("給油前 = %.1f, want 20 (1回目の給油前を引き継ぐ)", ev.BeforePt)
+	}
+	if ev.DeltaPt < 74 || ev.DeltaPt > 76 {
+		t.Errorf("跳躍 = %.1f, want 75 (2回分の合計)", ev.DeltaPt)
+	}
+}
