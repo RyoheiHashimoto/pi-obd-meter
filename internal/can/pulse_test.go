@@ -3,6 +3,7 @@ package can
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 func TestPulseCounter_Rollover(t *testing.T) {
@@ -81,5 +82,53 @@ func TestPulsesPerKm_OdometerBoundary(t *testing.T) {
 	}
 	if math.Abs(MetersPerPulse-0.389387) > 0.000001 {
 		t.Errorf("MetersPerPulse = %.6f, want 0.389387", MetersPerPulse)
+	}
+}
+
+// 欠測が長いと8bitのラップを取りこぼす。時間で基準を捨てること。
+func TestPulseCounter_DropsBaselineOnLongGap(t *testing.T) {
+	base := time.Unix(1700000000, 0)
+	var p PulseCounter
+
+	p.AddAt(0, base)
+	p.AddAt(50, base.Add(500*time.Millisecond))
+	if got := p.Total(); got != 50 {
+		t.Fatalf("連続受信の累積 = %d, want 50", got)
+	}
+
+	// 4秒欠測した。この間に何周したか分からない。
+	p.AddAt(10, base.Add(4500*time.Millisecond))
+	if got := p.Total(); got != 50 {
+		t.Errorf("欠測後に加算された。累積 = %d, want 50 (基準を取り直すだけ)", got)
+	}
+
+	// 取り直した基準から再開する
+	p.AddAt(30, base.Add(5000*time.Millisecond))
+	if got := p.Total(); got != 70 {
+		t.Errorf("再開後の累積 = %d, want 70", got)
+	}
+}
+
+// 上限ちょうどまでは連続とみなす。
+func TestPulseCounter_KeepsBaselineWithinGap(t *testing.T) {
+	base := time.Unix(1700000000, 0)
+	var p PulseCounter
+	p.AddAt(0, base)
+	p.AddAt(100, base.Add(MaxPulseGap))
+	if got := p.Total(); got != 100 {
+		t.Errorf("上限内なのに基準を捨てた。累積 = %d, want 100", got)
+	}
+}
+
+// Invalidate 後は時刻もリセットされ、次の受信が基準になる。
+func TestPulseCounter_InvalidateResetsTime(t *testing.T) {
+	base := time.Unix(1700000000, 0)
+	var p PulseCounter
+	p.AddAt(0, base)
+	p.AddAt(20, base.Add(100*time.Millisecond))
+	p.Invalidate()
+	p.AddAt(200, base.Add(200*time.Millisecond))
+	if got := p.Total(); got != 20 {
+		t.Errorf("Invalidate 後に加算された。累積 = %d, want 20", got)
 	}
 }

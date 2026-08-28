@@ -38,6 +38,17 @@ func NewSlipCalibrator() *SlipCalibrator {
 	return &SlipCalibrator{k: DefaultSpeedRatioK}
 }
 
+// k としてありえない範囲。乗用車のタイヤ外径と最終減速比の組み合わせから
+// 逸脱した値を弾く。相対判定だけだと学習値がゆっくり流されうるため、
+// 絶対の歯止めを併せて置く。
+//
+//	k = (1000/60) / タイヤ周長[m] × 最終減速比
+//	周長 1.5〜2.2m、最終減速比 3.0〜5.0 の範囲がおおよそ 22〜56 に収まる
+const (
+	minPlausibleK = 20.0
+	maxPlausibleK = 60.0
+)
+
 // 校正の重み。1サンプル 0.5秒として時定数はおよそ100秒。
 const slipCalAlpha = 0.005
 
@@ -49,8 +60,18 @@ func (c *SlipCalibrator) Observe(rpm, speedKmh, mechRatio float64) {
 		return
 	}
 	k := rpm / (speedKmh * mechRatio)
-	// 初期値から大きく外れた値は変速過渡やノイズとみなして捨てる。
-	if k < DefaultSpeedRatioK*0.7 || k > DefaultSpeedRatioK*1.4 {
+
+	// 変速過渡やノイズを捨てる。
+	//
+	// 従来は初期値 DefaultSpeedRatioK からの相対で判定していたため、
+	// タイヤ外径や最終減速比が初期値と大きく違う車両では、正しい値まで
+	// 捨てて永久に収束しなかった。現在の学習値からの相対に変え、
+	// 加えて乗用車としてありえない範囲を絶対値で弾く。
+	if k < minPlausibleK || k > maxPlausibleK {
+		return
+	}
+	cur := c.K()
+	if k < cur*0.7 || k > cur*1.4 {
 		return
 	}
 	c.mu.Lock()

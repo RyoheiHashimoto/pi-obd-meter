@@ -85,3 +85,32 @@ func TestSlipCalibrator_NilSafe(t *testing.T) {
 		t.Errorf("nil の K() = %.3f", c.K())
 	}
 }
+
+// 外れ値ガードは学習値からの相対で判定すること。
+//
+// 従来は初期値からの相対だったため、タイヤ外径や最終減速比が初期値と
+// 大きく違う車両では正しい値まで捨てて永久に収束しなかった。
+func TestSlipCalibrator_ConvergesToDistantK(t *testing.T) {
+	c := NewSlipCalibrator()
+	const trueK = DefaultSpeedRatioK * 1.35 // 初期値から35%離れた車両
+	mech := MechGearRatio(4)
+	for i := 0; i < 20000; i++ {
+		c.Observe(80.0*mech*trueK, 80.0, mech)
+	}
+	if math.Abs(c.K()-trueK)/trueK > 0.02 {
+		t.Errorf("校正後 k = %.2f, want %.2f 付近 (初期値から遠い値へ収束できない)", c.K(), trueK)
+	}
+}
+
+// ありえない値は学習値に近くても弾く。
+func TestSlipCalibrator_RejectsImplausibleAbsolute(t *testing.T) {
+	c := NewSlipCalibrator()
+	before := c.K()
+	mech := MechGearRatio(3)
+	for i := 0; i < 500; i++ {
+		c.Observe(10.0*mech*minPlausibleK*0.5, 10.0, mech) // 常識外に小さい k
+	}
+	if c.K() != before {
+		t.Errorf("ありえない k を取り込んだ: %.2f → %.2f", before, c.K())
+	}
+}
