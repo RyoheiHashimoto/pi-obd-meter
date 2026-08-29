@@ -56,6 +56,24 @@ install_scripts() {
         fi
     done < <(find "$src" -type f)
 
+    # systemd ユニットを配る。scripts/ops/systemd/ に置いたものを入れる。
+    # 新しいタイマーを足しても、次の更新で勝手に有効になる。
+    local u name
+    for u in "${DEST}/scripts/ops/systemd/"*.service "${DEST}/scripts/ops/systemd/"*.timer; do
+        [ -f "$u" ] || continue
+        name=$(basename "$u")
+        if ! cmp -s "$u" "/etc/systemd/system/$name"; then
+            if cp "$u" "/etc/systemd/system/${name}.new" && mv -f "/etc/systemd/system/${name}.new" "/etc/systemd/system/$name"; then
+                log "ユニット更新: $name"
+                systemctl daemon-reload
+                case "$name" in *.timer) systemctl enable --now "$name" 2>/dev/null || true;; esac
+            else
+                rm -f "/etc/systemd/system/${name}.new"
+                log_warn "ユニット更新失敗: $name"
+            fi
+        fi
+    done
+
     # ロガーは /usr/local/bin から起動しているので、変わっていれば入れ替えて
     # サービスを再起動する。再起動しないと古いコードのまま動き続ける。
     local pair name unit
