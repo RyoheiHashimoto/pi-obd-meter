@@ -326,7 +326,14 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			//
 			// 校正定数はロックアップ係合中のサンプルから自動学習するので、
 			// タイヤ周長や最終減速比を定数で持つ必要がない。
-			mech := can.MechGearRatio(gear)
+			// 滑り比は実際に噛んでいるギアで計算する。
+			//
+			// gear (0x231) は「これから入れる目標ギア」で、実際のギアとは
+			// 限らない。95km/h で S レンジに入れると表示は即 2速 になるが、
+			// 実際に落ちるのは 92.8km/h まで減速してから。その間に目標ギアで
+			// 計算すると滑り比が 0.647 (実際は 0.970) という異常値になる。
+			engagedGear := can.ActualGear(gearRatio)
+			mech := can.MechGearRatio(engagedGear)
 			if tcLocked && !shifting && currentSpeed > 30 && rpm > 300 && mech > 0 {
 				slipCal.Observe(rpm, currentSpeed, mech)
 			}
@@ -355,6 +362,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				CoolantTemp:     coolantTemp,
 				IntakeMAP:       intakeMAP,
 				MAFAirFlow:      mafAirFlow,
+				EngagedGear:     engagedGear,
 				ATFTempC:        atfTempC,
 				HasATF:          hasATF,
 				PulseDistanceKm: pulseCounter.DistanceKm(),

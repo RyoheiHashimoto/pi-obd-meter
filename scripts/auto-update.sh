@@ -77,7 +77,7 @@ install_scripts() {
     # ロガーは /usr/local/bin から起動しているので、変わっていれば入れ替えて
     # サービスを再起動する。再起動しないと古いコードのまま動き続ける。
     local pair name unit
-    for pair in "ops/drive-verify.py:drive-verify" "ops/poll22-lean.py:poll22"; do
+    for pair in "ops/drive-verify.py:drive-verify" "ops/poll22-lean.py:poll22" "ops/gps-log.py:gps-log"; do
         name="${pair%%:*}"; unit="${pair##*:}"
         [ -f "${DEST}/scripts/${name}" ] || continue
         dst="/usr/local/bin/$(basename "$name")"
