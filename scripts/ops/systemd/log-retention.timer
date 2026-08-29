@@ -1,0 +1,10 @@
+[Unit]
+Description=走行ログの保持期間管理 (1日1回)
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
