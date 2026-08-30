@@ -6,3 +6,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/opt/pi-obd-meter/scripts/auto-update.sh
+
+# 起動直後はネットワークが使えないことがあるため、スクリプトが最大2分待つ。
+# oneshot の既定タイムアウト (DefaultTimeoutStartSec, 通常90秒) では
+# 待ち切る前に KILL されるので、余裕を持たせる。
+TimeoutStartSec=300

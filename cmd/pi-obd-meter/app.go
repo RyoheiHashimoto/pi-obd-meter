@@ -8,6 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"path/filepath"
+
+	"github.com/hashimoto/pi-obd-meter/internal/fuel"
+	"github.com/hashimoto/pi-obd-meter/internal/health"
 	"github.com/hashimoto/pi-obd-meter/internal/maintenance"
 	"github.com/hashimoto/pi-obd-meter/internal/sender"
 	"github.com/hashimoto/pi-obd-meter/internal/trip"
@@ -24,6 +28,25 @@ type oilStatusPayload struct {
 	AvgFuelEconomy     float64   `json:"avg_fuel_economy,omitempty"`     // Pi 計算の現在の平均燃費 (km/L)
 	FuelRateCorrection float64   `json:"fuel_rate_correction,omitempty"` // 補正係数 (config の値)
 	SentAt             time.Time `json:"sent_at"`
+
+	// Pi 本体の健全性 (#124)。電圧降下と不正終了の蓄積を追う。
+	PiSoCTempC       float64 `json:"pi_soc_temp_c,omitempty"`
+	PiUnderVoltage   bool    `json:"pi_under_voltage,omitempty"`
+	PiThrottled      bool    `json:"pi_throttled,omitempty"`
+	PiUncleanShutdns int     `json:"pi_unclean_shutdowns,omitempty"`
+	PiBootCount      int     `json:"pi_boot_count,omitempty"`
+	PiDiskWrittenGB  float64 `json:"pi_disk_written_gb,omitempty"`
+	PiHealthAlert    string  `json:"pi_health_alert,omitempty"`
+
+	// 給油の自動検出 (#120)。検出時のみ載せる。
+	//
+	// 満タン時は燃料センダーが上限に張り付き給油量を出せないため、
+	// 量ではなく RefuelDetected を記録の起点にする。量を条件にすると
+	// 満タン給油が丸ごと記録されず、トリップのリセットも失われる。
+	RefuelDetected bool    `json:"refuel_detected,omitempty"`
+	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × 0.51 L/pt
+	RefuelDeltaPt  float64 `json:"refuel_delta_pt,omitempty"`  // 燃料残量の跳躍量 (ポイント)
+	RefuelFullTank bool    `json:"refuel_full_tank,omitempty"` // 満タンに達したか (燃費検算の可否)
 }
 
 // gasMaintenanceResponse はGASからのメンテナンスレスポンス
@@ -41,6 +64,10 @@ type App struct {
 	maintMgr *maintenance.Manager
 	tracker  *trip.Tracker
 	wsHub    *WSHub
+	// 給油の自動検出。起動時の燃料残量の跳躍から給油を判定する (#120)
+	refuel *fuel.Detector
+	// Pi 本体の健全性。電圧降下と不正終了を記録する (#124)
+	health *health.Monitor
 
 	dataMu     sync.RWMutex
 	latestData RealtimeData
@@ -70,11 +97,17 @@ func newApp(cfg Config) *App {
 		oilCfg = maintenance.DefaultOilConfig()
 	}
 
+	// 給油検出の状態はメンテ状態と同じ場所に置く
+	refuelStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "fuel_state.json")
+	healthStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "health_state.json")
+
 	app := &App{
 		cfg:       cfg,
 		client:    sender.NewClient(cfg.WebhookURL),
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{}),
+		refuel:    fuel.NewDetector(refuelStatePath),
+		health:    health.NewMonitor(healthStatePath),
 		startedAt: time.Now(),
 	}
 
@@ -177,11 +210,46 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			SentAt:             time.Now(),
 		}
 
+		// Pi の健全性を相乗りさせる。送信経路を増やさない。
+		h := app.health.Status()
+		payload.PiSoCTempC = h.SoCTempC
+		payload.PiUnderVoltage = h.UnderVoltageNow || h.UnderVoltageEver
+		payload.PiThrottled = h.ThrottledNow || h.ThrottledEver
+		payload.PiUncleanShutdns = h.UncleanShutdowns
+		payload.PiBootCount = h.BootCount
+		payload.PiDiskWrittenGB = h.DiskWrittenGB
+		payload.PiHealthAlert = h.Alert()
+		if payload.PiHealthAlert != "" {
+			slog.Warn("Pi健全性の警告", "alert", payload.PiHealthAlert,
+				"soc_temp_c", h.SoCTempC, "unclean_shutdowns", h.UncleanShutdowns,
+				"boot_count", h.BootCount)
+		}
+
+		// 給油を検出していれば相乗りさせる。送信経路を増やさない。
+		refuelEvent := app.refuel.Event()
+		if refuelEvent != nil {
+			payload.RefuelDetected = true
+			payload.RefuelAmountL = refuelEvent.AmountL
+			payload.RefuelDeltaPt = refuelEvent.DeltaPt
+			payload.RefuelFullTank = refuelEvent.FullTank
+			slog.Info("給油を自動検出",
+				"before_pt", refuelEvent.BeforePt,
+				"after_pt", refuelEvent.AfterPt,
+				"delta_pt", refuelEvent.DeltaPt,
+				"amount_l", refuelEvent.AmountL,
+				"full_tank", refuelEvent.FullTank)
+		}
+
 		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
 		if err != nil {
 			return
 		}
 		slog.Info("メンテナンス状態送信完了")
+
+		// 送信できた給油イベントは消す。重複記録を防ぐ。
+		if refuelEvent != nil {
+			app.refuel.ClearEvent()
+		}
 
 		if len(respBody) == 0 {
 			return
@@ -268,15 +336,37 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 		app.totalKmMu.Unlock()
 	}
 
-	// トリップ距離をGASの給油記録と同期
-	if restored.LastRefuelKm > 0 && restored.TotalKm > restored.LastRefuelKm {
-		tripKm := restored.TotalKm - restored.LastRefuelKm
-		localTrip := app.tracker.DistanceKm()
-		if localTrip == 0 {
-			slog.Info("ローカルトリップ0、GAS復元スキップ", "gas_trip_km", tripKm)
-		} else if tripKm > localTrip {
-			app.tracker.SetDistance(tripKm)
-			slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
-		}
+	// トリップ距離をGASの給油記録と同期する。
+	//
+	// last_refuel_km は GAS 側で給油記録から決まる source of truth なので、
+	// 累計走行距離との差がそのままトリップ距離になる。
+	// 累計はローカルで維持されており走行で増えていくため、この式なら
+	// 復元のタイミングがいつでも正しい値になる。
+	if tripKm, ok := calcRestoredTripKm(app.maintMgr.TotalKm(), restored.LastRefuelKm); ok {
+		app.tracker.SetDistance(tripKm)
+		slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
 	}
+}
+
+// calcRestoredTripKm は起動時に復元すべきトリップ距離を返す。
+//
+//	トリップ距離 = 現在の累計走行距離 − 前回給油時の累計走行距離
+//
+// 従来は GAS の trip_km が手元の値より大きいときだけ上書きしていた (#118)。
+// これには2つの問題があった。
+//
+//  1. 一方向にしか動かない。給油直後で GAS 側が小さい値を持っていても
+//     反映されず、古い大きな値が残り続ける。
+//  2. WiFi 接続を待つ間 (最大60秒) に走った分だけ手元の値が増えるため、
+//     復元されるかどうかが接続の速さに左右されるレースになっていた。
+//     さらに「手元が0なら復元しない」という分岐があったため、WiFi が
+//     すぐ繋がって一度も動いていない場合は復元自体が起きなかった。
+//
+// 累計走行距離から引く形にすれば、いつ呼んでも結果が同じになり、
+// 上書きの向きを問う必要も無くなる。
+func calcRestoredTripKm(totalKm, lastRefuelKm float64) (float64, bool) {
+	if lastRefuelKm <= 0 || totalKm <= lastRefuelKm {
+		return 0, false
+	}
+	return totalKm - lastRefuelKm, true
 }

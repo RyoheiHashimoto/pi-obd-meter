@@ -32,16 +32,39 @@ func recoverSSH() {
 }
 
 // checkWiFi は wlan0 インタフェースにIPアドレスが割り当てられているかを返す
+// checkWiFi はネットワークが使える状態かを返す。
+//
+// 以前は "wlan0" を名前で決め打ちしていた。2026-08 に内蔵WiFiを無効化して
+// USB アダプタ (wlan1) に切り替えたところ、wlan0 は存在するが DOWN のままに
+// なり、常に false を返すようになった。その結果、起動時の GAS 初回送信が
+// 毎回スキップされ、給油の自動検出が送信されずに失われかけた。
+//
+// インターフェース名に依存せず、ループバック以外で UP かつグローバルな
+// IP を持つものが1つでもあれば良しとする。有線に差し替えても動く。
 func checkWiFi() bool {
-	iface, err := net.InterfaceByName("wlan0")
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return false
 	}
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return false
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP.IsLoopback() || ipnet.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			if ipnet.IP.To4() != nil {
+				return true
+			}
+		}
 	}
-	return len(addrs) > 0
+	return false
 }
 
 func main() {
@@ -257,7 +280,13 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			if lastFuelEco < 0 {
 				trackerFuelRate = 0
 			}
-			app.tracker.Update(data.SpeedKmh, trackerFuelRate)
+			// 距離は距離パルス (CAN 0x420 B1) の計数を優先する。
+			// 車速積分は -0.25% の系統誤差があり、走るほどズレが溜まる。
+			app.tracker.UpdateWithPulse(data.SpeedKmh, trackerFuelRate, data.PulseDistanceKm, data.PulseValid)
+
+			// 給油の自動検出 (#120)。
+			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
+			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			oil := app.maintMgr.OilStatus()
@@ -269,6 +298,10 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				FuelEconomy:    displayFuelEco,
 				FuelRateLH:     lastFuelRate,
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
+				EngagedGear:    data.EngagedGear,
+				ATFTempC:       atfTempOrZero(data),
+				ATFValid:       data.HasATF,
+				ATFAlert:       atfAlertOrEmpty(data),
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
@@ -291,7 +324,9 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				TCLocked:       data.TCLocked,
 				TCCLockPct:     data.TCCLockPct,
 				Shifting:       data.Shifting,
-				BaroPressure:   data.BaroKPa,
+				OdometerCANKm:  data.OdometerCANKm,
+				ElecB0Pct:      data.ElecB0Pct,
+				ElecB1Raw:      data.ElecB1Raw,
 				OilAlert:       string(oil.Alert),
 				OilCurrentKm:   oil.CurrentKm,
 				OilRemainingKm: oil.RemainingKm,
@@ -314,6 +349,8 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 
 		case sig := <-sigCh:
 			slog.Info("シグナル受信、シャットダウン開始", "signal", sig)
+			// 正常終了を記録する。次回起動で不正終了と数えられないようにする。
+			app.health.MarkCleanShutdown()
 			cancel() // obdReaderLoop + HTTP サーバーにキャンセルを通知
 			done := make(chan struct{})
 			go func() {
@@ -330,4 +367,24 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			return
 		}
 	}
+}
+
+// atfTempOrZero は ATF 油温を返す。未取得なら 0 を返す。
+//
+// 未取得のまま 0 を流すと「0℃」と区別できない。換算後の 0℃ は raw 53 に
+// 対応する実在しうる値なので、冬場に本物の低温と紛れる。読む側が判断できる
+// よう ATFValid を併せて出す。
+func atfTempOrZero(d *obd.OBDData) float64 {
+	if !d.HasATF {
+		return 0
+	}
+	return d.ATFTempC
+}
+
+// atfAlertOrEmpty は未取得のときに警告を出さない。
+func atfAlertOrEmpty(d *obd.OBDData) string {
+	if !d.HasATF {
+		return ""
+	}
+	return can.ATFAlert(d.ATFTempC)
 }

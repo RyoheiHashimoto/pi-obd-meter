@@ -28,6 +28,24 @@ type WebSocketConfig struct {
 }
 
 // Config はアプリケーション設定
+// defaultFuelRateCorrection は燃料消費レートの補正係数の既定値。
+//
+// DYデミオはMAFを持たないため、負荷×RPMから吸入空気量を推定している。
+// 推定値と実測の乖離をこの係数で吸収する。
+//
+// 2026-08-31 に 1.3 → 1.07 へ改訂。給油〜給油の3区間でアプリの燃料積算を
+// レシートと直接突き合わせたところ、一貫して過大だった。
+//
+//	区間  ODO距離   アプリ積算   レシート    比
+//	 1     430km     41.16L     35.29L   1.166
+//	 2     220km     23.47L     18.80L   1.249
+//	 3     330km     30.72L     24.70L   1.244
+//
+// 平均 1.220。1.3 ÷ 1.220 = 1.066 とし、3件とも ±4% に収まる 1.07 を採る。
+// この比較は走行距離を一切使っていないため、同時期に判明したトリップ距離の
+// 取りこぼし (ODO比 -17.6%) からは独立している。
+const defaultFuelRateCorrection = 1.07
+
 type Config struct {
 	CANInterface        string            `json:"can_interface"`
 	SerialPort          string            `json:"serial_port"`
@@ -65,6 +83,10 @@ type RealtimeData struct {
 	FuelEconomy    float64 `json:"fuel_economy"`
 	FuelRateLH     float64 `json:"fuel_rate_lh"`
 	AvgFuelEconomy float64 `json:"avg_fuel_economy"`
+	EngagedGear    int     `json:"engaged_gear"`
+	ATFTempC       float64 `json:"atf_temp_c"`
+	ATFValid       bool    `json:"atf_valid"`
+	ATFAlert       string  `json:"atf_alert,omitempty"`
 	TripKm         float64 `json:"trip_km"`
 	CoolantTemp    float64 `json:"coolant_temp"`
 	IntakeMAP      float64 `json:"intake_map"`
@@ -87,7 +109,9 @@ type RealtimeData struct {
 	TCLocked       bool    `json:"tc_locked"`
 	TCCLockPct     float64 `json:"tcc_lock_pct"`
 	Shifting       bool    `json:"shifting"`
-	BaroPressure   float64 `json:"barometric_pressure"`
+	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
+	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
+	ElecB1Raw      float64 `json:"elec_b1_raw"`     // 0x430 B1 生値（未確定）
 	OilAlert       string  `json:"oil_alert"`
 	OilCurrentKm   float64 `json:"oil_current_km"`
 	OilRemainingKm float64 `json:"oil_remaining_km"`
@@ -117,7 +141,7 @@ func loadConfig(path string) Config {
 		MaxTorqueRPM:        3500,
 		MaxPSRPM:            6000,
 		FuelTankL:           46,
-		FuelRateCorrection:  1.3,
+		FuelRateCorrection:  defaultFuelRateCorrection,
 		WebSocket: WebSocketConfig{
 			Enabled:             true,
 			BroadcastIntervalMs: 50,
@@ -146,7 +170,7 @@ func validateConfig(cfg *Config) {
 	}
 	if cfg.FuelRateCorrection < 0 {
 		slog.Warn("fuel_rate_correction が負数、デフォルト使用", "value", cfg.FuelRateCorrection)
-		cfg.FuelRateCorrection = 1.3
+		cfg.FuelRateCorrection = defaultFuelRateCorrection
 	}
 	if cfg.FuelTankL <= 0 {
 		slog.Warn("fuel_tank_l が不正、デフォルト使用", "value", cfg.FuelTankL)

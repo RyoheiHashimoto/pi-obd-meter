@@ -78,6 +78,20 @@ function handleMaintenance(data) {
     }
   }
 
+  // 給油の自動検出 (#120)。Pi が燃料残量の跳躍から検出したものを記録する。
+  // 手動入力と同じシートに書き、自動/手動を区別できるようメモを残す。
+  // 満タン時はセンダーが上限に張り付き給油量を出せないため、量ではなく
+  // refuel_detected を起点にする。量を条件にすると満タン給油が記録されず、
+  // トリップのリセットも失われる。
+  if (data.refuel_detected || (data.refuel_amount_l != null && data.refuel_amount_l > 0)) {
+    try {
+      recordManualRefuel({ amount: data.refuel_amount_l, auto: true,
+                           deltaPt: data.refuel_delta_pt, fullTank: data.refuel_full_tank });
+    } catch (e) {
+      // 給油記録に失敗しても他の更新は続ける
+    }
+  }
+
   // Pi 計算の平均燃費と補正係数を保存 (給油時に記録して実測と突合 → 精度向上の検証用)
   if (data.avg_fuel_economy != null && data.avg_fuel_economy >= 0) {
     upsertSetting('pi_avg_fuel_economy', data.avg_fuel_economy);
@@ -137,37 +151,106 @@ function handleRestore() {
 }
 
 // === 手動給油記録 (ダッシュボードから呼ばれる) ===
-function recordManualRefuel({ amount: rawAmount }) {
-  const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%'];
+// SAME_REFUEL_KM は「同じ給油の記録」とみなす走行距離のしきい値。
+//
+// 満タンから 50km 未満で再給油することは実運用でまずない (実績は最短でも
+// 219km)。一方、自動検出と手動入力のずれは数km に収まる。
+const SAME_REFUEL_KM = 50;
+
+function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
+  const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%', '検出方法'];
   const sheet = getOrCreateSheet('給油記録', HEADERS);
   ensureHeaders(sheet, HEADERS);  // 既存シートのヘッダーを最新にマイグレート
 
   const amount = parseFloat(rawAmount) || 0;
-  if (amount <= 0) {
+  // 自動検出は量が無くても記録する。満タン時はセンダーが上限に張り付いて
+  // いて給油量を出せないが、給油があった事実とトリップのリセットは必要。
+  // 手動入力は量が無ければ意味がないので従来どおり弾く。
+  if (amount <= 0 && !auto) {
     throw new Error('給油量を入力してください');
   }
 
   const currentKm = parseFloat(getSettingValue('total_km')) || 0;
+
+  // --- 1回の給油を1行にまとめる (#120, #154) ---
+  //
+  // 同じ給油が自動検出と手動入力の2経路から届く。どちらが先に来るかは
+  // 給油とエンジン始動とレシート入力の順番次第で、両方向が実際に起きた。
+  // 2行に分かれると距離ほぼ0の行が挟まって燃費履歴が壊れ、トリップも
+  // 二度リセットされる。
+  //
+  // 直近の給油からほとんど走っていなければ同じ給油とみなし、行を増やさない。
+  const last = readLastRefuelRow(sheet);
+  const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
+  const sameRefuel = last && lastRefuelKm > 0 && currentKm > 0 &&
+                     currentKm - lastRefuelKm < SAME_REFUEL_KM;
+
+  if (sameRefuel) {
+    const lastWasAuto = String(last.method || '').indexOf('自動') === 0;
+
+    // 自動 → 手動: レシートの実数で上書きする。
+    if (!auto && lastWasAuto) {
+      return overwriteRefuelRow(sheet, last, amount);
+    }
+
+    // 手動 → 自動: 手動行が既に確定値なので、自動行は追記しない (#154)。
+    //
+    // 2026-08-30 の給油で実際に起きた。給油後 Pi が起動する前にレシートを
+    // 手動入力し、そのあと Pi が起動して自動検出が届いた。上書き判定は
+    // 「直前が自動」しか見ていなかったため素通りし、距離2km・給油量0Lの
+    // 空行が積まれて燃費履歴が壊れた。
+    //
+    // 手動行の方が正しいので残し、自動検出が同じ給油を裏づけた事実だけを
+    // 検出方法の列に書き添える。last_refuel_km とトリップは手動入力時に
+    // 更新済みなので、ここで再度リセットしてはいけない。
+    if (auto && !lastWasAuto) {
+      annotateRefuelRow(sheet, last, deltaPt, fullTank);
+      return { status: 'ok', skipped: 'manual_row_exists', distance: last.distance };
+    }
+
+    // 自動 → 自動: 同じ給油を二度検出した。送信済みイベントの再送などで
+    // 起こりうる。行は増やさない。
+    if (auto && lastWasAuto) {
+      return { status: 'ok', skipped: 'duplicate_auto', distance: last.distance };
+    }
+  }
+
   const lastKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
   const distance = (currentKm > 0 && lastKm > 0) ? currentKm - lastKm : 0;
-  const fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
 
   // Pi 表示燃費・補正係数 (Pi が直近で送ってきた値、給油時のスナップショット)
   const piAvgFuelEco = parseFloat(getSettingValue('pi_avg_fuel_economy')) || 0;
   const piFuelRateCorrection = parseFloat(getSettingValue('pi_fuel_rate_correction')) || 0;
-  // 誤差% = (Pi表示 - 実測) / 実測 * 100 (Pi が過大評価ならプラス)
-  const errorPct = (fuelEconomy > 0 && piAvgFuelEco > 0)
+
+  // --- 自動検出では燃費と誤差%を出さない ---
+  //
+  // 燃料センダーは両端でクリップするため、満タンにした分の一部が数えられず、
+  // 自動算出の給油量は過少に出る (±20%程度)。その量で距離を割れば燃費は
+  // 過大になる。さらに誤差% の列は燃料モデルの検証に使ってきたもので、
+  // レシートの実数だからこそ信頼できた。推定値を混ぜると使えなくなる。
+  //
+  // 給油量だけ参考値として残し、燃費と誤差% は空欄にする。
+  // レシートを手動入力すればこの行が上書きされ、そのとき初めて計算される。
+  let method = '手動';
+  let fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
+  let errorPct = (fuelEconomy > 0 && piAvgFuelEco > 0)
     ? round((piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
     : 0;
+  if (auto) {
+    method = `自動 ${round(deltaPt || 0, 1)}pt` + (fullTank ? ' 満タン' : ' 部分');
+    fuelEconomy = '';
+    errorPct = '';
+  }
 
   sheet.appendRow([
     new Date(),
     round(distance, 1),
     fuelEconomy,
-    round(amount, 1),
+    amount > 0 ? round(amount, 1) : '',
     round(piAvgFuelEco, 2),
     round(piFuelRateCorrection, 3),
     errorPct,
+    method,
   ]);
 
   if (currentKm > 0) {
@@ -178,6 +261,55 @@ function recordManualRefuel({ amount: rawAmount }) {
   upsertSetting('trip_km', 0);
 
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1) };
+}
+
+// 給油記録シートの最終行を読む。行が無ければ null。
+function readLastRefuelRow(sheet) {
+  const last = sheet.getLastRow();
+  if (last < 2) return null;  // ヘッダーのみ
+  const v = sheet.getRange(last, 1, 1, 8).getValues()[0];
+  return {
+    row: last,
+    date: v[0],
+    distance: parseFloat(v[1]) || 0,
+    amount: parseFloat(v[3]) || 0,
+    piAvgFuelEco: parseFloat(v[4]) || 0,
+    correction: parseFloat(v[5]) || 0,
+    method: v[7],
+  };
+}
+
+// 自動検出で作られた行を、レシートの実数で上書きする。
+//
+// 自動検出は「給油があったこと」と「トリップのリセット」を担い、
+// 給油量は推定値にすぎない。レシートが入った時点で確定値に差し替え、
+// そこで初めて燃費と誤差% を計算する。行を増やさないので二重記録に
+// ならず、last_refuel_km とトリップも再リセットしない。
+function overwriteRefuelRow(sheet, last, amount) {
+  const distance = last.distance;
+  const fuelEconomy = (distance > 0 && amount > 0) ? round(distance / amount, 1) : 0;
+  const errorPct = (fuelEconomy > 0 && last.piAvgFuelEco > 0)
+    ? round((last.piAvgFuelEco - fuelEconomy) / fuelEconomy * 100, 1)
+    : 0;
+  const method = String(last.method || '') + ' → 手動確定';
+
+  sheet.getRange(last.row, 3).setValue(fuelEconomy);
+  sheet.getRange(last.row, 4).setValue(round(amount, 1));
+  sheet.getRange(last.row, 7).setValue(errorPct);
+  sheet.getRange(last.row, 8).setValue(method);
+
+  return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1), overwrote: true };
+}
+
+// 手動入力済みの行に、自動検出が同じ給油を裏づけたことを書き添える。
+//
+// 値は一切上書きしない。レシートの実数の方が常に正しく、自動検出の
+// 給油量は満タン時には出せない (センダーが上限でクリップする) ため。
+function annotateRefuelRow(sheet, last, deltaPt, fullTank) {
+  const method = String(last.method || '');
+  if (method.indexOf('自動検出あり') >= 0) return;  // 二重に付けない
+  const detail = `自動検出あり ${round(deltaPt || 0, 1)}pt` + (fullTank ? ' 満タン' : ' 部分');
+  sheet.getRange(last.row, 8).setValue(`${method} (${detail})`);
 }
 
 // === ODO補正 (ダッシュボードから呼ばれる) ===
@@ -303,7 +435,7 @@ function buildDashboardHtml() {
   if (recentFuel.length > 0) {
     html += '<div class="card">';
     html += '<h2>📊 給油履歴</h2>';
-    html += '<div class="tbl-wrap"><table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th></tr>';
+    html += '<div class="tbl-wrap"><table><tr><th>日付</th><th>距離</th><th>燃費</th><th>給油量</th><th>Pi燃費</th><th>誤差</th></tr>';
     const fuelLimit = Math.min(5, recentFuel.length);
     for (let i = 0; i < fuelLimit; i++) {
       html += renderFuelRow(recentFuel[i]);
@@ -612,9 +744,20 @@ function renderStatItem(label, value, color) {
 function renderFuelRow(r) {
   let dateStr = '-';
   try { dateStr = Utilities.formatDate(new Date(r[0]), 'Asia/Tokyo', 'yyyy/MM/dd'); } catch (e) { /* skip */ }
+  // r[4]=Pi表示燃費, r[6]=誤差% （2026-08 以前の行は空）
+  const piEco = parseFloat(r[4]) || 0;
+  const errPct = parseFloat(r[6]) || 0;
+  const piCell = piEco > 0 ? `${round(piEco, 1)}` : '-';
+  let errCell = '-';
+  if (piEco > 0) {
+    const abs = Math.abs(errPct);
+    const col = abs >= 15 ? '#ff5252' : (abs >= 8 ? '#ffb74d' : '#9e9e9e');
+    errCell = `<span style="color:${col}">${errPct > 0 ? '+' : ''}${round(errPct, 1)}%</span>`;
+  }
   return `<tr><td>${dateStr}</td><td>${round(r[1] || 0, 0)}km</td>`
     + `<td style="color:#69f0ae;font-weight:600">${round(r[2] || 0, 1)}</td>`
-    + `<td>${round(r[3] || 0, 1)}L</td></tr>`;
+    + `<td>${round(r[3] || 0, 1)}L</td>`
+    + `<td>${piCell}</td><td>${errCell}</td></tr>`;
 }
 
 // === ユーティリティ: シートデータ取得 ===

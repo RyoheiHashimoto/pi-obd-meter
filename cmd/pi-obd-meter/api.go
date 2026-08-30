@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/hashimoto/pi-obd-meter/internal/health"
 	"io/fs"
 	"log/slog"
 	"math"
@@ -44,6 +45,11 @@ type healthResponse struct {
 	MemAllocMB    float64 `json:"mem_alloc_mb"`
 	MemSysMB      float64 `json:"mem_sys_mb"`
 	NumGoroutine  int     `json:"num_goroutine"`
+
+	// Pi 本体の健全性 (#124)。電圧降下・SoC温度・不正終了の累計。
+	// 専用の /api/pi-health を足そうとして GET /api/health を二重登録し、
+	// 起動時パニックで実機が上がらなくなった。既存の応答に含める。
+	Pi health.Status `json:"pi"`
 }
 
 // writeJSON はJSONレスポンスを書き込む。エンコードエラー時はログに記録する。
@@ -67,10 +73,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// startLocalAPI はローカルHTTPサーバーを起動する。
-// meter.html の配信と、リアルタイムデータ・設定・メンテナンスのJSON APIを提供する。
-// ctx がキャンセルされると graceful shutdown する。
-func (app *App) startLocalAPI(ctx context.Context) {
+// buildMux はルーティングを組み立てる。
+//
+// startLocalAPI から切り出してある。net/http はパターンの二重登録で登録時に
+// panic するため、サーバーを起動せずに mux を組むだけで衝突を検出できる。
+// #137 で GET /api/health を既存と重複登録し、実機にデプロイされて初めて
+// 起動時パニックが判明した。テストから呼べる形にして CI で捕まえる。
+func (app *App) buildMux() *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// --- Web UI配信 ---
@@ -156,6 +165,7 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			MemAllocMB:    float64(mem.Alloc) / 1024 / 1024,
 			MemSysMB:      float64(mem.Sys) / 1024 / 1024,
 			NumGoroutine:  runtime.NumGoroutine(),
+			Pi:            app.health.Status(),
 		})
 	})
 
@@ -186,6 +196,14 @@ func (app *App) startLocalAPI(ctx context.Context) {
 			}
 		}()
 	})
+	return mux
+}
+
+// startLocalAPI はローカルHTTPサーバーを起動する。
+// meter.html の配信と、リアルタイムデータ・設定・メンテナンスのJSON APIを提供する。
+// ctx がキャンセルされると graceful shutdown する。
+func (app *App) startLocalAPI(ctx context.Context) {
+	mux := app.buildMux()
 
 	addr := fmt.Sprintf(":%d", app.cfg.LocalAPIPort)
 	srv := &http.Server{
