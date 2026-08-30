@@ -151,6 +151,12 @@ function handleRestore() {
 }
 
 // === 手動給油記録 (ダッシュボードから呼ばれる) ===
+// SAME_REFUEL_KM は「同じ給油の記録」とみなす走行距離のしきい値。
+//
+// 満タンから 50km 未満で再給油することは実運用でまずない (実績は最短でも
+// 219km)。一方、自動検出と手動入力のずれは数km に収まる。
+const SAME_REFUEL_KM = 50;
+
 function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
   const HEADERS = ['日時', '距離(km)', '燃費(km/L)', '給油量(L)', 'Pi表示燃費(km/L)', '補正係数', '誤差%', '検出方法'];
   const sheet = getOrCreateSheet('給油記録', HEADERS);
@@ -166,22 +172,46 @@ function recordManualRefuel({ amount: rawAmount, auto, deltaPt, fullTank }) {
 
   const currentKm = parseFloat(getSettingValue('total_km')) || 0;
 
-  // --- 自動検出の行を手動のレシート値で上書きする (#120) ---
+  // --- 1回の給油を1行にまとめる (#120, #154) ---
   //
-  // 自動検出が走ると last_refuel_km が現在地に更新されトリップが 0 になる。
-  // その後レシートを見て手動入力すると、距離ほぼ 0 の2行目が追加され、
-  // 燃費が壊れ、トリップがもう一度リセットされてしまう。
+  // 同じ給油が自動検出と手動入力の2経路から届く。どちらが先に来るかは
+  // 給油とエンジン始動とレシート入力の順番次第で、両方向が実際に起きた。
+  // 2行に分かれると距離ほぼ0の行が挟まって燃費履歴が壊れ、トリップも
+  // 二度リセットされる。
   //
-  // 直前の行が自動検出で、走行距離がほとんど進んでいないなら、
-  // それは「同じ給油の記録」とみなして上書きする。
-  if (!auto) {
-    const last = readLastRefuelRow(sheet);
-    if (last && String(last.method || '').indexOf('自動') === 0) {
-      const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
-      // 自動検出後にほとんど走っていない = 同じ給油
-      if (lastRefuelKm > 0 && currentKm > 0 && currentKm - lastRefuelKm < 50) {
-        return overwriteRefuelRow(sheet, last, amount);
-      }
+  // 直近の給油からほとんど走っていなければ同じ給油とみなし、行を増やさない。
+  const last = readLastRefuelRow(sheet);
+  const lastRefuelKm = parseFloat(getSettingValue('last_refuel_km')) || 0;
+  const sameRefuel = last && lastRefuelKm > 0 && currentKm > 0 &&
+                     currentKm - lastRefuelKm < SAME_REFUEL_KM;
+
+  if (sameRefuel) {
+    const lastWasAuto = String(last.method || '').indexOf('自動') === 0;
+
+    // 自動 → 手動: レシートの実数で上書きする。
+    if (!auto && lastWasAuto) {
+      return overwriteRefuelRow(sheet, last, amount);
+    }
+
+    // 手動 → 自動: 手動行が既に確定値なので、自動行は追記しない (#154)。
+    //
+    // 2026-08-30 の給油で実際に起きた。給油後 Pi が起動する前にレシートを
+    // 手動入力し、そのあと Pi が起動して自動検出が届いた。上書き判定は
+    // 「直前が自動」しか見ていなかったため素通りし、距離2km・給油量0Lの
+    // 空行が積まれて燃費履歴が壊れた。
+    //
+    // 手動行の方が正しいので残し、自動検出が同じ給油を裏づけた事実だけを
+    // 検出方法の列に書き添える。last_refuel_km とトリップは手動入力時に
+    // 更新済みなので、ここで再度リセットしてはいけない。
+    if (auto && !lastWasAuto) {
+      annotateRefuelRow(sheet, last, deltaPt, fullTank);
+      return { status: 'ok', skipped: 'manual_row_exists', distance: last.distance };
+    }
+
+    // 自動 → 自動: 同じ給油を二度検出した。送信済みイベントの再送などで
+    // 起こりうる。行は増やさない。
+    if (auto && lastWasAuto) {
+      return { status: 'ok', skipped: 'duplicate_auto', distance: last.distance };
     }
   }
 
@@ -269,6 +299,17 @@ function overwriteRefuelRow(sheet, last, amount) {
   sheet.getRange(last.row, 8).setValue(method);
 
   return { status: 'ok', fuel_economy: fuelEconomy, distance: round(distance, 1), overwrote: true };
+}
+
+// 手動入力済みの行に、自動検出が同じ給油を裏づけたことを書き添える。
+//
+// 値は一切上書きしない。レシートの実数の方が常に正しく、自動検出の
+// 給油量は満タン時には出せない (センダーが上限でクリップする) ため。
+function annotateRefuelRow(sheet, last, deltaPt, fullTank) {
+  const method = String(last.method || '');
+  if (method.indexOf('自動検出あり') >= 0) return;  // 二重に付けない
+  const detail = `自動検出あり ${round(deltaPt || 0, 1)}pt` + (fullTank ? ' 満タン' : ' 部分');
+  sheet.getRange(last.row, 8).setValue(`${method} (${detail})`);
 }
 
 // === ODO補正 (ダッシュボードから呼ばれる) ===
