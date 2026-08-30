@@ -318,3 +318,45 @@ func TestDetector_MergesUnsentRefuels(t *testing.T) {
 		t.Errorf("跳躍 = %.1f, want 75 (2回分の合計)", ev.DeltaPt)
 	}
 }
+
+// 2026-08-30 21:41 の実データ。満タンにしたのに 92.94pt で落ち着き、
+// 旧しきい値 93.0 を 0.06pt 下回って部分給油と判定された。その結果
+// 29.70L と公表したが、レシートは 24.70L で +20.2% の過大だった。
+func TestDetector_FullTankAt9294(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "s.json")
+	feed(NewDetector(p), 34.70, settleSamples)
+
+	d := NewDetector(p)
+	feed(d, 92.94, settleSamples)
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("検出できていない")
+	}
+	if !ev.FullTank {
+		t.Fatalf("92.94pt が満タンと判定されていない (しきい値 %.1f)", FullTankPt)
+	}
+	if ev.AmountL != 0 {
+		t.Errorf("給油量 %.2fL を出した。実測は 24.70L で、この推定は +20%% 外す", ev.AmountL)
+	}
+}
+
+// 満タン給油の直後に落ち着いた値は実測4回で 90.59〜95.29pt にばらつく。
+// しきい値はこの全部を満タン側に入れなければならない。
+func TestDetector_ObservedFullTankReadings(t *testing.T) {
+	for _, pt := range []float64{90.59, 92.94, 93.98, 95.29} {
+		dir := t.TempDir()
+		p := filepath.Join(dir, "s.json")
+		feed(NewDetector(p), 30.0, settleSamples)
+
+		d := NewDetector(p)
+		feed(d, pt, settleSamples)
+		ev := d.Event()
+		if ev == nil {
+			t.Fatalf("%.2fpt: 検出できていない", pt)
+		}
+		if !ev.FullTank || ev.AmountL != 0 {
+			t.Errorf("%.2fpt: full=%v amount=%.2fL, want full=true amount=0", pt, ev.FullTank, ev.AmountL)
+		}
+	}
+}
