@@ -24,7 +24,41 @@ if ! flock -n 9; then
 fi
 
 # --- ネットワーク確認 ---
-if ! curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
+#
+# 起動直後は network-online.target に到達していてもインターネットに出られない。
+# 実測 (2026-08-31):
+#
+#   00:06:16  Reached target network-online.target - Network is Online.
+#   00:06:18  New interface create wlan1
+#
+# systemd が「オンライン」と宣言した2秒後に、ようやく WiFi インターフェースが
+# 生成されている。そこから wpa_supplicant の認証と DHCP が走るので、
+# OnBootSec=10sec で起動するこのスクリプトが動く時点では、まだ名前解決すら
+# できないことがある。
+#
+# 従来はここで即 exit していた。周期実行は廃止済み (起動時1回のみ) なので、
+# この1回を落とすと次の起動まで更新の機会が無い。実際に #153〜#157 の
+# デプロイが2回連続で取りこぼされ、手動実行でしか反映できなかった。
+#
+# 最大 NET_WAIT_TRIES 回、NET_WAIT_SLEEP 秒おきに待つ。既定で最大2分。
+# 到達できればすぐ抜けるので、通常の起動でコストは増えない。
+NET_WAIT_TRIES="${NET_WAIT_TRIES:-24}"
+NET_WAIT_SLEEP="${NET_WAIT_SLEEP:-5}"
+
+net_ready=0
+for i in $(seq 1 "$NET_WAIT_TRIES"); do
+    if curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
+        net_ready=1
+        if [ "$i" -gt 1 ]; then
+            echo "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
+        fi
+        break
+    fi
+    sleep "$NET_WAIT_SLEEP"
+done
+
+if [ "$net_ready" -ne 1 ]; then
+    echo "ネットワークに到達できないため更新を見送る ($(( NET_WAIT_TRIES * NET_WAIT_SLEEP ))秒待機)"
     exit 0
 fi
 
