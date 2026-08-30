@@ -19,6 +19,7 @@ const (
 	PIDRuntime          byte = 0x1F // エンジン稼働時間 (秒)
 	PIDFuelLevel        byte = 0x2F // 燃料レベル (%)
 	PIDAmbientTemp      byte = 0x46 // 外気温 (°C)
+	PIDControlModuleV   byte = 0x42 // ECU 電源電圧 (V)。実機で対応確認済み
 )
 
 // Device はOBD-2アダプタの通信インタフェース。
@@ -31,14 +32,30 @@ type Device interface {
 
 // OBDData はOBD-2から読み取ったリアルタイムデータ
 type OBDData struct {
-	RPM           float64 // rpm
-	SpeedKmh      float64 // km/h
-	EngineLoad    float64 // 0-100%
-	CoolantTemp   float64 // ℃
-	IntakeMAP     float64 // kPa (0=非対応)
-	MAFAirFlow    float64 // g/s (0=非対応)
+	RPM         float64 // rpm
+	SpeedKmh    float64 // km/h
+	EngineLoad  float64 // 0-100%
+	CoolantTemp float64 // ℃
+	IntakeMAP   float64 // kPa (0=非対応)
+	MAFAirFlow  float64 // g/s (0=非対応)
+	// 距離パルス (CAN 0x420 B1) による起動からの累積距離 (km)。
+	// 車速の積分と違い計数のため誤差が蓄積しない (実測 ±0.02%)。
+	// EngagedGear は実際に噛んでいるギア。0x230 のギア比から判定する。
+	// Gear (0x231) は目標ギアで、変速が完了するまで実際とズレる。
+	// 変速の途中はどのギアでもないため 0 になる。
+	EngagedGear int
+
+	// ATF 油温 (℃)。Mode 22 の 0x17B3 から取得する (2026-08-28 同定)。
+	// 標準PIDには無く、この車両では PCM の拡張データにのみ存在する。
+	ATFTempC float64
+	// ATFTempC が取得できたか。応答が無い環境では false。
+	HasATF bool
+
+	PulseDistanceKm float64
+	// PulseDistanceKm が信頼できるか。CAN断からの復帰直後は false。
+	PulseValid    bool
 	ThrottlePos   float64 // 0-100%
-	Voltage       float64 // バッテリー電圧 (V) — CAN経由
+	Voltage       float64 // バッテリー電圧 (V) — OBD PID 0x42
 	FuelLevel     float64 // 燃料レベル (%) — OBD PID 0x2F
 	AmbientTemp   float64 // 外気温 (°C) — OBD PID 0x46
 	ShortFuelTrim float64 // 短期燃料トリム (%) — OBD PID 0x06
@@ -55,7 +72,9 @@ type OBDData struct {
 	Shifting      bool    // シフト中 — CAN 0x231 B1 bit3
 	HasMAF        bool    // MAFセンサー対応か
 	TCCLockPct    float64 // TCロック率 (0-100%) — RPM÷車速から算出
-	BaroKPa       float64 // 大気圧 (kPa) — CAN 0x430
+	OdometerCANKm float64 // 累計走行距離 (km) — CAN 0x430 B4-5 (10km単位)。実機検証済み
+	ElecB0Pct     float64 // 0x430 B0 の生値/2.55。燃料残量の可能性・未確定 (issue #119)
+	ElecB1Raw     float64 // 0x430 B1 の生値。電圧に連動するが電圧ではない (issue #119)
 }
 
 // Reader はOBD-2データを読み取る

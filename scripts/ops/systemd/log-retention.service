@@ -1,0 +1,6 @@
+[Unit]
+Description=走行ログの保持期間管理
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pi-obd-meter/scripts/ops/log-retention.sh

@@ -21,13 +21,13 @@ Raspberry Pi 4 + CAN HAT 直結で速度・RPM・スロットル・インマニ�
 - **develop**: 日常開発ブランチ。push → CI + dev ビルド自動デプロイ（CI成功時のみ）
 - **main**: リリースブランチ。**ブランチ保護あり**（CI `test` ジョブ通過必須、直接push不可、admin bypass可）
 - **GASデプロイ**: develop/main push時（`gas/` 変更時）に自動デプロイ
-- **Pi 自動更新**: `auto-update.timer` (systemd) が2分間隔で GitHub をポーリング、新ビルド検出時に自動更新
+- **Pi 自動更新**: `auto-update.timer` (systemd) が**起動時に1回だけ** GitHub をポーリング、新ビルド検出時に自動更新
 
 ### ワークフロー
-1. develop で開発・`make deploy`（即時）または push（CI成功後に2分以内に自動デプロイ）
+1. develop で開発・`make deploy`（即時）または push（CI成功後に dev-latest へ公開）
 2. リリース時: `make release` → PR作成 (develop→main) → CI待機 → マージ → タグ push
 3. GitHub Actions が ARM64 バイナリをビルド・リリース
-4. Pi が2分以内に検出して自動更新
+4. Pi が**次回のエンジン始動時**に検出して自動更新（走行中には更新されない）
 
 ### GitHub Actions ワークフロー
 
@@ -40,7 +40,9 @@ Raspberry Pi 4 + CAN HAT 直結で速度・RPM・スロットル・インマニ�
 | Claude Review | `claude-review.yml` | PR open / `@claude` メンション |
 
 ### Pi 自動更新の仕組み
-- `scripts/auto-update.sh` が2分間隔で実行（`configs/auto-update.timer`）
+- `scripts/auto-update.sh` が起動10秒後に1回だけ実行（`configs/auto-update.timer` の `OnBootSec=10sec`）
+- 周期実行 (`OnUnitActiveSec=2min`) は 8281f78 で廃止。GitHub API のレート制限 (60回/時) を空回りで食い潰していたため。
+  ACC ON のたびに1回チェックされるので OTA としては足りる。走行中にメーターが再起動しない利点もある
 - Stable release → `dev-latest` pre-release の順にチェック
 - 新ビルド検出時: ダウンロード → バイナリ + web/static 差し替え → サービス再起動
 - バージョン管理: `/var/lib/pi-obd-meter/{release-version,dev-version}`
@@ -130,7 +132,7 @@ configs/
   cog-kiosk.sh              cog (WPE WebKit) キオスク起動 — labwc autostart から実行
   kiosk.sh                  旧 Chromium 版 (レガシー、参考用)
   auto-update.service       systemd 自動更新 (oneshot)
-  auto-update.timer         systemd 自動更新タイマー（2分間隔）
+  auto-update.timer         systemd 自動更新タイマー（起動時1回のみ）
 
 scripts/
   deploy.sh                 開発・デプロイスクリプト
@@ -281,7 +283,7 @@ hdmi_cvt 800 480 60 6 0 0 0
 
 ### 自動更新（2系統）
 - **起動時 (go-selfupdate)**: `cmd/pi-obd-meter/update.go` でGitHub Releasesをチェック、バイナリ差し替え
-- **2分間隔 (auto-update.sh)**: `scripts/auto-update.sh` (systemd timer) でstable/devビルドをチェック、バイナリ + web/static 差し替え
+- **起動時 (auto-update.sh)**: `scripts/auto-update.sh` (systemd timer) でstable/devビルドをチェック、バイナリ + web/static 差し替え
 - リリースアセット: `pi-obd-meter_linux_arm64.tar.gz`（selfupdate 互換命名）
 
 ### GAS 自動デプロイ（clasp）

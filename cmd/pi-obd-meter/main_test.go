@@ -444,8 +444,8 @@ func TestLoadConfig_FileNotFound(t *testing.T) {
 	if cfg.FuelTankL != 46 {
 		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)
 	}
-	if cfg.FuelRateCorrection != 1.3 {
-		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
+	if cfg.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("FuelRateCorrection: got %.3f, want %.3f", cfg.FuelRateCorrection, defaultFuelRateCorrection)
 	}
 }
 
@@ -528,8 +528,8 @@ func TestValidateConfig_InvalidValues(t *testing.T) {
 	if cfg.EngineDisplacementL != 1.3 {
 		t.Errorf("EngineDisplacementL: got %.1f, want 1.3", cfg.EngineDisplacementL)
 	}
-	if cfg.FuelRateCorrection != 1.3 {
-		t.Errorf("FuelRateCorrection: got %.1f, want 1.3", cfg.FuelRateCorrection)
+	if cfg.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("FuelRateCorrection: got %.3f, want %.3f", cfg.FuelRateCorrection, defaultFuelRateCorrection)
 	}
 	if cfg.FuelTankL != 46 {
 		t.Errorf("FuelTankL: got %.1f, want 46", cfg.FuelTankL)

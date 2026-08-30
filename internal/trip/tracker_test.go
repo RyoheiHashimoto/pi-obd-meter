@@ -356,3 +356,58 @@ func TestTrackerPersistence_FuelConsumption(t *testing.T) {
 			cur1.FuelConsumptionL, cur2.FuelConsumptionL)
 	}
 }
+
+// TestUpdateWithPulse_PrefersPulse は距離パルスがある場合に
+// 車速の積分ではなくパルスの差分が使われることを検証する。
+func TestUpdateWithPulse_PrefersPulse(t *testing.T) {
+	tr := newTestTracker(t)
+
+	// 初回は基準値の記録のみ
+	tr.UpdateWithPulse(60, 0, 10.000, true)
+	time.Sleep(120 * time.Millisecond)
+
+	// 車速は60km/hだがパルスは 10.000 → 10.001 km しか進んでいない。
+	// パルス側が採用されれば、距離は 0.001km になる。
+	tr.UpdateWithPulse(60, 0, 10.001, true)
+
+	got := tr.DistanceKm()
+	if got < 0.0009 || got > 0.0011 {
+		t.Errorf("距離 = %.6f km、パルス差分 0.001km が使われていない", got)
+	}
+}
+
+// TestUpdateWithPulse_FallsBackToSpeed は
+// パルスが無効な場合に車速の積分に退避することを検証する。
+func TestUpdateWithPulse_FallsBackToSpeed(t *testing.T) {
+	tr := newTestTracker(t)
+
+	tr.UpdateWithPulse(36, 0, 0, false)
+	time.Sleep(200 * time.Millisecond)
+	tr.UpdateWithPulse(36, 0, 0, false)
+
+	// 36km/h = 0.01km/s。0.2秒で 0.002km 前後になるはず。
+	got := tr.DistanceKm()
+	if got <= 0 {
+		t.Errorf("距離が積算されていない: %.6f", got)
+	}
+	if got > 0.01 {
+		t.Errorf("距離が過大: %.6f", got)
+	}
+}
+
+// TestUpdateWithPulse_RejectsJump は通信断からの復帰などで
+// 累積値が飛んだ場合に、その差分を採用しないことを検証する。
+func TestUpdateWithPulse_RejectsJump(t *testing.T) {
+	tr := newTestTracker(t)
+
+	tr.UpdateWithPulse(0, 0, 100.0, true)
+	time.Sleep(120 * time.Millisecond)
+
+	// 0.12秒で 50km 進むことはありえない → 車速積分(0km/h)に退避する
+	tr.UpdateWithPulse(0, 0, 150.0, true)
+
+	got := tr.DistanceKm()
+	if got > 0.001 {
+		t.Errorf("異常な差分を採用した: %.6f km", got)
+	}
+}

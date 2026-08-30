@@ -44,6 +44,13 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		obd.PIDIntakeMAP,  // 0x0B — MAP (バキューム計、燃費計算)
 	}
 
+	// 距離パルスの累積カウンタ。CAN再接続のたびに基準値を捨てる。
+	var pulseCounter can.PulseCounter
+	// トルコン滑りの校正器。ロックアップ中のサンプルから k を学習する。
+	slipCal := can.NewSlipCalibrator()
+	// 変速中に保持するロック率
+	var lastLockPct float64
+
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
 	connect := func() *can.Socket {
 		// interface が DOWN の場合に備えて UP を試みる
@@ -57,6 +64,9 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			return nil
 		}
 		slog.Info("CAN接続完了", "interface", ifname)
+		// 断絶中に進んだパルスは追えないため、基準値を捨てる。
+		// 累積値は保持されるので、失われるのは断絶中の距離だけ。
+		pulseCounter.Invalidate()
 		return sock
 	}
 
@@ -68,13 +78,17 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	// 最新値の保持（CANフレーム受信ごとに更新）
 	var (
 		mu            sync.Mutex
+		atfTempC      float64
+		hasATF        bool
 		rpm           float64
 		speedKmh      float64
 		engineLoad    float64
 		wheelSpeedKmh float64
 		coolantTemp   float64
 		intakeMAP     float64
-		baroKPa       float64
+		odometerCANKm float64
+		elecB0Pct     float64
+		elecB1Raw     float64
 		voltage       float64
 		fuelLevel     float64
 		ambientTemp   float64
@@ -140,13 +154,25 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDATStatus:
 					_, atRange, hold, tcLocked, shifting = can.DecodeATStatus(frame.Data)
 				case can.IDCoolant:
-					ct, _ := can.DecodeCoolant(frame.Data)
+					ct, pulse := can.DecodeCoolant(frame.Data)
 					coolantTemp = ct
+					// 距離パルス (8bit ローリング) を累積する。
+					// 車速の積分と違い計数なので誤差が蓄積しない。
+					pulseCounter.Add(pulse)
 				case can.IDElectric:
-					_, voltage, baroKPa = can.DecodeElectric(frame.Data)
+					elecB0Pct, elecB1Raw, odometerCANKm = can.DecodeElectric(frame.Data)
 				case can.IDWheels:
 					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
 				case can.IDOBDResponse:
+					// Mode 22 (拡張診断データ) の応答。ATF油温はここから来る。
+					if pid22, data, ok := can.ParseOBDResponse22(frame); ok {
+						if pid22 == can.PID22ATFTemp {
+							if t, ok := can.DecodeATFTemp(data); ok {
+								atfTempC = t
+								hasATF = true
+							}
+						}
+					}
 					// OBD-2 レスポンス処理
 					if pid, data, ok := can.ParseOBDResponse(frame); ok {
 						switch pid {
@@ -196,6 +222,11 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 							if len(data) >= 1 {
 								ambientTemp = float64(data[0]) - 40.0
 							}
+						case obd.PIDControlModuleV:
+							// ECU 電源電圧: ((A*256)+B)/1000 V（OBD-2 規格）
+							if len(data) >= 2 {
+								voltage = float64(uint16(data[0])<<8|uint16(data[1])) / 1000.0
+							}
 						}
 					}
 				}
@@ -244,6 +275,18 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			pidIdx := tickCount % len(obdPIDs)
 			_ = sock.WriteFrame(can.OBDRequestFrame(obdPIDs[pidIdx]))
 
+			// 電圧は高頻度不要のため 1 秒周期の別枠で問い合わせる。
+			// 高速ローテーション (MAF/MAP) の更新周期を落とさないための措置。
+			if tickCount%max(1, 1000/intervalMs) == 0 {
+				_ = sock.WriteFrame(can.OBDRequestFrame(obd.PIDControlModuleV))
+			}
+
+			// ATF油温 (Mode 22)。油は熱容量が大きく分解能も1℃しかないため、
+			// 2秒に1回で十分。実測では停車4分間まったく動かなかった。
+			if tickCount%max(1, 2000/intervalMs) == 0 {
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22ATFTemp))
+			}
+
 			mu.Lock()
 			if !hasData {
 				mu.Unlock()
@@ -278,54 +321,72 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				currentSpeed = speedKmh // フォールバック
 			}
 
-			// ロック率計算: RPM÷車速 から TC スリップを算出
-			// ロック率 = 理論RPM / 実RPM × 100 (100% = 完全ロック)
-			// 理論RPM = 車速(km/h) / 3.6 / タイヤ周長(m) × 60 × 最終減速比 × ギア比
-			const tireCircM = 1.832  // 175/65R14 タイヤ周長
-			const finalRatio = 4.147 // 最終減速比
-			var tccLockPct float64
-			if currentSpeed > 5 && rpm > 300 && gear >= 1 && gear <= 4 {
-				gearRatios := [5]float64{0, 2.816, 1.498, 1.000, 0.726}
-				theoreticalRPM := currentSpeed / 3.6 / tireCircM * 60 * finalRatio * gearRatios[gear]
-				if theoreticalRPM > 0 {
-					tccLockPct = theoreticalRPM / rpm * 100
-					if tccLockPct > 100 {
-						tccLockPct = 100
-					}
-					if tccLockPct < 0 {
-						tccLockPct = 0
-					}
-				}
+			// ロック率計算: rpm と車速から実際の滑りを求める。
+			// 0x230 B2 のギア比には滑りが含まれないため使えない (#132)。
+			//
+			// 校正定数はロックアップ係合中のサンプルから自動学習するので、
+			// タイヤ周長や最終減速比を定数で持つ必要がない。
+			// 滑り比は実際に噛んでいるギアで計算する。
+			//
+			// gear (0x231) は「これから入れる目標ギア」で、実際のギアとは
+			// 限らない。95km/h で S レンジに入れると表示は即 2速 になるが、
+			// 実際に落ちるのは 92.8km/h まで減速してから。その間に目標ギアで
+			// 計算すると滑り比が 0.647 (実際は 0.970) という異常値になる。
+			engagedGear := can.ActualGear(gearRatio)
+			mech := can.MechGearRatio(engagedGear)
+			if tcLocked && !shifting && currentSpeed > 30 && rpm > 300 && mech > 0 {
+				slipCal.Observe(rpm, currentSpeed, mech)
 			}
+
+			// 車速の下限を 20km/h とする。それ以下ではトルコンが大きく滑り、
+			// ロック率に意味が無い。
+			//
+			// 変速中は回転が過渡状態にあり計算値が暴れるので、直前の値を保持
+			// する。0 に落とすと変速のたびに指針が振り切れて読めなくなる。
+			if currentSpeed > 20 && rpm > 300 && mech > 0 {
+				if !shifting {
+					lastLockPct = slipCal.LockPct(rpm, currentSpeed, mech)
+				}
+			} else {
+				lastLockPct = 0
+			}
+			tccLockPct := lastLockPct
 
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
 			data := &obd.OBDData{
-				RPM:           rpm,
-				SpeedKmh:      currentSpeed,
-				EngineLoad:    engineLoad,
-				ThrottlePos:   engineLoad, // LOADをスロットル表示に使用（CAN 0x201 B6）
-				CoolantTemp:   coolantTemp,
-				IntakeMAP:     intakeMAP,
-				MAFAirFlow:    mafAirFlow,
-				Voltage:       voltage,
-				FuelLevel:     fuelLevel,
-				AmbientTemp:   ambientTemp,
-				ShortFuelTrim: shortFuelTrim,
-				LongFuelTrim:  longFuelTrim,
-				TimingAdvance: timingAdvance,
-				IntakeAirTemp: intakeAirTemp,
-				O2Voltage:     o2Voltage,
-				RuntimeSec:    runtimeSec,
-				Gear:          gear,
-				GearRatio:     gearRatio,
-				ATRange:       int(atRange),
-				Hold:          hold,
-				TCLocked:      tcLocked,
-				Shifting:      shifting,
-				HasMAF:        hasMAF,
-				TCCLockPct:    tccLockPct,
-				BaroKPa:       baroKPa,
+				RPM:             rpm,
+				SpeedKmh:        currentSpeed,
+				EngineLoad:      engineLoad,
+				ThrottlePos:     engineLoad, // LOADをスロットル表示に使用（CAN 0x201 B6）
+				CoolantTemp:     coolantTemp,
+				IntakeMAP:       intakeMAP,
+				MAFAirFlow:      mafAirFlow,
+				EngagedGear:     engagedGear,
+				ATFTempC:        atfTempC,
+				HasATF:          hasATF,
+				PulseDistanceKm: pulseCounter.DistanceKm(),
+				PulseValid:      pulseCounter.Valid(),
+				Voltage:         voltage,
+				FuelLevel:       fuelLevel,
+				AmbientTemp:     ambientTemp,
+				ShortFuelTrim:   shortFuelTrim,
+				LongFuelTrim:    longFuelTrim,
+				TimingAdvance:   timingAdvance,
+				IntakeAirTemp:   intakeAirTemp,
+				O2Voltage:       o2Voltage,
+				RuntimeSec:      runtimeSec,
+				Gear:            gear,
+				GearRatio:       gearRatio,
+				ATRange:         int(atRange),
+				Hold:            hold,
+				TCLocked:        tcLocked,
+				Shifting:        shifting,
+				HasMAF:          hasMAF,
+				TCCLockPct:      tccLockPct,
+				OdometerCANKm:   odometerCANKm,
+				ElecB0Pct:       elecB0Pct,
+				ElecB1Raw:       elecB1Raw,
 			}
 			currentHasMAP := hasMAP
 			mu.Unlock()

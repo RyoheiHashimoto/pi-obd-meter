@@ -24,11 +24,112 @@ if ! flock -n 9; then
 fi
 
 # --- ネットワーク確認 ---
-if ! curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
+#
+# 起動直後は network-online.target に到達していてもインターネットに出られない。
+# 実測 (2026-08-31):
+#
+#   00:06:16  Reached target network-online.target - Network is Online.
+#   00:06:18  New interface create wlan1
+#
+# systemd が「オンライン」と宣言した2秒後に、ようやく WiFi インターフェースが
+# 生成されている。そこから wpa_supplicant の認証と DHCP が走るので、
+# OnBootSec=10sec で起動するこのスクリプトが動く時点では、まだ名前解決すら
+# できないことがある。
+#
+# 従来はここで即 exit していた。周期実行は廃止済み (起動時1回のみ) なので、
+# この1回を落とすと次の起動まで更新の機会が無い。実際に #153〜#157 の
+# デプロイが2回連続で取りこぼされ、手動実行でしか反映できなかった。
+#
+# 最大 NET_WAIT_TRIES 回、NET_WAIT_SLEEP 秒おきに待つ。既定で最大2分。
+# 到達できればすぐ抜けるので、通常の起動でコストは増えない。
+NET_WAIT_TRIES="${NET_WAIT_TRIES:-24}"
+NET_WAIT_SLEEP="${NET_WAIT_SLEEP:-5}"
+
+net_ready=0
+for i in $(seq 1 "$NET_WAIT_TRIES"); do
+    if curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
+        net_ready=1
+        if [ "$i" -gt 1 ]; then
+            echo "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
+        fi
+        break
+    fi
+    sleep "$NET_WAIT_SLEEP"
+done
+
+if [ "$net_ready" -ne 1 ]; then
+    echo "ネットワークに到達できないため更新を見送る ($(( NET_WAIT_TRIES * NET_WAIT_SLEEP ))秒待機)"
     exit 0
 fi
 
 mkdir -p "$STATE_DIR"
+
+# --- scripts/ の更新 ---
+#
+# 実行中のシェルスクリプト自身を上書きすると、bash が続きを読み込む際に
+# 壊れた内容を読む恐れがある。同一ファイルシステム上の一時ファイルへ書いて
+# mv で差し替えれば、ディレクトリエントリだけが入れ替わり、実行中のプロセス
+# は元の inode を読み続けるので安全。
+install_scripts() {
+    local src="$1/scripts"
+    [ -d "$src" ] || return 0
+
+    mkdir -p "${DEST}/scripts"
+    local f rel dst
+    while IFS= read -r f; do
+        rel="${f#"$src"/}"
+        dst="${DEST}/scripts/${rel}"
+        mkdir -p "$(dirname "$dst")"
+        if ! cmp -s "$f" "$dst"; then
+            if cp "$f" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
+                log "scripts 更新: $rel"
+            else
+                rm -f "${dst}.new"
+                log_warn "scripts 更新失敗: $rel"
+            fi
+        fi
+    done < <(find "$src" -type f)
+
+    # systemd ユニットを配る。scripts/ops/systemd/ に置いたものを入れる。
+    # 新しいタイマーを足しても、次の更新で勝手に有効になる。
+    local u name
+    for u in "${DEST}/scripts/ops/systemd/"*.service "${DEST}/scripts/ops/systemd/"*.timer; do
+        [ -f "$u" ] || continue
+        name=$(basename "$u")
+        if ! cmp -s "$u" "/etc/systemd/system/$name"; then
+            if cp "$u" "/etc/systemd/system/${name}.new" && mv -f "/etc/systemd/system/${name}.new" "/etc/systemd/system/$name"; then
+                log "ユニット更新: $name"
+                systemctl daemon-reload
+                case "$name" in *.timer) systemctl enable --now "$name" 2>/dev/null || true;; esac
+            else
+                rm -f "/etc/systemd/system/${name}.new"
+                log_warn "ユニット更新失敗: $name"
+            fi
+        fi
+    done
+
+    # ロガーは /usr/local/bin から起動しているので、変わっていれば入れ替えて
+    # サービスを再起動する。再起動しないと古いコードのまま動き続ける。
+    local pair name unit
+    for pair in "ops/drive-verify.py:drive-verify" "ops/poll22-lean.py:poll22" "ops/gps-log.py:gps-log"; do
+        name="${pair%%:*}"; unit="${pair##*:}"
+        [ -f "${DEST}/scripts/${name}" ] || continue
+        dst="/usr/local/bin/$(basename "$name")"
+        if ! cmp -s "${DEST}/scripts/${name}" "$dst"; then
+            # 失敗したまま再起動すると、古いコードのまま止まるだけ損をする。
+            # 入れ替えが成功したときだけ再起動する。
+            if cp "${DEST}/scripts/${name}" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
+                log "ロガー更新: $(basename "$name")"
+                if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+                    systemctl restart "$unit" 2>/dev/null || log_warn "$unit の再起動に失敗"
+                fi
+            else
+                rm -f "${dst}.new"
+                log_warn "ロガー更新失敗: $(basename "$name")"
+            fi
+        fi
+    done
+}
 
 # --- Stable release チェック ---
 check_stable() {
@@ -142,6 +243,13 @@ check_dev() {
         cp "${tmpdir}/pi-obd-scanner" "${DEST}/pi-obd-scanner"
         chmod +x "${DEST}/pi-obd-scanner"
     fi
+    # scripts/ を更新する。
+    #
+    # バイナリだけが自動更新され scripts/ が手動だと、リポジトリを直しても
+    # Pi 上は古いまま動き続ける。実際 drive-verify.py は修正後も手で配る
+    # まで古いままだった。auto-update.sh 自身もここで更新される。
+    install_scripts "$tmpdir"
+
     # web/static を更新（開発用ファイルシステム配信）
     if [ -d "${tmpdir}/web/static" ]; then
         mkdir -p "${DEST}/web/static"
@@ -152,10 +260,24 @@ check_dev() {
     # ヘルスチェック（10秒以内にプロセスが生存しているか）
     sleep 10
     if ! systemctl is-active --quiet "$SERVICE"; then
-        log_warn "dev ビルド起動失敗、ロールバック"
+        log_warn "dev ビルド起動失敗、ロールバック: $published"
         cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
         systemctl start "$SERVICE"
         rm -rf "$tmpdir"
+
+        # 失敗したバージョンも記録する。
+        #
+        # 記録しないと dev-version が古いままになり、2分後のタイマーで
+        # 同じビルドを「新しい」と判定して再度ダウンロードし、また失敗する。
+        # 12MB のダウンロードとメーターの10秒停止が延々と繰り返され、
+        # 走行記録に穴が空き、SD への書き込みも増え続ける。
+        #
+        # 実際 2026-08-28 に GET /api/health の二重登録で起動できない
+        # ビルドを出してしまい、この筋を踏みかけた。
+        #
+        # 同じビルドは二度と試さない。次の新しいビルドが出れば自動で試す。
+        echo "$published" > "$STATE_DIR/dev-version"
+        log_warn "このビルドは再試行しない。次のビルドを待つ"
         return 1
     fi
 

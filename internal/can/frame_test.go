@@ -45,19 +45,20 @@ func TestDecodeEngine_Moving(t *testing.T) {
 func TestDecodeElectric(t *testing.T) {
 	// candump: 0x430 [7] 72 99 00 00 26 6D 60
 	data := [8]byte{0x72, 0x99, 0x00, 0x00, 0x26, 0x6D, 0x60, 0x00}
-	altLoad, voltage, baro := DecodeElectric(data)
+	b0Pct, b1, odoKm := DecodeElectric(data)
 
-	// Alt load: 0x72=114, /2.55 = 44.7%
-	if math.Abs(altLoad-44.7) > 0.1 {
-		t.Errorf("AltLoad = %f, want ~44.7", altLoad)
+	// B0: 0x72=114, /2.55 = 44.7%（燃料残量の可能性・未確定）
+	if math.Abs(b0Pct-44.7) > 0.1 {
+		t.Errorf("B0Pct = %f, want ~44.7", b0Pct)
 	}
-	// Voltage: 0x99=153, *0.08 = 12.24V
-	if math.Abs(voltage-12.24) > 0.01 {
-		t.Errorf("Voltage = %f, want ~12.24", voltage)
+	// B1: 0x99=153（生値のまま返す）
+	if math.Abs(b1-153) > 0.01 {
+		t.Errorf("B1 = %f, want 153", b1)
 	}
-	// Baro: 0x266D=9837, /100 = 98.37 kPa
-	if math.Abs(baro-98.37) > 0.01 {
-		t.Errorf("Baro = %f, want ~98.37", baro)
+	// オドメーター: 0x266D=9837, *10 = 98,370 km
+	// このキャプチャ採取時の実走行距離。2026-08 時点では 108,120 km まで進んでおり整合する。
+	if math.Abs(odoKm-98370) > 0.01 {
+		t.Errorf("OdometerKm = %f, want 98370", odoKm)
 	}
 }
 
@@ -76,5 +77,109 @@ func TestDecodeWheelSpeed(t *testing.T) {
 	speed := DecodeWheelSpeed(data)
 	if speed != 0 {
 		t.Errorf("WheelSpeed = %f, want 0", speed)
+	}
+}
+
+// TestDecodeATCtrl_EffectiveRatio は 0x230 B2 の実効ギア比とオーバーフロー補正を検証する。
+// 期待値は実機ログ (2026-08-20 / 08-25) の実測に基づく。
+func TestDecodeATCtrl_MechanicalRatio(t *testing.T) {
+	// 2026-08-27 の実走 310サンプルで最頻だった raw 値を使う。
+	// B2 は機械ギア比そのもので、トルコンの滑りは含まれない。
+	tests := []struct {
+		name     string
+		b0, b2   byte
+		wantGear int
+		wantRT   float64
+	}{
+		{"1速 ラップを戻す", 0x01, 26, 1, 2.82},
+		{"2速 ラップしない", 0x02, 150, 2, 1.50},
+		{"3速 ラップしない", 0x03, 100, 3, 1.00},
+		{"4速 ラップしない", 0x04, 73, 4, 0.73},
+		{"R ラップを戻す", 0x10, 14, 0, 2.70},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gear, ratio := DecodeATCtrl([8]byte{tt.b0, 0, tt.b2, 0, 0, 0, 0, 0})
+			if gear != tt.wantGear {
+				t.Errorf("gear = %d, want %d", gear, tt.wantGear)
+			}
+			if diff := ratio - tt.wantRT; diff > 0.001 || diff < -0.001 {
+				t.Errorf("ratio = %.4f, want %.4f", ratio, tt.wantRT)
+			}
+		})
+	}
+}
+
+// 変速の過渡では B2 が隣のギアの値を取る。以前はこれを「ラップ」と誤判定して
+// +2.56 し、3.29 や 3.56 という存在しないギア比を出力していた (#132)。
+func TestDecodeATCtrl_ShiftTransientIsNotWrapped(t *testing.T) {
+	tests := []struct {
+		name   string
+		b0, b2 byte
+		want   float64
+	}{
+		{"3速なのにB2が4速の値", 0x03, 73, 0.73},
+		{"1速なのにB2が過渡値0.95", 0x01, 95, 0.95},
+		{"2速なのにB2が3速の値", 0x02, 100, 1.00},
+		{"4速なのにB2が3速の値", 0x04, 100, 1.00},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ratio := DecodeATCtrl([8]byte{tt.b0, 0, tt.b2, 0, 0, 0, 0, 0})
+			if diff := ratio - tt.want; diff > 0.001 || diff < -0.001 {
+				t.Errorf("ratio = %.4f, want %.4f (2.56を足してはいけない)", ratio, tt.want)
+			}
+		})
+	}
+}
+
+// 0x231 のギア番号は目標ギアで、実際に噛んでいるギアとは限らない。
+// 実際のギアはギア比から判定する。
+func TestActualGear(t *testing.T) {
+	tests := []struct {
+		ratio float64
+		want  int
+		note  string
+	}{
+		{2.82, 1, "1速 (ラップ補正後)"},
+		{1.50, 2, "2速"},
+		{1.00, 3, "3速"},
+		{0.73, 4, "4速"},
+		{0.72, 4, "4速 下振れ"},
+		{1.09, 0, "変速の途中。どのギアでもない"},
+		{1.25, 0, "変速の途中"},
+		{2.30, 0, "1速と2速の間"},
+		{0.00, 0, "N/P"},
+	}
+	for _, tt := range tests {
+		if got := ActualGear(tt.ratio); got != tt.want {
+			t.Errorf("%s: ActualGear(%.2f) = %d, want %d", tt.note, tt.ratio, got, tt.want)
+		}
+	}
+}
+
+// 2026-08-29 の実測。95km/h で S レンジに入れた瞬間の推移。
+// ギア番号は 2速 に変わるが、実際は 3速 のままだった。
+func TestActualGear_TargetVsEngaged(t *testing.T) {
+	// 表示ギア, 0x230のギア比, 実際のギア
+	seq := []struct {
+		shown int
+		ratio float64
+		want  int
+	}{
+		{3, 1.000, 3},
+		{2, 1.000, 3}, // 表示は2速に変わったが、まだ3速
+		{2, 1.000, 3},
+		{2, 1.090, 0}, // 変速の途中
+		{2, 1.250, 0},
+	}
+	for i, s := range seq {
+		got := ActualGear(s.ratio)
+		if got != s.want {
+			t.Errorf("[%d] 表示%d速 ギア比%.3f → ActualGear=%d, want %d", i, s.shown, s.ratio, got, s.want)
+		}
+		if i >= 1 && i <= 2 && got == s.shown {
+			t.Errorf("[%d] 表示ギアをそのまま信じている。目標と実際を取り違えている", i)
+		}
 	}
 }
