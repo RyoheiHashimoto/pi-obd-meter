@@ -298,6 +298,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				FuelEconomy:    displayFuelEco,
 				FuelRateLH:     lastFuelRate,
 				AvgFuelEconomy: app.tracker.AvgFuelEconomy(),
+				EngagedGear:    data.EngagedGear,
 				ATFTempC:       atfTempOrZero(data),
 				ATFValid:       data.HasATF,
 				ATFAlert:       atfAlertOrEmpty(data),

@@ -1,0 +1,12 @@
+[Unit]
+Description=GPS (NMEA) の記録
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/gps-log.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

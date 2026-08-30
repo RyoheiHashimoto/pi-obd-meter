@@ -132,3 +132,54 @@ func TestDecodeATCtrl_ShiftTransientIsNotWrapped(t *testing.T) {
 		})
 	}
 }
+
+// 0x231 のギア番号は目標ギアで、実際に噛んでいるギアとは限らない。
+// 実際のギアはギア比から判定する。
+func TestActualGear(t *testing.T) {
+	tests := []struct {
+		ratio float64
+		want  int
+		note  string
+	}{
+		{2.82, 1, "1速 (ラップ補正後)"},
+		{1.50, 2, "2速"},
+		{1.00, 3, "3速"},
+		{0.73, 4, "4速"},
+		{0.72, 4, "4速 下振れ"},
+		{1.09, 0, "変速の途中。どのギアでもない"},
+		{1.25, 0, "変速の途中"},
+		{2.30, 0, "1速と2速の間"},
+		{0.00, 0, "N/P"},
+	}
+	for _, tt := range tests {
+		if got := ActualGear(tt.ratio); got != tt.want {
+			t.Errorf("%s: ActualGear(%.2f) = %d, want %d", tt.note, tt.ratio, got, tt.want)
+		}
+	}
+}
+
+// 2026-08-29 の実測。95km/h で S レンジに入れた瞬間の推移。
+// ギア番号は 2速 に変わるが、実際は 3速 のままだった。
+func TestActualGear_TargetVsEngaged(t *testing.T) {
+	// 表示ギア, 0x230のギア比, 実際のギア
+	seq := []struct {
+		shown int
+		ratio float64
+		want  int
+	}{
+		{3, 1.000, 3},
+		{2, 1.000, 3}, // 表示は2速に変わったが、まだ3速
+		{2, 1.000, 3},
+		{2, 1.090, 0}, // 変速の途中
+		{2, 1.250, 0},
+	}
+	for i, s := range seq {
+		got := ActualGear(s.ratio)
+		if got != s.want {
+			t.Errorf("[%d] 表示%d速 ギア比%.3f → ActualGear=%d, want %d", i, s.shown, s.ratio, got, s.want)
+		}
+		if i >= 1 && i <= 2 && got == s.shown {
+			t.Errorf("[%d] 表示ギアをそのまま信じている。目標と実際を取り違えている", i)
+		}
+	}
+}
