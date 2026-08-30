@@ -1,6 +1,7 @@
 package fuel
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -68,7 +69,7 @@ func TestDetector_PartialRefuel(t *testing.T) {
 	feed(d1, 40.0, settleSamples)
 
 	d2 := NewDetector(p)
-	feed(d2, 70.0, settleSamples) // 30ポイント = 約15L
+	feed(d2, 70.0, settleSamples) // 30ポイントの継ぎ足し
 	ev := d2.Event()
 	if ev == nil {
 		t.Fatal("継ぎ足し給油が検出されなかった")
@@ -76,8 +77,11 @@ func TestDetector_PartialRefuel(t *testing.T) {
 	if ev.FullTank {
 		t.Error("70%% は満タンではない")
 	}
-	if ev.AmountL < 15.0 || ev.AmountL > 15.5 {
-		t.Errorf("給油量 = %.1f L, want 約15.3 L", ev.AmountL)
+	// 期待値は定数から導く。数値を直書きすると、較正のたびにテストが
+	// 「壊れた」ように見えてしまう (2026-08-31 の 0.51→0.45 で実際に起きた)。
+	want := 30 * LitersPerPoint
+	if math.Abs(ev.AmountL-want) > 0.05 {
+		t.Errorf("給油量 = %.2f L, want %.2f L (30pt × %.2f L/pt)", ev.AmountL, want, LitersPerPoint)
 	}
 }
 
