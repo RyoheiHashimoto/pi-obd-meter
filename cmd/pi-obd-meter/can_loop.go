@@ -48,8 +48,9 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 	var pulseCounter can.PulseCounter
 	// トルコン滑りの校正器。ロックアップ中のサンプルから k を学習する。
 	slipCal := can.NewSlipCalibrator()
-	// 変速中に保持するロック率
+	// 変速中に保持するロック率と滑り比
 	var lastLockPct float64
+	var lastSlip float64
 
 	// CAN接続を試みる（interface DOWN の場合は UP にし直す）
 	connect := func() *can.Socket {
@@ -346,11 +347,16 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			if currentSpeed > 20 && rpm > 300 && mech > 0 {
 				if !shifting {
 					lastLockPct = slipCal.LockPct(rpm, currentSpeed, mech)
+					if s, ok := slipCal.Slip(rpm, currentSpeed, mech); ok {
+						lastSlip = s
+					}
 				}
 			} else {
 				lastLockPct = 0
+				lastSlip = 0
 			}
 			tccLockPct := lastLockPct
+			slipRatio := lastSlip
 
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
@@ -384,6 +390,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				Shifting:        shifting,
 				HasMAF:          hasMAF,
 				TCCLockPct:      tccLockPct,
+				SlipRatio:       slipRatio,
 				OdometerCANKm:   odometerCANKm,
 				ElecB0Pct:       elecB0Pct,
 				ElecB1Raw:       elecB1Raw,
