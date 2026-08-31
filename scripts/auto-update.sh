@@ -185,6 +185,11 @@ check_stable() {
         mkdir -p "${DEST}/web/static"
         cp -r "${tmpdir}/web/static/"* "${DEST}/web/static/"
     fi
+    # scripts/ と systemd ユニットも更新する。
+    #
+    # 以前は check_dev だけが install_scripts を呼んでいた。stable release を
+    # 入れると ops スクリプトが古いまま取り残される。v1.4.0 で実際に起きた。
+    install_scripts "$tmpdir"
     systemctl start "$SERVICE"
 
     # ヘルスチェック（10秒以内にプロセスが生存しているか）

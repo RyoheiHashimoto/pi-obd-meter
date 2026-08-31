@@ -963,3 +963,35 @@ func TestCalcFuelEconomy_FuelCutWithMAP(t *testing.T) {
 		t.Errorf("通常走行の計算が変わった: got %.3f want %.3f", normal, want)
 	}
 }
+
+// config.json に fuel_rate_correction が無いとき、バイナリ自身の既定値が
+// 使われることを確認する。
+//
+// この値は「車両固有の設定」ではなく「燃料モデルの一部」である。モデルを
+// 直せば係数も変わるため、config.json に焼き込むとバイナリとの食い違いが
+// 起きる。2026-08-31 に実際に起きた: 燃料カットの不具合を直して既定を
+// 1.07→1.12 にしたが、Pi 側の config.json は 1.07 のままで、そちらが優先
+// されて 4% の過少になるところだった。
+//
+// 出荷する config.json からキーを外し、常にバイナリの既定に従わせる。
+func TestLoadConfig_FuelCorrectionDefaultsWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(p, []byte(`{"can_interface":"can0"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(p)
+	validateConfig(&cfg)
+	if cfg.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("キー不在時: got %.3f, want %.3f (バイナリ既定)", cfg.FuelRateCorrection, defaultFuelRateCorrection)
+	}
+	// 0 でも既定に落ちること。0 のまま通すと燃料レートが補正なしになる。
+	if err := os.WriteFile(p, []byte(`{"fuel_rate_correction":0}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg2 := loadConfig(p)
+	validateConfig(&cfg2)
+	if cfg2.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("0 指定時: got %.3f, want %.3f", cfg2.FuelRateCorrection, defaultFuelRateCorrection)
+	}
+}

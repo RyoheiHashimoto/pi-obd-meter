@@ -177,8 +177,11 @@ func validateConfig(cfg *Config) {
 		slog.Warn("engine_displacement_l が不正、デフォルト使用", "value", cfg.EngineDisplacementL)
 		cfg.EngineDisplacementL = 1.3
 	}
-	if cfg.FuelRateCorrection < 0 {
-		slog.Warn("fuel_rate_correction が負数、デフォルト使用", "value", cfg.FuelRateCorrection)
+	// 0 も弾く。他の項目が <= 0 を見ているのにここだけ < 0 だった。
+	// 0 のまま通すと calcFuelEconomy の `if correction > 0` を素通りし、
+	// 補正なし (×1.0) で走る。約 30% の過少になるのに警告も出ない。
+	if cfg.FuelRateCorrection <= 0 {
+		slog.Warn("fuel_rate_correction が不正、デフォルト使用", "value", cfg.FuelRateCorrection)
 		cfg.FuelRateCorrection = defaultFuelRateCorrection
 	}
 	if cfg.FuelTankL <= 0 {
