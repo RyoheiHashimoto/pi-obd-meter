@@ -50,15 +50,22 @@ for i in $(seq 1 "$NET_WAIT_TRIES"); do
     if curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
         net_ready=1
         if [ "$i" -gt 1 ]; then
-            echo "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
+            log "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
         fi
         break
     fi
-    sleep "$NET_WAIT_SLEEP"
+    # 最後の試行のあとは待たない。待っても次が無い。
+    #
+    # set -e 下で `[ cond ] && cmd` を文末に置くと、条件が偽のときの
+    # 終了コードが 1 になる。errexit の例外規則に救われる書き方だが、
+    # 無人で起動するスクリプトで微妙な規則に頼らない。
+    if [ "$i" -lt "$NET_WAIT_TRIES" ]; then
+        sleep "$NET_WAIT_SLEEP"
+    fi
 done
 
 if [ "$net_ready" -ne 1 ]; then
-    echo "ネットワークに到達できないため更新を見送る ($(( NET_WAIT_TRIES * NET_WAIT_SLEEP ))秒待機)"
+    log_warn "ネットワークに到達できないため更新を見送る ($(( NET_WAIT_TRIES * NET_WAIT_SLEEP ))秒待機)"
     exit 0
 fi
 
