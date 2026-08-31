@@ -34,7 +34,16 @@ while True:
     eng = d.get("engaged_gear") or 0
     mech = MECH.get(eng, 0)
     r = d.get("gear_ratio") or 0
-    slip = (r / mech) if (mech > 0 and r > 0) else 0
+    # 滑り比はアプリが算出したものを使う。
+    #
+    # 以前はここで gear_ratio / mech を計算していたが、これは常に 1.0 になる。
+    # CAN 0x230 B2 (gear_ratio) は機械ギア比であって滑りを含まない (#132/#133 で
+    # 確定済み) ため、同じ値を同じ値で割っていた。3日分・40万サンプルの slip 列が
+    # すべて 1.0000 で、「トルコンは常に直結」という誤った読みを生みかけた。
+    #
+    # 正しい滑りは rpm / (車速 × 機械ギア比 × k) で、k はロックアップ中に学習する。
+    # アプリの SlipCalibrator がそれを持っているので、API から受け取る。
+    slip = d.get("slip_ratio") or 0
     f.write("%.1f,%.2f,%.1f,%d,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, eng, r, mech, slip,
