@@ -14,6 +14,20 @@ import (
 	"github.com/hashimoto/pi-obd-meter/internal/atomicfile"
 )
 
+const (
+	// maxPlausibleSpeedKmh は距離パルスの差分を受け入れる上限速度。
+	// これを超える見かけの速度は、通信断からの復帰で累積値が飛んだ場合しか
+	// 起こらない。
+	maxPlausibleSpeedKmh = 200.0
+
+	// pulseStaleSec はパルス更新が途絶えたとみなす時間。
+	//
+	// 0x420 は 10Hz で来る (実測: 周期 中央100.0ms / p95 100.2ms / 欠測ゼロ)。
+	// 更新が来ない間は距離を 0 として次回にまとめて入れるが、本当に途絶えた
+	// 場合まで 0 を積み続けると距離を落とす。これを超えたら車速積分に戻す。
+	pulseStaleSec = 1.0
+)
+
 // TripData は1トリップ分の集計データ
 type TripData struct {
 	TripID           string    `json:"trip_id"`
@@ -45,6 +59,14 @@ type Tracker struct {
 	// 距離パルスによる累積距離の前回値。差分を取って距離に加算する。
 	lastPulseKm    float64
 	lastPulseValid bool
+
+	// パルス値が最後に「変化した」時刻。
+	//
+	// 上限判定をこの間隔で行う。呼び出し側の dt で判定してはいけない。
+	// パルスは 10Hz で更新されるのに UpdateWithPulse は 20Hz で呼ばれる
+	// ため、変化した回の差分は 100ms 分の距離を持つのに dt は 50ms しか
+	// 無い。dt を基準にすると 100km/h 付近から正しい差分を弾き始める。
+	lastPulseAt time.Time
 }
 
 // TrackerConfig はトラッカーの設定
@@ -87,10 +109,14 @@ func (t *Tracker) Update(speedKmh, fuelRateLH float64) {
 // pulseValid が false の場合、または差分が負・過大な場合は車速積分に退避する。
 // 通信断からの復帰直後など、累積値が飛ぶ可能性があるため。
 func (t *Tracker) UpdateWithPulse(speedKmh, fuelRateLH, pulseKm float64, pulseValid bool) {
+	t.updateWithPulseAt(speedKmh, fuelRateLH, pulseKm, pulseValid, time.Now())
+}
+
+// updateWithPulseAt は時刻を外から与える版。テストで生産10Hz・消費20Hz の
+// ずれを再現するために要る。実時間に依存すると、その条件を確実には作れない。
+func (t *Tracker) updateWithPulseAt(speedKmh, fuelRateLH, pulseKm float64, pulseValid bool, now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	now := time.Now()
 
 	// 初回
 	if t.lastTimestamp.IsZero() {
@@ -101,6 +127,7 @@ func (t *Tracker) UpdateWithPulse(speedKmh, fuelRateLH, pulseKm float64, pulseVa
 		if pulseValid {
 			t.lastPulseKm = pulseKm
 			t.lastPulseValid = true
+			t.lastPulseAt = now
 		}
 		return
 	}
@@ -112,17 +139,49 @@ func (t *Tracker) UpdateWithPulse(speedKmh, fuelRateLH, pulseKm float64, pulseVa
 	}
 
 	// 走行距離: 距離パルスがあれば計数、無ければ車速の積分にフォールバック
+	//
+	// 上限判定は「パルスが前回変化してからの経過時間」で行う。呼び出し側の
+	// dt を使ってはいけない。パルス (CAN 0x420 B1) は 10Hz で更新されるのに
+	// UpdateWithPulse は poll_interval_ms (既定50ms) 周期で呼ばれるため、
+	// 変化した回の差分は 100ms 分の距離を持つのに dt は 50ms しかない。
+	//
+	// この取り違えで 2026-08 に実害が出た。790km の照合でトリップが
+	// オドメーター比 -17.6% になり、しかも速度が上がるほど悪化した
+	// (低速 0.984 → 高速 0.602)。100km/h を超えると正しい差分が上限を
+	// 超えて棄却され、車速積分 (dt=50ms 分) にフォールバックするため、
+	// 実際に進んだ 100ms 分の半分しか数えていなかった。
 	distanceDelta := (speedKmh / 3600.0) * dt
 	if pulseValid && t.lastPulseValid {
 		d := pulseKm - t.lastPulseKm
-		// 負の差分は累積値のリセット、過大な差分は通信断からの復帰を意味する。
-		// dt 秒間に 200km/h で進める距離を上限とする。
-		if d >= 0 && d <= (200.0/3600.0)*dt {
-			distanceDelta = d
+		switch {
+		case d > 0:
+			elapsed := now.Sub(t.lastPulseAt).Seconds()
+			if elapsed <= 0 {
+				elapsed = dt
+			}
+			// 通信断からの復帰で累積値が飛んだ場合だけ弾く。
+			if d <= (maxPlausibleSpeedKmh/3600.0)*elapsed {
+				distanceDelta = d
+			}
+			t.lastPulseAt = now
+		case d == 0:
+			// まだ次のパルス更新が来ていない。進んだ分は次回まとめて入る。
+			//
+			// ただし更新が止まったまま走り続けている場合は距離を落とす。
+			// 一定時間変化が無ければ車速積分に戻す。
+			if now.Sub(t.lastPulseAt).Seconds() < pulseStaleSec {
+				distanceDelta = 0
+			}
+		default:
+			// 負の差分 = 累積値のリセット。車速積分を使い、基準を取り直す。
+			t.lastPulseAt = now
 		}
 	}
 	if pulseValid {
 		t.lastPulseKm = pulseKm
+		if !t.lastPulseValid {
+			t.lastPulseAt = now
+		}
 		t.lastPulseValid = true
 	} else {
 		t.lastPulseValid = false

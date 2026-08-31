@@ -411,3 +411,46 @@ func TestUpdateWithPulse_RejectsJump(t *testing.T) {
 		t.Errorf("異常な差分を採用した: %.6f km", got)
 	}
 }
+
+// 距離パルスは 10Hz で更新されるのに UpdateWithPulse は 20Hz で呼ばれる。
+// 上限判定を呼び出し側の dt で行うと、100km/h 付近から正しい差分を棄却して
+// 距離を半分しか数えなくなる。
+//
+// 2026-08 の実走 790km で、トリップがオドメーター比 -17.6% になり、
+// 速度が上がるほど悪化した (低速 0.984 → 高速 0.602)。
+func TestTracker_PulseFasterConsumerThanProducer(t *testing.T) {
+	const (
+		pulseHz = 10.0
+		pollMs  = 50.0
+		hours   = 0.25
+	)
+	for _, speed := range []float64{40, 80, 100, 120, 140} {
+		dir := t.TempDir()
+		tr := NewTracker(TrackerConfig{StatePath: filepath.Join(dir, "trip.json")})
+
+		dt := pollMs / 1000.0
+		pulsePeriod := 1.0 / pulseHz
+		cumPulse := 0.0
+		nextPulse := 0.0
+		steps := int(hours * 3600 / dt)
+
+		for i := 0; i < steps; i++ {
+			now := float64(i) * dt
+			if now >= nextPulse {
+				cumPulse += speed / 3600.0 * pulsePeriod
+				nextPulse += pulsePeriod
+			}
+			tr.updateWithPulseAt(speed, 0, cumPulse, true,
+				time.Unix(0, 0).Add(time.Duration(now*float64(time.Second))))
+		}
+
+		want := speed * hours
+		got := tr.DistanceKm()
+		ratio := got / want
+		if ratio < 0.97 || ratio > 1.03 {
+			t.Errorf("%.0f km/h: 距離 %.2f km, 真値 %.2f km (比 %.3f)。"+
+				"上限判定が呼び出し側の dt を使っていないか確認すること",
+				speed, got, want, ratio)
+		}
+	}
+}
