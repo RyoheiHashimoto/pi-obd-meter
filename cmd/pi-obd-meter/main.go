@@ -323,6 +323,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				Hold:           data.Hold,
 				TCLocked:       data.TCLocked,
 				TCCLockPct:     data.TCCLockPct,
+				SlipRatio:      data.SlipRatio,
 				Shifting:       data.Shifting,
 				OdometerCANKm:  data.OdometerCANKm,
 				ElecB0Pct:      data.ElecB0Pct,
