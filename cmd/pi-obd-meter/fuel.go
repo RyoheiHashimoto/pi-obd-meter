@@ -10,6 +10,13 @@ const (
 	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 	atmosphericKPa    = 101.3 // 標準大気圧 (kPa)
 	engineBrakeMAPKPa = 30.0  // エンブレ判定MAP閾値 (kPa) — 強い負圧
+
+	// fuelCutMinRPM は減速時燃料カット (DFCO) が成立するとみなす最低回転数。
+	//
+	// ECU はアイドル回転に近づくとエンストを避けるため燃料を復帰させる。
+	// 復帰点はおよそ 1,200rpm 前後なので、余裕を見て 1,300rpm 以上でのみ
+	// 「燃料を使っていない」と判断する。
+	fuelCutMinRPM = 1300.0
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
@@ -56,12 +63,31 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 	}
 
 	// エンブレ検出: MAP対応時は負圧で判定（より正確）、非対応時は負荷で判定
+	//
+	// このとき燃料レートを 0 にする。
+	//
+	// 減速時燃料カット (DFCO) が働いている間、エンジンは燃料を一切使わない。
+	// ところが MAF は空気の流量を測っているので、吸気は流れ続ける。空気量に
+	// 理論空燃比を掛けて燃料を求めるモデルは、燃やしていない燃料を数える。
+	//
+	// 実測 (2026-08-27〜30、1,030km) では、この条件が走行時間の 11.4% を占め、
+	// 積算 95.66L のうち 3.83L (4.0%) が実際には消費されていない燃料だった。
+	// 給油区間ごとに 3.4% / 4.4% / 3.7% と安定して乗っている。
+	//
+	// エンストを避けるため ECU はアイドル付近で燃料を復帰させるので、
+	// fuelCutMinRPM 以上でのみ 0 とする。それ未満は従来どおり計算値を返す。
 	if speed >= minDisplaySpeedKm {
 		if hasMAP && intakeMAP > 0 && intakeMAP < engineBrakeMAPKPa {
-			return -1, fuelRateLH // MAP低い = スロットル閉 = エンブレ
+			if rpm >= fuelCutMinRPM {
+				return -1, 0 // MAP低い = スロットル閉 = 燃料カット
+			}
+			return -1, fuelRateLH // 低回転では燃料が復帰している
 		}
 		if load < 5.0 {
-			return -1, fuelRateLH // 負荷ベースのフォールバック
+			if rpm >= fuelCutMinRPM {
+				return -1, 0 // 負荷ベースのフォールバック
+			}
+			return -1, fuelRateLH
 		}
 	}
 
