@@ -15,7 +15,7 @@ const (
 	IDATCtrl   uint32 = 0x230 // AT制御: ギア + ギア係合状態 + ギア比
 	IDATStatus uint32 = 0x231 // ATステータス: ギア + HOLD + シフトフラグ
 	IDCoolant  uint32 = 0x420 // 水温 + 距離パルス
-	IDElectric uint32 = 0x430 // オルタ負荷 + 電圧 + 大気圧
+	IDElectric uint32 = 0x430 // 燃料残量 + オドメーター (大気圧・電圧は含まない。DecodeElectric 参照)
 	IDWheels   uint32 = 0x4B0 // 4輪速度
 )
 
