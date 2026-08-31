@@ -72,6 +72,7 @@ type OBDData struct {
 	Shifting      bool    // シフト中 — CAN 0x231 B1 bit3
 	HasMAF        bool    // MAFセンサー対応か
 	TCCLockPct    float64 // TCロック率 (0-100%) — RPM÷車速から算出
+	SlipRatio     float64 // トルコンの滑り比 (エンジン回転÷タービン回転)。1.0=直結
 	OdometerCANKm float64 // 累計走行距離 (km) — CAN 0x430 B4-5 (10km単位)。実機検証済み
 	ElecB0Pct     float64 // 0x430 B0 の生値/2.55。燃料残量の可能性・未確定 (issue #119)
 	ElecB1Raw     float64 // 0x430 B1 の生値。電圧に連動するが電圧ではない (issue #119)
