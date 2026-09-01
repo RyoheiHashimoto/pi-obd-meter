@@ -73,6 +73,11 @@ type OBDData struct {
 	HasMAF        bool    // MAFセンサー対応か
 	TCCLockPct    float64 // TCロック率 (0-100%) — RPM÷車速から算出
 	SlipRatio     float64 // トルコンの滑り比 (エンジン回転÷タービン回転)。1.0=直結
+	BrakePedal    bool    // ブレーキペダル (Mode22 0x1101 bit1)
+	RadiatorFan   bool    // ラジエータファン (Mode22 0x1101 bit0)
+	ACCompressor  bool    // エアコンコンプレッサー (Mode22 0x1103 bit2)
+	GradeRaw      int     // 勾配の生値 (Mode22 0x3201、符号付き。負が登り。単位未確定)
+	HasGrade      bool    // 勾配を受信できたか
 	OdometerCANKm float64 // 累計走行距離 (km) — CAN 0x430 B4-5 (10km単位)。実機検証済み
 	ElecB0Pct     float64 // 0x430 B0 の生値/2.55。燃料残量の可能性・未確定 (issue #119)
 	ElecB1Raw     float64 // 0x430 B1 の生値。電圧に連動するが電圧ではない (issue #119)
