@@ -31,6 +31,13 @@ let wsEverConnected = false;
 let wsRetryCount = 0;
 let usingPolling = false;
 
+// 直前に確定した実ギア。変速の過渡で実ギアが不定 (0) になる間、これを表示する。
+//
+// 実測 (2026-09-01、114分・17,681サンプル) では実ギアが不定なのは 2.6% で、
+// 中央 0.40秒・最長 2.9秒。ここで 0 に落とすと変速のたびに段が消える。
+// ロック率が同じ理由で直前値を保持しているのに揃える。
+let lastEngagedGear = 0;
+
 // --- データ適用 ---
 function applyData(d) {
   // OBD 未接続時 (ACC/エンジン停止) はプレースホルダー状態
@@ -40,8 +47,28 @@ function applyData(d) {
   const rpm = obdOn ? (d.rpm || 0) : 0;
   gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
+  updateGear(displayGear(obdOn, d), obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
   updateIndicators(dom, d, conf);
+}
+
+// 表示するギアを決める。
+//
+// d.gear は「目標ギア」で、変速指令が出た瞬間に切り替わる。実際に噛むのは
+// その後なので、そのまま出すと嘘の段が表示される。実測 (2026-09-01) では
+// 走行中の 2.4% で目標と実ギアが食い違っていた。114分の走行で約83秒間にあたる。
+//
+//   目標4→実3 ×179   目標3→実4 ×109   目標3→実2 ×64   目標2→実3 ×48
+//
+// 「速度が落ち切る前に2速へ落としたとき、まだ3速なのに2速と表示される」
+// という報告と一致する。d.engaged_gear (ギア比から求めた実ギア、#153) を使う。
+function displayGear(obdOn, d) {
+  if (!obdOn) {
+    lastEngagedGear = 0;
+    return 0;
+  }
+  const eng = d.engaged_gear || 0;
+  if (eng > 0) lastEngagedGear = eng;
+  return lastEngagedGear;
 }
 
 // --- WebSocket 接続 ---
