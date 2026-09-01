@@ -95,7 +95,7 @@ type RealtimeData struct {
 	EngagedGear    int     `json:"engaged_gear"`
 	ATFTempC       float64 `json:"atf_temp_c"`
 	ATFValid       bool    `json:"atf_valid"`
-	ATFAlert       string  `json:"atf_alert,omitempty"`
+	ATFLevel       string  `json:"atf_level,omitempty"` // 表示色のキー。"" / warm / caution / hot / danger
 	TripKm         float64 `json:"trip_km"`
 	CoolantTemp    float64 `json:"coolant_temp"`
 	IntakeMAP      float64 `json:"intake_map"`

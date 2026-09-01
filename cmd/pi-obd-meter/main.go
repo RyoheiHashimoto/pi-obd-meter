@@ -301,7 +301,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				EngagedGear:    data.EngagedGear,
 				ATFTempC:       atfTempOrZero(data),
 				ATFValid:       data.HasATF,
-				ATFAlert:       atfAlertOrEmpty(data),
+				ATFLevel:       atfLevelOrEmpty(data),
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
@@ -387,9 +387,9 @@ func atfTempOrZero(d *obd.OBDData) float64 {
 }
 
 // atfAlertOrEmpty は未取得のときに警告を出さない。
-func atfAlertOrEmpty(d *obd.OBDData) string {
+func atfLevelOrEmpty(d *obd.OBDData) string {
 	if !d.HasATF {
 		return ""
 	}
-	return can.ATFAlert(d.ATFTempC)
+	return can.ATFLevel(d.ATFTempC)
 }

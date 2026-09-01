@@ -188,22 +188,58 @@ func DecodeATFTemp(data []byte) (tempC float64, ok bool) {
 	return (f - atfFtoCOffset) / atfFtoCScale, true
 }
 
-// ATFAlert は油温に対する注意喚起を返す。何も無ければ空文字列。
+// ATF 油温の区分の境目。
 //
-// 目安は業界の経験則による。約95℃を超えると10℃ごとに油の寿命が半減する。
+// 「1区分 = 油の寿命が半分になる」で刻んだ。業界の経験則では 20°F (11.1℃)
+// 上がるごとに寿命が半減するので、10℃刻みがちょうど1段ぶんにあたる。
 //
-//	100℃ ワニス (酸化生成物) が出始める
-//	120℃ シールが硬化する
-//	130℃ 酸化が急加速する
-//	150℃ クラッチが焼ける
-func ATFAlert(tempC float64) string {
+//	劣化速度 = 2^((T-79)/11.1)   (79℃ を 1.0 とする)
+//	  2倍 →  90.1℃
+//	  4倍 → 101.2℃
+//	  8倍 → 112.3℃
+//	 16倍 → 123.4℃
+//
+// 実測 24.1時間 (2026-08-27〜09-01) での滞在割合と劣化速度:
+//
+//	         温度帯     時間割合  劣化速度
+//	(無印)   〜 90℃     59.0%     0.8倍
+//	warm     90-100     21.4%     2.7倍
+//	caution 100-110     14.2%     5.2倍
+//	hot     110-120      5.4%     8.3倍
+//	danger  120〜         0.0%    未到達
+//
+// 走行の種類との対応 (実測):
+//
+//	停車・アイドル      緑93%
+//	街乗り (<25km/h)    緑84% / 黄緑14%
+//	流れの良い道        緑55% / 黄緑35%
+//	高速巡航 (70km/h+)  黄緑39% / 黄35% / 橙15%
+//
+// 高速に乗ると warm、踏み続けると caution へ移る。danger は 24時間の実測で
+// 一度も出ていないので、出たときは何かが違うという意味を持つ。
+//
+// 参考: 100℃ でワニス (酸化生成物) が出始め、120℃ でシールが硬化し、
+// 150℃ でクラッチが焼ける。
+const (
+	atfWarmC    = 90.0
+	atfCautionC = 100.0
+	atfHotC     = 110.0
+	atfDangerC  = 120.0
+)
+
+// ATFLevel は油温の区分を返す。正常なら空文字列。
+//
+// 返り値は表示色を引くためのキーであって、そのまま画面に出す文言ではない。
+func ATFLevel(tempC float64) string {
 	switch {
-	case tempC >= 130:
-		return "ATF危険"
-	case tempC >= 120:
-		return "ATF高温"
-	case tempC >= 100:
-		return "ATF注意"
+	case tempC >= atfDangerC:
+		return "danger"
+	case tempC >= atfHotC:
+		return "hot"
+	case tempC >= atfCautionC:
+		return "caution"
+	case tempC >= atfWarmC:
+		return "warm"
 	}
 	return ""
 }

@@ -105,6 +105,9 @@ const ICON_LEAF = 'M0 -12C-5 -4 -7 2 -7 7c0 3 3 6 7 6s7-3 7-6c0-5-2-11-7-19z';
 const ICON_ROAD = 'M11 2h2v4h-2zm0 6h2v4h-2zm0 6h2v4h-2zM2 2l4 20h2L5 2zm20 0h-2L16 22h2z';
 const ICON_OIL = 'M12 2C12 2 6 10 6 15a6 6 0 0 0 12 0c0-5-6-13-6-13zm0 17a3 3 0 0 1-3-3c0-.5.1-1 .3-1.5.2-.4.8-.3.9.2.1.3.1.6.1.9a1.8 1.8 0 0 0 1.8 1.8c.4 0 .7-.3.6-.7-.3-1.5-1.2-2.8-2.2-3.9-.3-.3 0-.8.4-.6C13.3 12.5 15 14.5 15 16a3 3 0 0 1-3 3z';
 // 給油ポンプ (給油までの残距離用)
+// 温度計 (ATF 油温)
+const ICON_THERMO = 'M12 2a3 3 0 0 0-3 3v8.6a5 5 0 1 0 6 0V5a3 3 0 0 0-3-3zm0 2a1 1 0 0 1 1 1v9.4l.6.4a3 3 0 1 1-3.2 0l.6-.4V5a1 1 0 0 1 1-1zm-.5 3h1v7h-1z';
+
 const ICON_FUELPUMP = 'M19.77 7.23l.01-.01-3.72-3.72L15 4.56l2.11 2.11c-.94.36-1.61 1.26-1.61 2.33 0 1.38 1.12 2.5 2.5 2.5.36 0 .69-.08 1-.21v7.21c0 .55-.45 1-1 1s-1-.45-1-1V14c0-1.1-.9-2-2-2h-1V5c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v16h10v-7.5h1.5v5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V9c0-.69-.28-1.32-.73-1.77zM12 10H6V5h6v5zm6 0c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1z';
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
 let trackGradCount = 100;
@@ -138,7 +141,7 @@ let mapCur = 0, mapTgt = 0, mapRaf = 0;
 let ecoValEl, ecoIconEls;
 let rngValEl, rngIconEl;
 let tripValEl, tripIconEl;
-let oilValEl, oilIconEl, oilLabelEl;
+let atfValEl, atfIconEl, atfLabelEl;
 
 // 閾値（config から設定可能、TEMP 削除後も coolant 関連は保持してダミーで吸収）
 let coolantColdMax = 60;
@@ -390,14 +393,20 @@ export function createIndicators(panelEl) {
   tripValEl.textContent = '0';
   svgEl(svg, 'text', { x: IND_X_UNIT, y: tripY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' }).textContent = 'km';
 
-  // Row 3: OIL
-  const oilY = IND_Y_START + IND_SPACING * 3;
-  addIndPanel(oilY);
-  oilIconEl = createIconPath(svg, IND_X_ICON + 10, oilY - 8, ICON_OIL, 40);
-  oilValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: oilY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
-  oilValEl.textContent = '--';
-  oilLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: oilY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
-  oilLabelEl.textContent = 'km';
+  // Row 3: ATF 油温
+  //
+  // ここは以前オイル交換までの残距離を出していたが、走行中は走った距離ぶん
+  // しか動かず TRIP の複製でしかなかった。ATF 油温は 1回の走行で 54℃ 動き、
+  // 新東名では 110℃超が 58分続いた実績がある。運転者はそれを走行中に知る
+  // 手段が無く、あとからログで確認していた。整備の残距離は停車中に見れば
+  // 足りるので入れ替えた。
+  const atfY = IND_Y_START + IND_SPACING * 3;
+  addIndPanel(atfY);
+  atfIconEl = createIconPath(svg, IND_X_ICON + 10, atfY - 8, ICON_THERMO, 40);
+  atfValEl = svgEl(svg, 'text', { x: IND_X_VAL, y: atfY + 6, class: 'g-num', fill: '#333', 'font-size': 40, 'text-anchor': 'middle' });
+  atfValEl.textContent = '--';
+  atfLabelEl = svgEl(svg, 'text', { x: IND_X_UNIT, y: atfY + 4, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'end' });
+  atfLabelEl.textContent = '\u00b0C';
 
   return {};
 }
@@ -419,8 +428,21 @@ export function restoreMapTransition() {
   }
 }
 
-// OIL lamp colors
+// OIL lamp colors (2画面目へ移した際に再利用する)
 const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
+
+// ATF 油温の色。キーは API の atf_level (空文字 = 正常)。
+//
+// 区分は「1段 = 油の寿命が半分」で刻んである (internal/can/obd.go を参照)。
+// 実測 24.1時間での滞在割合は 緑59% / 黄緑21% / 黄14% / 橙5% / 赤0%。
+// 高速に乗ると黄緑が主役になり、踏み続けると黄へ移る。
+const ATF_COLORS = {
+  '': '#69f0ae',        // 〜90℃    緑     普段。街乗りとアイドリングはほぼここ
+  warm: '#c6ff00',      // 90-100   黄緑   高速に乗った。想定内
+  caution: '#fdd835',   // 100-110  黄     踏んでいる。劣化が5倍で進む
+  hot: '#ff9800',       // 110-120  橙     新東名で58分続いた領域
+  danger: '#f44336',    // 120〜    赤     24時間の実測で未到達
+};
 
 // updateIndicators: APIデータで更新
 export function updateIndicators(dom, d, conf) {
@@ -477,16 +499,18 @@ export function updateIndicators(dom, d, conf) {
   tripIconEl.setAttribute('fill', tripCol);
   setFilter(tripIconEl.parentNode, 'url(#glow-mid)');
 
-  // OIL
-  const oilAlert = d.oil_alert || 'green';
-  const oilCurrent = d.oil_current_km;
-  const oilCol = OIL_COLORS[oilAlert] || OIL_COLORS.green;
-  if (oilCurrent != null) {
-    oilValEl.textContent = Math.round(oilCurrent).toLocaleString();
+  // ATF 油温
+  //
+  // 色はアプリ側の判定 (atf_level) に従う。閾値を UI 側で持たないのは、
+  // 判定を1か所にまとめて食い違いを防ぐため。
+  const atf = d.atf_temp_c;
+  const atfCol = ATF_COLORS[d.atf_level || ''] || ATF_COLORS[''];
+  if (atf != null && atf > 0) {
+    atfValEl.textContent = atf.toFixed(1);
   } else {
-    oilValEl.textContent = '--';
+    atfValEl.textContent = '--';
   }
-  oilValEl.setAttribute('fill', oilCol);
-  oilIconEl.setAttribute('fill', oilCol);
-  setFilter(oilIconEl.parentNode, 'url(#glow-mid)');
+  atfValEl.setAttribute('fill', atfCol);
+  atfIconEl.setAttribute('fill', atfCol);
+  setFilter(atfIconEl.parentNode, 'url(#glow-mid)');
 }

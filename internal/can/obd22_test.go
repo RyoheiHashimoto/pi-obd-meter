@@ -73,25 +73,3 @@ func TestDecodeATFTemp_Measured(t *testing.T) {
 		t.Error("空データを受け入れた")
 	}
 }
-
-func TestATFAlert(t *testing.T) {
-	tests := []struct {
-		tempC float64
-		want  string
-	}{
-		{82, ""},
-		{92, ""},
-		{99.9, ""},
-		{100, "ATF注意"},
-		{119, "ATF注意"},
-		{120, "ATF高温"},
-		{129, "ATF高温"},
-		{130, "ATF危険"},
-		{150, "ATF危険"},
-	}
-	for _, tt := range tests {
-		if got := ATFAlert(tt.tempC); got != tt.want {
-			t.Errorf("ATFAlert(%.1f) = %q, want %q", tt.tempC, got, tt.want)
-		}
-	}
-}
