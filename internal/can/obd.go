@@ -68,6 +68,67 @@ const (
 //  4. 別の日には 49℃ を指しており、単調増加のカウンタではない。
 const PID22ATFTemp uint16 = 0x17B3
 
+// PID22Status は 0x1101。ブレーキとラジエータファンのビットを持つ。
+//
+// 2026-08-31 に停車・アイドル・アクセル全閉で固定し、20秒踏む→離す→20秒踏む
+// を実施して同定した。95個の全PIDのうち、この操作に一致したのはこれだけ。
+// bit0 は水温が 97→89℃ と下降する場面と一致したのでファン。
+const PID22Status uint16 = 0x1101
+
+// PID22ACCompressor は 0x1103。bit2 がエアコンコンプレッサー。
+//
+// アイドル時の MAP が二峰性 (OFF 30-31kPa / ON 43-46kPa) になることを使って
+// 同定した。フラグが立っているとき MAP が低い例は 1%。燃料は +0.40 L/h 増える。
+// 0x1104 bit0 も同じ挙動を示すが、こちらだけ読めば足りる。
+const PID22ACCompressor uint16 = 0x1103
+
+// PID22Grade は 0x3201。勾配 (符号付き16bit、負が登り)。
+//
+// 大橋JCT (高低差71m、勾配8.9%、2周の螺旋) の登坂で同定した。
+// 74km 走行中に -500 未満が20件あり、うち15件がこの2km区間に集中していた。
+// 加速度との相関は r=+0.009 で無関係。登り切った瞬間に符号が反転する。
+//
+// 単位は未確定。大橋(8.9%)で中央 -690、比叡山の急勾配区間で -2210 が出ている。
+// GPS の標高が取れれば換算式を決められる。
+const PID22Grade uint16 = 0x3201
+
+const (
+	statusBitFan    = 1 << 0 // ラジエータファン
+	statusBitBrake  = 1 << 1 // ブレーキペダル
+	acBitCompressor = 1 << 2 // 0x1103 bit2
+)
+
+// DecodeStatus1101 は 0x1101 の応答からブレーキとファンの状態を取り出す。
+func DecodeStatus1101(data []byte) (brake, fan bool, ok bool) {
+	if len(data) < 1 {
+		return false, false, false
+	}
+	return data[0]&statusBitBrake != 0, data[0]&statusBitFan != 0, true
+}
+
+// DecodeACCompressor は 0x1103 の応答からエアコンコンプレッサーの状態を取り出す。
+func DecodeACCompressor(data []byte) (on bool, ok bool) {
+	if len(data) < 1 {
+		return false, false
+	}
+	return data[0]&acBitCompressor != 0, true
+}
+
+// DecodeGrade は 0x3201 の応答から勾配の生値を返す。負が登り。
+//
+// 単位が未確定なので生値のまま返す。正負と大小には意味があるので、
+// 記録して後から較正できるようにしておく。
+func DecodeGrade(data []byte) (raw int, ok bool) {
+	if len(data) < 2 {
+		return 0, false
+	}
+	v := int(data[0])<<8 | int(data[1])
+	if v > 32767 {
+		v -= 65536
+	}
+	return v, true
+}
+
 // ATF 油温の換算係数。ScanGauge の MTH 002A0019FFC7 に由来する。
 //
 //	°F = raw × 42/25 − 57

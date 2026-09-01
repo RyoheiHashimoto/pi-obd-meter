@@ -117,7 +117,11 @@ type RealtimeData struct {
 	Hold           bool    `json:"hold"`
 	TCLocked       bool    `json:"tc_locked"`
 	TCCLockPct     float64 `json:"tcc_lock_pct"`
-	SlipRatio      float64 `json:"slip_ratio"` // トルコンの滑り比。1.0=直結、1.05=5%滑り
+	SlipRatio      float64 `json:"slip_ratio"`    // トルコンの滑り比。1.0=直結、1.05=5%滑り
+	BrakePedal     bool    `json:"brake_pedal"`   // ブレーキペダル
+	RadiatorFan    bool    `json:"radiator_fan"`  // ラジエータファン
+	ACCompressor   bool    `json:"ac_compressor"` // エアコンコンプレッサー
+	GradeRaw       int     `json:"grade_raw"`     // 勾配の生値。負が登り。単位未確定
 	Shifting       bool    `json:"shifting"`
 	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
 	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
