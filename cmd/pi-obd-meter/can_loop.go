@@ -81,6 +81,11 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		mu            sync.Mutex
 		atfTempC      float64
 		hasATF        bool
+		brakePedal    bool
+		radiatorFan   bool
+		acCompressor  bool
+		gradeRaw      int
+		hasGrade      bool
 		rpm           float64
 		speedKmh      float64
 		engineLoad    float64
@@ -167,10 +172,24 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDOBDResponse:
 					// Mode 22 (拡張診断データ) の応答。ATF油温はここから来る。
 					if pid22, data, ok := can.ParseOBDResponse22(frame); ok {
-						if pid22 == can.PID22ATFTemp {
+						switch pid22 {
+						case can.PID22ATFTemp:
 							if t, ok := can.DecodeATFTemp(data); ok {
 								atfTempC = t
 								hasATF = true
+							}
+						case can.PID22Status:
+							if b, f, ok := can.DecodeStatus1101(data); ok {
+								brakePedal, radiatorFan = b, f
+							}
+						case can.PID22ACCompressor:
+							if on, ok := can.DecodeACCompressor(data); ok {
+								acCompressor = on
+							}
+						case can.PID22Grade:
+							if g, ok := can.DecodeGrade(data); ok {
+								gradeRaw = g
+								hasGrade = true
 							}
 						}
 					}
@@ -288,6 +307,21 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22ATFTemp))
 			}
 
+			// ブレーキ・ファン・エアコン・勾配 (Mode 22)。
+			//
+			// ブレーキは踏んだ瞬間を捉えたいので速く回す。1つの tick に1つずつ
+			// 送り、4つを順に巡る。intervalMs=50 なら各 PID は 200ms 周期になる。
+			// ATF (2秒周期) と合わせても Mode 22 の送信は 25Hz 未満で、
+			// 0x201 が 100Hz で流れているバスに対して十分小さい。
+			switch tickCount % 4 {
+			case 0:
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22Status))
+			case 1:
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22Grade))
+			case 2:
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22ACCompressor))
+			}
+
 			mu.Lock()
 			if !hasData {
 				mu.Unlock()
@@ -391,6 +425,11 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				HasMAF:          hasMAF,
 				TCCLockPct:      tccLockPct,
 				SlipRatio:       slipRatio,
+				BrakePedal:      brakePedal,
+				RadiatorFan:     radiatorFan,
+				ACCompressor:    acCompressor,
+				GradeRaw:        gradeRaw,
+				HasGrade:        hasGrade,
 				OdometerCANKm:   odometerCANKm,
 				ElecB0Pct:       elecB0Pct,
 				ElecB1Raw:       elecB1Raw,
