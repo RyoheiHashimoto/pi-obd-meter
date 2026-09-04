@@ -35,3 +35,6 @@ configs/config.json
 configs/config.mac.json
 configs/config.local.json
 
+
+# 生成物 (GPX / 地図 HTML / 中間 JSON)
+out/
