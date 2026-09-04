@@ -13,7 +13,9 @@
   <div class="gauge-area">
     <svg id="gs" width="560" height="480" viewBox="0 0 560 480"></svg>
   </div>
-  <div class="panel" id="panel"></div>
+  <div class="panel" id="panel">
+    <svg id="rg" width="270" height="480" viewBox="-30 0 270 480" style="margin-left:-30px"></svg>
+  </div>
 </div>
 <div id="toast" class="toast"></div>
 
@@ -26,11 +28,12 @@
   <label>Range <select id="s-range"><option value="D" selected>D</option><option value="S">S</option><option value="L">L</option><option value="P">P</option><option value="R">R</option><option value="N">N</option></select></label>
   <label><input type="checkbox" id="s-hold"> HOLD</label>
   <label><input type="checkbox" id="s-tc"> LOCK</label>
+  <label><input type="checkbox" id="s-shift"> SHIFT (目標≠実)</label>
   <label>TEMP <input type="range" id="s-temp" min="0" max="120" value="94"> <span id="v-temp">94</span></label>
 </div>
 
 <script type="module">
-import { buildSpeedGauge, updateThrottle, updateRPM, updateGear, updateBottomIndicators, speedColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
+import { buildSpeedGauge, updateThrottle, updateGear, speedColor, rpmColor, setThrottleIdleBaseline, setThrottleMaxPct } from './js/gauge.js';
 import { createIndicators, updateIndicators } from './js/indicators.js';
 
 const conf = {
@@ -62,14 +65,13 @@ function update() {
   document.getElementById('v-rpm').textContent = rpm;
   document.getElementById('v-thr').textContent = thr;
 
-  gs.update(spd, speedColor(spd));
+  gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(thr);
-  updateRPM(rpm);
   const tcLocked = document.getElementById('s-tc') ? document.getElementById('s-tc').checked : false;
   const temp = +document.getElementById('s-temp').value;
   document.getElementById('v-temp').textContent = temp;
-  updateGear(gear, range, hold, tcLocked);
-  updateBottomIndicators(temp, 284.1, 11.4, spd > 10 ? 8 + Math.random() * 4 : 0);
+  const shifting = document.getElementById('s-shift') ? document.getElementById('s-shift').checked : false;
+  updateGear(gear, range, hold, tcLocked, tcLocked ? 96 : null, shifting);
 
   const d = {
     speed_kmh: spd, rpm: rpm, throttle_pos: thr,
