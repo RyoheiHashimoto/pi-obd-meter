@@ -224,7 +224,7 @@ let gearEl, gearSubEl, holdLabelEl, lockLabelEl;
 // median ≈ 97% (車両固有の設計スリップ。タイヤ周長や減速比の補正は不要)
 const TCC_FULL_LOCK_THRESHOLD = 95;
 
-export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
+export function updateGear(gear, range, hold, tcLocked, tccLockPct, shifting) {
   if (!gearEl) return;
   const color = range === 'P' ? '#ffffff' : range === 'R' ? '#ff9800' : range === 'N' ? '#ffffff' : hold ? '#fdd835' : '#69f0ae';
 
@@ -239,6 +239,13 @@ export function updateGear(gear, range, hold, tcLocked, tccLockPct) {
   gearEl.setAttribute('fill', color);
   applyGlow(gearEl, color, 'strong');
   gearEl._box.setAttribute('stroke', color);
+
+  // 変速中 (目標ギア≠実ギア) は数字だけ点滅させる。枠は動かさない。
+  // LOCK のスリップ点滅と同じキーフレームを使う。bloom は clone なので
+  // class を継承しない。両方に付ける。
+  const gearBlink = !!shifting && gearEl.textContent !== '--';
+  gearEl.classList.toggle('gear-shift-blink', gearBlink);
+  if (gearEl._bloom) gearEl._bloom.classList.toggle('gear-shift-blink', gearBlink);
 
   // 左上: レンジ
   gearSubEl.textContent = range || '';

@@ -47,7 +47,8 @@ function applyData(d) {
   const rpm = obdOn ? (d.rpm || 0) : 0;
   gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateGear(displayGear(obdOn, d), obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
+  const g = displayGear(obdOn, d);
+  updateGear(g.gear, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null, g.shifting);
   updateIndicators(dom, d, conf);
 }
 
@@ -61,14 +62,23 @@ function applyData(d) {
 //
 // 「速度が落ち切る前に2速へ落としたとき、まだ3速なのに2速と表示される」
 // という報告と一致する。d.engaged_gear (ギア比から求めた実ギア、#153) を使う。
+//
+// 目標と実ギアが違う間は「目標を点滅」で出す。段が飛ぶのではなく、
+// これから入る段が先に見えて、噛んだ瞬間に点灯へ変わる。
+// 実測 (30,993サンプル) では走行中の 6.2% がこの状態で、352回・中央 1.00秒、
+// 95% が 2秒以内に終わる。点滅周期 0.6秒なので 1秒あれば2回沈む。
 function displayGear(obdOn, d) {
   if (!obdOn) {
     lastEngagedGear = 0;
-    return 0;
+    return { gear: 0, shifting: false };
   }
   const eng = d.engaged_gear || 0;
   if (eng > 0) lastEngagedGear = eng;
-  return lastEngagedGear;
+  const tgt = d.gear || 0;
+  if (tgt >= 1 && tgt <= 4 && lastEngagedGear > 0 && tgt !== lastEngagedGear) {
+    return { gear: tgt, shifting: true };
+  }
+  return { gear: lastEngagedGear, shifting: false };
 }
 
 // --- WebSocket 接続 ---
