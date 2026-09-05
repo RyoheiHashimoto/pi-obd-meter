@@ -17,7 +17,17 @@ OUT_DIR = "/var/log/drive-verify"
 API = "http://localhost:9090/api/realtime"
 
 os.makedirs(OUT_DIR, exist_ok=True)
-path = os.path.join(OUT_DIR, "drive-%s.csv" % time.strftime("%m%d-%H%M"))
+# 既存ファイルは絶対に開かない。
+#
+# Pi に RTC が無く、overlayfs 有効化後は systemd-timesyncd の保存時刻
+# (/var/lib/systemd/timesync/clock) も再起動で消えるため、毎回ほぼ同じ時刻から
+# 起動して同じファイル名になりうる。"w" で開くと前回のブートの記録を丸ごと
+# 消す。2026-09-06 に実際に起き、2.8MB の走行記録が失われた。
+base = os.path.join(OUT_DIR, "drive-%s" % time.strftime("%m%d-%H%M"))
+path, n = base + ".csv", 0
+while os.path.exists(path):
+    n += 1
+    path = "%s-%d.csv" % (base, n)
 f = open(path, "w", buffering=1)
 f.write("t,speed,rpm,gear,engaged,ratio,mech,slip,tcc,locked,hold,range,shifting,"
         "atf,volt,odo,trip_km,fuel_pt,rate_lh,eco,coolant,map,load,"

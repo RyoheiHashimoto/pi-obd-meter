@@ -1,0 +1,15 @@
+# Pi 実機の /media/root-ro/etc/fstab の写し (2026-09-06 時点)
+#
+# overlayfs 有効時、稼働中の /etc/fstab は overlayroot が起動時に書き換えた
+# 別物になる。本物はこちら。編集は overlayroot-chroot 経由で行い、
+# 再起動前に findmnt --verify --tab-file で検証すること。
+# 詳細は docs/boot-resilience.md
+#
+proc            /proc           proc    defaults          0       0
+PARTUUID=8f7b54af-01  /boot/firmware  vfat    defaults,ro          0       2
+PARTUUID=8f7b54af-02  /               ext4    defaults,noatime  0       1
+UUID=0fa2218b-a92f-435f-aa45-b1dc1657031c /data ext4 defaults,noatime,commit=5,nofail,x-systemd.device-timeout=10 0 2
+# RTC が無く、overlayfs でルートへの書き込みが消えるため、timesyncd の
+# 時刻保存先を /data (SSD) へ逃がす。これが無いと毎回同じ時刻から起動し、
+# ログのファイル名が衝突して前回の記録を上書きする (2026-09-06 に発生)。
+/data/state/timesync /var/lib/systemd/timesync none bind,nofail,x-systemd.requires-mounts-for=/data 0 0
