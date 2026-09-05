@@ -114,6 +114,25 @@ sudo overlayroot-chroot apt update      # コマンドを直接実行
 無くても失敗する)。戻すには再起動が要る。overlayroot-chroot は終了時に
 自動で `ro` に戻すので、そちらを使うこと。
 
+### デプロイも下層へ複製しないと消える
+
+`/opt/pi-obd-meter` は `/` の上にあるため、`rsync` でバイナリを置いても
+**再起動で元に戻る**。overlayfs を有効にした 2026-09-05 以降、
+「デプロイしたのにエンジンを切ったら元のバージョンだった」が起きうる状態
+だった (実際に踏む前に気づいた)。
+
+`scripts/deploy.sh` の `deploy` は転送・再起動のあとに `persist` を呼び、
+下層へ複製するようにした。単体でも呼べる。
+
+```
+./scripts/deploy.sh persist
+```
+
+中身は下層を rw にして rsync し、`overlayroot-chroot true` で ro に戻すだけ。
+**`mount -o remount,ro` を自分で叩いてはいけない。** 稼働中は overlayfs が
+下層を掴んでいるため EBUSY で失敗し、SDのルートが rw のまま残る。
+overlayroot-chroot の終了処理なら確実に戻せるので、それを借りている。
+
 ### 副作用: 時計が毎回巻き戻る (2026-09-06 に発覚・対処済み)
 
 **Pi 4 に RTC は無い** (`timedatectl` の `RTC time: n/a`)。
