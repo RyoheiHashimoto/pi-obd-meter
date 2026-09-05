@@ -1,0 +1,14 @@
+[Unit]
+Description=CAN decode verification logger
+After=network.target pi-obd-meter.service
+Wants=pi-obd-meter.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/can-verify.sh
+ExecStopPost=/bin/sh -c 'kill $(cat /run/can-verify-candump.pid 2>/dev/null) 2>/dev/null || true'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
