@@ -43,7 +43,32 @@ cmd_deploy() {
   # kiosk (cog) は systemd 配下ではなく labwc autostart 経由なので再起動不要。
   # ブラウザは startVersionCheck がバージョン変化を検知して 30 秒以内に自動リロードする。
   ssh "$PI" "sudo systemctl restart ${SERVICE}"
+  cmd_persist
   echo "✓ デプロイ完了"
+}
+
+cmd_persist() {
+  # overlayfs 有効時、/opt への書き込みは RAM 上のオーバーレイに載るため
+  # 再起動で消える。下層の実ルートへ複製して初めて永続化される。
+  # これを忘れると「デプロイしたのにエンジンを切ったら元に戻った」が起きる。
+  echo "Persisting to lower layer..."
+  ssh "$PI" "set -e
+    if ! mount | grep -q 'on / type overlay'; then
+      echo '  overlayfs 無効。永続化は不要'
+      exit 0
+    fi
+    sudo mount -o remount,rw /media/root-ro
+    sudo rsync -a ${DEST}/ /media/root-ro${DEST}/
+    sync
+    # 稼働中の remount,ro は overlayfs が下層を掴んでいるため EBUSY で失敗する。
+    # overlayroot-chroot は終了時に確実に ro へ戻すので、その後始末を借りる。
+    sudo overlayroot-chroot true >/dev/null 2>&1 || true
+    if mount | grep -q '/media/root-ro .*(ro,'; then
+      echo '  ✓ 永続化完了 (下層 ro に復帰)'
+    else
+      echo '  ★ /media/root-ro が rw のままです。再起動して戻してください' >&2
+      exit 1
+    fi"
 }
 
 cmd_setup() {
@@ -126,7 +151,8 @@ Usage: ./scripts/deploy.sh <command> [args]
 
 開発 (Mac上で実行):
   build            クロスコンパイル (ARM64)
-  deploy           ビルド + rsync転送 + サービス再起動
+  deploy           ビルド + rsync転送 + サービス再起動 + 下層への永続化
+  persist          下層(実ルート)へ複製するだけ。overlayfs 有効時に必要
 
 ラズパイ管理 (Mac上で実行):
   setup            初回セットアップ (ディレクトリ作成 + systemd登録)
@@ -153,6 +179,7 @@ HELP
 case "${1:-help}" in
   build)           cmd_build ;;
   deploy)          cmd_deploy ;;
+  persist)         cmd_persist ;;
   setup)           cmd_setup ;;
   ssh)             cmd_ssh ;;
   logs)            cmd_logs ;;
