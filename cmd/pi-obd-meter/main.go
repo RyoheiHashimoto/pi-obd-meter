@@ -193,6 +193,23 @@ func main() {
 
 // obdProcessingLoop はOBDデータの処理ループ。距離積算・メンテナンス更新・GAS送信を行う。
 // SDLモード・ブラウザモード共通で使用する。
+// isTTY は標準出力が端末かどうか。起動時に一度だけ判定する。
+//
+// 進捗表示 (🚗 ... km/h) は \r で同じ行を上書きする前提のため改行を持たない。
+// systemd 配下でこれを出すと、journald が後続のログ行までまとめて1つの
+// メッセージとして扱う。制御文字を含むメッセージを journalctl は中身を出さずに
+// [269B blob data] とだけ表示するため、起動直後のログが読めなくなる。
+//
+// 実際これで「GASからトリップ復元」が数週間読めず、#118 に
+// 「ログが実機に出力されていない」と記録された。出ていたが見えなかった。
+var isTTY = func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}()
+
 func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc, obdCh <-chan OBDEvent, fastIntervalMs int, cfg Config, retryTicker, maintTicker *time.Ticker, sigCh <-chan os.Signal) {
 	var (
 		filters        = newOBDFilters()
@@ -341,7 +358,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				PendingCount:   app.client.QueueSize(),
 			})
 
-			if sampleCount%30 == 0 {
+			if isTTY && sampleCount%30 == 0 {
 				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm",
 					data.SpeedKmh, data.RPM)
 			}
