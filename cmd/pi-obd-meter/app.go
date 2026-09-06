@@ -343,8 +343,18 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 	// 累計はローカルで維持されており走行で増えていくため、この式なら
 	// 復元のタイミングがいつでも正しい値になる。
 	if tripKm, ok := calcRestoredTripKm(app.maintMgr.TotalKm(), restored.LastRefuelKm); ok {
-		app.tracker.SetDistance(tripKm)
-		slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		// 実測が1つも無いときだけ入れる。実測があるなら触らない。
+		//
+		// GAS の距離はオドメーター由来の推定値で、上書きすると燃料も
+		// 同じ比率で書き換わる。給油〜給油の燃料積算はレシートとの
+		// 突き合わせに使うため、起動のたびに歪められては較正できない。
+		if app.tracker.RestoreDistanceIfEmpty(tripKm) {
+			slog.Info("GASからトリップ復元 (実測が無いため表示用。燃料は較正に使えない)",
+				"trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		} else {
+			slog.Info("GASのトリップ距離は使わない (実測を優先)",
+				"gas_trip_km", tripKm, "local_trip_km", app.tracker.DistanceKm())
+		}
 	}
 }
 
