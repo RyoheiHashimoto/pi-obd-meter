@@ -193,8 +193,60 @@ echo "=== DONE ==="
 
 | 症状 | 原因 | 対策 |
 |------|------|------|
-| 何回か再起動すると繋がる | WiFi省電力が有効 | `wifi.powersave = 2` を設定 |
+| 接続後にしばらくして切れる | WiFi省電力が有効 | `wifi.powersave = 2` を設定 |
+| 起動直後の接続だけ失敗し、数回目で繋がる | **未解決**。省電力ではない (繋がった後は安定) | [起動直後の association 失敗](#5-起動直後の-association-失敗-未解決) を読む |
 | パスワード入力ダイアログが出る | `psk-flags=0` がない | nmconnectionに `psk-flags=0` を追加 |
 | キオスクが先に起動してWiFi設定できない | kiosk.serviceが先に起動 | 画面3秒長押しでキオスク終了、またはWiFiガードで自動スキップ |
 | SSHもキーボードもない | 物理アクセス不可 | SDカードを抜いてMacからdebugfsで書き込み |
 | nmconnectionを書いたのに無視される | パーミッションが644 | `chmod 600` または debugfsで `mode 0100600` |
+
+## 5. 起動直後の association 失敗 (未解決)
+
+```
+wpa_supplicant: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
+```
+
+起動直後に数回 (1回あたり約0.4秒) 失敗し、3回目あたりで成功する。
+**繋がった後は安定**(2時間で切断0回)。電波は -26 dBm / 品質 93 で問題なく、
+同じAPに他の機器は正常に繋がる。カーネル (`brcmfmac`) は何も記録しない。
+BSSIDが全ゼロなのは、APの拒否ではなくドライバ側の失敗報告であることを示す。
+
+既知の未解決バグ (RPi-Distro/firmware-nonfree issue #34) と症状が一致する。
+`roamoff=1` は Raspberry Pi OS の既定で有効。追加しても意味がない。
+
+### この症状で絶対にやらないこと
+
+1. **接続のやり直しを短時間に繰り返して回数を数える実験をしない。**
+   2026-09-07 未明に2回実施し、2回ともPiをネットワークから失った。復帰まで
+   十数分〜数時間かかり、走行中の車で作業していたユーザーに再始動を繰り返させた。
+   得られた情報はゼロ。**回数を数えたいなら、永続 journal に溜まるのを待つ。**
+2. **wifi-watchdog に「無線オフ/オン」を足し戻さない。**
+   2026-09-05 に8回リセットして明確な復旧はゼロ、6回は3〜35秒で再発した。
+   成功した1回は1秒後に走った pmf 自動巻き戻しで説明がつく。
+   効果が無いうえ、NetworkManager が接続中に無線を切るので復旧を妨げる。
+   判断の根拠は `scripts/ops/wifi-watchdog.sh` の28-33行に書いてある。
+3. **ネットワーク設定を試すときは自動巻き戻しを併用する。**
+   ```bash
+   sudo systemd-run --on-active=180 --unit=wifi-revert /path/revert.sh
+   ```
+   「失敗したらN秒後に自動で元に戻す」。遠隔で試すために用意した仕組み。
+
+### 調べ方 (実機を壊さない順)
+
+```bash
+journalctl --list-boots                      # 過去の起動が残っているか
+journalctl -b -1 | grep -c ASSOC-REJECT      # 起動ごとの失敗回数を数える
+cat /sys/module/brcmfmac/parameters/roamoff  # 既定で 1
+lsmod | grep brcmfmac                        # brcmfmac + brcmfmac_cyw の2モジュール構成
+```
+
+`feature_disable` は sysfs に出ない宣言 (perm 0) のため、
+**設定が効いているかどうかを読み出しで確認できない。** 効いている前提で話を進めないこと。
+
+### 起動時に大量に出るときは USB を疑う
+
+2026-09-07 の起動では ASSOC-REJECT が16回出たが、同じ起動で AIC8800 ドングルが
+3回再列挙し、その 0.5 秒後に同じハブ上の SSD が落ちている。
+無線だけを見ずに `dmesg` を**全部**読むこと。
+
+詳細と経緯: [handover-2026-09-07.md](handover-2026-09-07.md)
