@@ -1,5 +1,7 @@
 package main
 
+import "github.com/hashimoto/pi-obd-meter/internal/trip"
+
 // 燃費計算用の物理定数
 const (
 	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
@@ -107,7 +109,10 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 // avg_fuel_economy が未確定 (走行開始直後) なら 0 を返す。
 // 値は 0 でクリップ (タンク超過時の負値を避ける)。
 func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm float64) float64 {
-	if avgFuelEconomy <= 0.1 || fuelTankL <= 0 {
+	// 上限も見る。下限だけだと平均燃費が壊れたときに素通りする。
+	// 2026-09-06 に 132km/L が入り、46L × 132 = 6,072km と表示された。
+	// AvgFuelEconomy 側でも弾いているが、二重に止める。
+	if avgFuelEconomy < trip.MinPlausibleKmL || avgFuelEconomy > trip.MaxPlausibleKmL || fuelTankL <= 0 {
 		return 0
 	}
 	rng := fuelTankL*avgFuelEconomy - tripKm

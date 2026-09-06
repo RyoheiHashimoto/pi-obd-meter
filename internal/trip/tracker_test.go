@@ -1,6 +1,8 @@
 package trip
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -290,15 +292,141 @@ func TestTrackerFuelAccumulation(t *testing.T) {
 }
 
 func TestTrackerAvgFuelEconomy(t *testing.T) {
+	// feedWithFuel で 0.05L の閾値を超えるには 600L/h のような
+	// 非現実的なレートが要り、その結果 (0.1km/L) は妥当性の門番に
+	// 弾かれる。ここでは現実的な値を直接置いて比だけを確かめる。
 	tr := newTestTracker(t)
-	// 60 km/h、600 L/h（大きいレートで閾値を素早く超える）
-	// 600/3600*0.015 ≈ 0.0025 L/tick → 50回で 0.1L を超える
-	// 期待平均燃費 = 60/600 = 0.1 km/L
-	feedWithFuel(tr, 60, 600.0, 50)
+	tr.current.DistanceKm = 100
+	tr.current.FuelConsumptionL = 10
 
-	avg := tr.AvgFuelEconomy()
-	if avg < 0.05 || avg > 0.5 {
-		t.Errorf("expected avg fuel economy around 0.1 km/L, got %.3f", avg)
+	if avg := tr.AvgFuelEconomy(); avg < 9.9 || avg > 10.1 {
+		t.Errorf("expected 10 km/L, got %.3f", avg)
+	}
+}
+
+// TestTrackerAvgFuelEconomy_Implausible は 2026-09-06 の障害の再現。
+//
+// SSD 未マウントで状態が読めず距離0/燃料0から始まり、GAS 復元が距離だけを
+// 98.8km にした。その後の走行で 0.741L だけ積算され 133km/L となり、
+// 航続可能距離が 46L × 133 = 6,114km と表示された。範囲外は 0 を返す。
+func TestTrackerAvgFuelEconomy_Implausible(t *testing.T) {
+	tr := newTestTracker(t)
+	tr.current.DistanceKm = 98.8
+	tr.current.FuelConsumptionL = 0.741 // 133 km/L
+
+	if avg := tr.AvgFuelEconomy(); avg != 0 {
+		t.Errorf("ありえない燃費は 0 を返すべき: %.3f", avg)
+	}
+
+	tr.current.FuelConsumptionL = 98.8 // 1 km/L も同様に棄却する
+	if avg := tr.AvgFuelEconomy(); avg != 0 {
+		t.Errorf("低すぎる燃費も 0 を返すべき: %.3f", avg)
+	}
+}
+
+// TestTrackerAvgFuelEconomy_FuelInvalid は、燃料の実測が無い区間で
+// 平均燃費を返さないことを確かめる。
+func TestTrackerAvgFuelEconomy_FuelInvalid(t *testing.T) {
+	tr := newTestTracker(t)
+	tr.current.DistanceKm = 100
+	tr.current.FuelConsumptionL = 10
+	tr.current.FuelInvalid = true
+
+	if avg := tr.AvgFuelEconomy(); avg != 0 {
+		t.Errorf("燃料が較正に使えない区間は 0 を返すべき: %.3f", avg)
+	}
+}
+
+// TestRestoreDistanceIfEmpty_Empty は実測が無いとき距離が入ることを確かめる。
+func TestRestoreDistanceIfEmpty_Empty(t *testing.T) {
+	tr := newTestTracker(t)
+
+	if !tr.RestoreDistanceIfEmpty(58.13) {
+		t.Fatal("実測が無いのに復元されなかった")
+	}
+	if got := tr.DistanceKm(); got != 58.13 {
+		t.Errorf("距離 58.13 を期待、got %.2f", got)
+	}
+	if !tr.GetCurrent().FuelInvalid {
+		t.Error("燃料を伴わない距離には FuelInvalid が立つべき")
+	}
+	if avg := tr.AvgFuelEconomy(); avg != 0 {
+		t.Errorf("燃料が無いので平均燃費は 0 のはず: %.3f", avg)
+	}
+}
+
+// TestRestoreDistanceIfEmpty_KeepsMeasured は 2026-09-06 の較正破壊の再現。
+//
+// 実測があるのに GAS のオドメーター由来の距離で上書きすると、SetDistance が
+// 燃料も同じ比率で書き換える。障害対応で約20回再起動したため、給油〜給油の
+// 燃料積算が20回歪んだ。実測がある限り触らないことを確かめる。
+func TestRestoreDistanceIfEmpty_KeepsMeasured(t *testing.T) {
+	tr := newTestTracker(t)
+	tr.current.DistanceKm = 94.56
+	tr.current.FuelConsumptionL = 6.726
+
+	if tr.RestoreDistanceIfEmpty(58.13) {
+		t.Fatal("実測があるのに上書きされた")
+	}
+	if got := tr.DistanceKm(); got != 94.56 {
+		t.Errorf("距離が変わった: %.2f", got)
+	}
+	if got := tr.GetCurrent().FuelConsumptionL; got != 6.726 {
+		t.Errorf("燃料が変わった: %.4f", got)
+	}
+}
+
+// TestDegraded_NeverSaves は、保存先が使えないときに書き込まないことを確かめる。
+//
+// 2026-09-06 は SSD 未マウントのまま起動し、ゼロから数え直した値を
+// SSD 復帰後に正しい記録の上へ保存して失った。
+func TestDegraded_NeverSaves(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "no-such-dir", "trip_state.json")
+	tr := NewTracker(TrackerConfig{StatePath: missing})
+
+	if !tr.degraded {
+		t.Fatal("保存先が無いのに degraded になっていない")
+	}
+
+	tr.SetDistance(123.4)
+	if got := tr.DistanceKm(); got != 0 {
+		t.Errorf("degraded 中は距離補正を無視すべき: %.2f", got)
+	}
+	if tr.RestoreDistanceIfEmpty(58.13) {
+		t.Error("degraded 中は GAS 復元も受け付けないべき")
+	}
+
+	feedWithFuel(tr, 60, 6.0, 20)
+	tr.SaveState()
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("degraded 中にファイルを作ってはいけない: %v", err)
+	}
+}
+
+// TestSaveTriggers_Idle は、停車中でも燃料の積算が保存されることを確かめる。
+//
+// 従来は距離 0.1km だけが引き金だった。アイドリングは燃料を使うのに距離が
+// 増えないため、停車中の燃料は保存されず電源断で失われていた。
+func TestSaveTriggers_Idle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trip_state.json")
+	tr := NewTracker(TrackerConfig{StatePath: path})
+
+	// 速度0・燃料レートありで回す。距離は増えない。
+	feedWithFuel(tr, 0, 3600.0, 30)
+
+	if tr.GetCurrent().FuelConsumptionL <= 0 {
+		t.Fatal("燃料が積算されていない")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("停車中でも保存されるべき: %v", err)
+	}
+	var st persistedState
+	if err := json.Unmarshal(data, &st); err != nil {
+		t.Fatalf("保存内容が壊れている: %v", err)
+	}
+	if st.Current.FuelConsumptionL <= 0 {
+		t.Errorf("保存に燃料が入っていない: %.4f", st.Current.FuelConsumptionL)
 	}
 }
 
