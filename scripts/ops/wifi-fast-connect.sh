@@ -22,7 +22,7 @@ set -u
 GW=${GW:-192.168.179.1}
 CON=${CON:-Laurel-Wi-Fi}
 IFACE=${IFACE:-wlan0}
-DEADLINE=$((SECONDS + ${MAX_SEC:-180}))
+DEADLINE=$((SECONDS + ${MAX_SEC:-120}))
 INTERVAL=${INTERVAL:-2}
 LOG=/var/log/wifi-watchdog.log
 log(){ echo "$(date '+%F %T') [fast-connect] $*" >> "$LOG"; }

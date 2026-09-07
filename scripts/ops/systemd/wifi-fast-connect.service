@@ -1,14 +1,13 @@
 [Unit]
-Description=起動直後の WiFi 接続を早める (失敗しても無害)
+Description=起動直後の WiFi 接続を撃ち直しで早める
+# タイマーからのみ起動する。multi-user.target には入れないこと。
+# 2026-09-07: WantedBy=multi-user.target で Type=oneshot にしたところ、
+# systemd が完了を待って起動が3分止まった。タイマー起動なら
+# 起動の待ち行列に入らないため、構造的にブロックしない。
 After=NetworkManager.service wpa_supplicant.service
-Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/wifi-fast-connect.sh
-TimeoutStartSec=240
-# 失敗しても起動を妨げない
-SuccessExitStatus=0 1
-
-[Install]
-WantedBy=multi-user.target
+TimeoutStartSec=200
+Nice=5
