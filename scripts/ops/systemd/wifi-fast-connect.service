@@ -1,0 +1,14 @@
+[Unit]
+Description=起動直後の WiFi 接続を早める (失敗しても無害)
+After=NetworkManager.service wpa_supplicant.service
+Wants=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wifi-fast-connect.sh
+TimeoutStartSec=240
+# 失敗しても起動を妨げない
+SuccessExitStatus=0 1
+
+[Install]
+WantedBy=multi-user.target
