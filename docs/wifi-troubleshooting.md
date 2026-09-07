@@ -209,6 +209,14 @@ echo "=== DONE ==="
 成功:  event SET_SSID (0:0) → event LINK (16:16)                     ← 接続成立
 ```
 
+**`status_code=16` はドライバの固定値であって、理由を表していない。**
+`brcmf_bss_connect_done()` (`brcm80211/brcmfmac/cfg80211.c`) は成功なら
+`WLAN_STATUS_SUCCESS`(0)、それ以外はすべて `WLAN_STATUS_AUTH_TIMEOUT`(16) を返す。
+このファイルに `WLAN_STATUS_*` はこの2つしか無い。全ゼロBSSIDも同じ関数で
+`memset` 後に未設定の `profile->bssid` を入れているため。
+**「認証がタイムアウトした」という意味ではない。「失敗した」以上の情報は無い。**
+
+その上で、失敗の実体は:
 **ファームウェアが join コマンド (SET_SSID) に status 1 (失敗) を返している。**
 ドライバはそれを受けて `bssid=00:00:00:00:00:00 status_code=16` を合成する。
 **電波のやり取りは一切発生していない。** AP は無関係。

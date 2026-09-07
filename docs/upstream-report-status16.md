@@ -12,6 +12,37 @@ The original question in this issue — *"We would like to know what this `statu
 can be answered from the driver's own debug output. **It is not an AP response.** The firmware
 rejects the join request locally and the driver synthesises the 802.11 status code.
 
+### Short answer: `16` is a hardcoded placeholder, not information
+
+`brcmfmac` can only ever report two connect statuses. From
+`drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c`,
+`brcmf_bss_connect_done()`:
+
+```c
+memset(&conn_params, 0, sizeof(conn_params));
+if (completed) {
+        ...
+        conn_params.status = WLAN_STATUS_SUCCESS;
+} else {
+        clear_bit(BRCMF_VIF_STATUS_EAP_SUCCESS, &ifp->vif->sme_state);
+        clear_bit(BRCMF_VIF_STATUS_ASSOC_SUCCESS, &ifp->vif->sme_state);
+        conn_params.status = WLAN_STATUS_AUTH_TIMEOUT;
+}
+conn_params.links[0].bssid = profile->bssid;
+cfg80211_connect_done(ndev, &conn_params, GFP_KERNEL);
+```
+
+`WLAN_STATUS_AUTH_TIMEOUT` is `16` (`include/linux/ieee80211.h`). These are the only two
+`WLAN_STATUS_*` values anywhere in the file. **So `status_code=16` does not mean
+"authentication timed out" — it is simply the driver's only way of saying "this connect
+attempt did not complete".** It carries no diagnostic information about the cause.
+
+The all-zero BSSID has the same origin: `conn_params` is `memset` to zero and
+`profile->bssid` is still zero when the station never associated.
+
+So the useful question is not "what does 16 mean" but **"why did the firmware report the
+join as not completed"** — and that is visible only with driver debug enabled.
+
 ### How to see it
 
 ```
