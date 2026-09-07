@@ -200,6 +200,58 @@ echo "=== DONE ==="
 | SSHもキーボードもない | 物理アクセス不可 | SDカードを抜いてMacからdebugfsで書き込み |
 | nmconnectionを書いたのに無視される | パーミッションが644 | `chmod 600` または debugfsで `mode 0100600` |
 
+## status_code=16 の正体（2026-09-07 ドライバのデバッグ出力で特定）
+
+`brcmfmac.debug=0x8400` (CONN|EVENT) を有効にして初めて見えた。
+
+```
+失敗:  event SET_SSID (0:0) → version 2 flags 0 status 1 reason 0   ← LINK が来ない
+成功:  event SET_SSID (0:0) → event LINK (16:16)                     ← 接続成立
+```
+
+**ファームウェアが join コマンド (SET_SSID) に status 1 (失敗) を返している。**
+ドライバはそれを受けて `bssid=00:00:00:00:00:00 status_code=16` を合成する。
+**電波のやり取りは一切発生していない。** AP は無関係。
+
+実測 (2026-09-07):
+
+| boot | SET_SSID | status 1 | LINK | 結果 |
+|---|---|---|---|---|
+| 0  | 1回  | 0回  | 1回 | 一発成功 |
+| -2 | 31回 | 31回 | 0回 | 7分間ぜんぶ失敗 |
+
+### 実測で否定された仮説
+
+| 仮説 | 否定した根拠 |
+|---|---|
+| 信号が弱い | boot -2 でも目的APは **-26〜-27 dBm** で見えていた。それでも31回全滅 |
+| AP (WPA3/PMF/省電力/混在モード) | 起動時の失敗は全ゼロBSSID = AP由来の応答が存在しない |
+| BSSID/帯域の固定不足 | 固定しても失敗。**固定を解除した後も同じペースで失敗が継続** |
+| Pi 側の省電力 | 無効化して悪化 |
+| CPU 負荷 | 累計値と1回分を比較した測定ミス。機序も弱い |
+| `set_channel fail -52` | 最初の数回の失敗より**後**に始まる |
+| ファーム版 | 全 boot で同一。同じファームで成功する boot がある |
+
+### 上流の状況（2026-09-07 調査）
+
+- [firmware-nonfree #38](https://github.com/RPi-Distro/firmware-nonfree/issues/38) — 同一チップ (43455)、
+  同一の全ゼロBSSID + status_code=16。**未解決**
+- [raspberrypi/firmware #1829](https://github.com/raspberrypi/firmware/issues/1829) — CM4 + 43455。**未解決**
+- [firmware-nonfree #34](https://github.com/RPi-Distro/firmware-nonfree/issues/34) — `roamoff=1` +
+  `feature_disable=0x82000`。**両方適用済みで効果なし**
+- [Raspberry Pi Forums t=377009](https://forums.raspberrypi.com/viewtopic.php?t=377009) — 失敗例として
+  「2.4GHz固定」「5GHzで試す」「国コード確認」が挙がっており、**当方の試行結果と一致**
+
+**根本原因はファームウェア内にあり、上流でも未解決。設定で直せるものではない。**
+
+### 残る打ち手
+
+1. **撃ち直しを速くする**（失敗0.4秒 / 待ち6.9秒 なので待ちを潰す）。
+   2026-09-07 に試みたが `Type=oneshot` を `multi-user.target` に置いて
+   **起動を3分ブロックした**。`Type=simple` にすれば解決するはず。未再試行
+2. 起動ごとのログを貯めて、成功する boot と失敗する boot の違いを探す
+   （2026-09-07 時点で完全なログがある boot は2回分のみ）
+
 ## 5. 起動直後の association 失敗 (未解決)
 
 ```
