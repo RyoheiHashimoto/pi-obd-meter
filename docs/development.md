@@ -250,3 +250,13 @@ configs/auto-update.timer     # 2分間隔 (OnBootSec=2min, OnUnitActiveSec=2min
 | `/api/kiosk/stop` | POST | キオスクモード終了 |
 
 ポート番号は `configs/config.json` の `local_api_port`（デフォルト: 9090）。
+
+## デプロイは停車中に行う
+
+`./scripts/deploy.sh deploy` はバイナリ約30MBを rsync で送る。**走行中に実行すると
+Mac 側の SSH がタイムアウトして転送が途中で死ぬ**（2026-09-07 に発生）。
+
+このとき Pi 側は無傷で、WiFi も切れていない（切断イベント0件、RSSI -27〜-36 dBm、
+OOM なし）。落ちるのは Mac 側の接続だけ。rsync は一時ファイルに書いてから
+置き換えるので既存のバイナリは壊れないが、**最後の「下層への永続化」が飛ぶ**ので
+再起動で変更が消える。途中で切れたら `./scripts/deploy.sh persist` を実行すること。
