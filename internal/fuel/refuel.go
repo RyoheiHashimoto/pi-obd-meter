@@ -95,6 +95,15 @@ const (
 
 	// saveMinDeltaPt は保存するに値する変化量。これ未満なら書かない。
 	saveMinDeltaPt = 0.5
+
+	// levelTauSec は残量の平滑化に使う時定数 (秒)。
+	//
+	// 給油検出は停車中の窓だけを見れば済むが、航続距離 (#188) は走行中こそ
+	// 表示するため、走りながら使える残量が要る。走行中の生値はスロッシングで
+	// 24〜33ポイント振れ、46L タンクでは ±5L 以上に相当するのでそのままでは
+	// 使えない。揺れは数秒周期なので、2分の時定数で均せば車体の傾きも含めて
+	// ほぼ消える。逆にこれ以上長くすると給油後の復帰が遅くなる。
+	levelTauSec = 120.0
 )
 
 // Event は検出した給油を表す。
@@ -148,6 +157,12 @@ type Detector struct {
 	current float64
 	settled bool
 
+	// 走行中も含めて平滑化した残量。給油検出用の window とは別系統で、
+	// 停車の有無にかかわらず全サンプルを取り込む (#188)。
+	levelPt     float64
+	levelValid  bool
+	levelSeenAt time.Time
+
 	lastSaved  float64
 	lastSaveAt time.Time
 
@@ -174,14 +189,27 @@ func NewDetector(statePath string) *Detector {
 
 // Update は最新の燃料残量を取り込む。stopped は車両が停止しているか。
 //
-// 走行中はスロッシングで値が大きく振れるため、停車中のみ平均に加える。
-// settleSamples 個たまった時点で「落ち着いた値」とみなし、給油判定を1回だけ行う。
+// 用途の違う2系統に流す。
+//
+//	給油検出   停車中のサンプルだけを窓に入れる。走行中はスロッシングで
+//	           値が大きく振れるため使えない。settleSamples 個たまった時点で
+//	           「落ち着いた値」とみなし、給油判定を1回だけ行う。
+//	航続距離   走行中も含めて全サンプルを平滑化する (#188)。走りながら
+//	           表示するので、停車を待つわけにいかない。
 func (d *Detector) Update(levelPt float64, stopped bool) {
-	if d == nil || levelPt <= 0 || !stopped {
+	if d == nil || levelPt <= 0 {
 		return
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	// 平滑化した残量は走行中も更新する。給油検出 (以下) とは目的が違い、
+	// 走行中に航続距離を出すために現在値が要る。
+	d.updateLevel(levelPt, time.Now())
+
+	if !stopped {
+		return
+	}
 
 	if len(d.window) != settleSamples {
 		d.window = make([]float64, settleSamples)
@@ -279,6 +307,47 @@ func (d *Detector) ClearEvent() {
 	} else if d.prevValid {
 		d.save(d.prev)
 	}
+}
+
+// updateLevel は平滑化した残量を進める。呼び出し元でロック済みであること。
+//
+// 呼ばれる周期は接続方式で変わる (CAN 直結 50ms / ELM327 200ms) ため、
+// サンプル数ではなく経過時間で重みを決める。これなら時定数の意味が
+// 周期に依らず一定になる。
+func (d *Detector) updateLevel(levelPt float64, now time.Time) {
+	if !d.levelValid {
+		// 初回は生値をそのまま置く。エンジン始動直後は停車しており
+		// スロッシングが無いので、0 から立ち上げるより素直に近い。
+		d.levelPt = levelPt
+		d.levelValid = true
+		d.levelSeenAt = now
+		return
+	}
+
+	dt := now.Sub(d.levelSeenAt).Seconds()
+	if dt <= 0 {
+		return
+	}
+	d.levelSeenAt = now
+	// 取りこぼしで間隔が空きすぎたときに一気に飛ばさない
+	if dt > levelTauSec {
+		dt = levelTauSec
+	}
+	alpha := dt / (dt + levelTauSec)
+	d.levelPt += alpha * (levelPt - d.levelPt)
+}
+
+// LevelPt は平滑化した燃料残量 (ポイント) と、それが得られたかを返す。
+//
+// 1ポイントはタンク容量に対する約1%にあたる。給油警告灯の点灯時に 14.9pt
+// (46L タンクで約 6.9L) を観測しており、DYデミオの点灯タイミングと合う。
+func (d *Detector) LevelPt() (float64, bool) {
+	if d == nil {
+		return 0, false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.levelPt, d.levelValid
 }
 
 // Settled は落ち着いた値が得られたかを返す。

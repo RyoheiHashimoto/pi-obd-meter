@@ -72,3 +72,29 @@ func TestCalcRestoredTripKm_NoRaceOnWiFiDelay(t *testing.T) {
 		t.Error("WiFi が速いと復元されない、という従来の不具合が残っている")
 	}
 }
+
+// #118 の提案分: 給油記録が古いまま累計だけ伸びると、差分がいくらでも
+// 大きくなる。実機で 1,277.1 km が復元され、46L タンクでは 28 km/L 相当という
+// あり得ない値になった。上限を超えたものは棄却する。
+func TestMaxPlausibleTripKm(t *testing.T) {
+	const tankL = 46.0
+	limit := maxPlausibleTripKm(tankL)
+
+	// 実際に観測された異常値
+	if 1277.1 <= limit {
+		t.Errorf("上限 %.0f km が実測の異常値 1277.1 km を弾けていない", limit)
+	}
+	// 満タンで走りうる現実的な距離は通す。DYデミオの実測 9〜15 km/L。
+	for _, km := range []float64{264, 355, 500, 690} { // 690 = 46L × 15km/L
+		if km > limit {
+			t.Errorf("正常な走行距離 %.0f km が上限 %.0f km に弾かれる", km, limit)
+		}
+	}
+}
+
+func TestMaxPlausibleTripKm_NoLimitWithoutTankSize(t *testing.T) {
+	// タンク容量が未設定なら上限を判定できないので、0 (上限なし) を返す
+	if got := maxPlausibleTripKm(0); got != 0 {
+		t.Errorf("= %.1f, want 0 (上限なし)", got)
+	}
+}

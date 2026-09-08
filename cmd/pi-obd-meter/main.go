@@ -287,6 +287,8 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 給油の自動検出 (#120)。
 			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
 			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
+			// 航続距離用の残量は走行中も平滑化して取る (#188)
+			fuelLevelPct, fuelLevelOK := app.refuel.LevelPt()
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			oil := app.maintMgr.OilStatus()
@@ -315,7 +317,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				IntakeAirTemp:  data.IntakeAirTemp,
 				O2Voltage:      data.O2Voltage,
 				RuntimeSec:     data.RuntimeSec,
-				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm()),
+				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm(), fuelLevelPct, fuelLevelOK),
 				Gear:           data.Gear,
 				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,
