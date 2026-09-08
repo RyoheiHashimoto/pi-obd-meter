@@ -76,15 +76,35 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 }
 
 // calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
-// 前提: 前回給油でタンクをほぼ満タンにした。trip_km は給油時にリセットされている。
-// 計算: 満タン時の航続距離 (タンク容量 × 累積平均燃費) − 給油後の走行距離。
+//
+// 燃料計 (CAN 0x430 B0) の残量が取れるならそれを使う (#188)。
+//
+//	航続距離 = タンク容量 × 残量% × 累積平均燃費
+//
+// 実残量から出すので、トリップ距離にも給油検出の成否にも依存しない。
+// 従来は「満タン × 平均燃費 − トリップ距離」で、トリップ開始時が満タンで
+// ない場合や、給油したのにトリップがリセットされなかった場合にズレていた。
+//
+// 燃料計が読めないとき (ELM327 経由など) は従来式にフォールバックする。
 // avg_fuel_economy が未確定 (走行開始直後) なら 0 を返す。
 // 値は 0 でクリップ (タンク超過時の負値を避ける)。
-func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm float64) float64 {
+func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm, fuelLevelPct float64, levelValid bool) float64 {
 	if avgFuelEconomy <= 0.1 || fuelTankL <= 0 {
 		return 0
 	}
-	rng := fuelTankL*avgFuelEconomy - tripKm
+
+	var rng float64
+	if levelValid && fuelLevelPct > 0 {
+		// センダーは上限付近でクリップするだけで100%を超えることは無いが、
+		// 生値由来なので念のため抑える。
+		if fuelLevelPct > 100 {
+			fuelLevelPct = 100
+		}
+		rng = fuelTankL * (fuelLevelPct / 100.0) * avgFuelEconomy
+	} else {
+		rng = fuelTankL*avgFuelEconomy - tripKm
+	}
+
 	if rng < 0 {
 		rng = 0
 	}

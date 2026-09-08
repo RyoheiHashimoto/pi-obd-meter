@@ -343,6 +343,12 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 	// 累計はローカルで維持されており走行で増えていくため、この式なら
 	// 復元のタイミングがいつでも正しい値になる。
 	if tripKm, ok := calcRestoredTripKm(app.maintMgr.TotalKm(), restored.LastRefuelKm); ok {
+		if limit := maxPlausibleTripKm(app.cfg.FuelTankL); limit > 0 && tripKm > limit {
+			slog.Warn("GASのトリップ距離が不合理なので棄却",
+				"trip_km", tripKm, "limit_km", limit,
+				"last_refuel_km", restored.LastRefuelKm, "total_km", app.maintMgr.TotalKm())
+			return
+		}
 		app.tracker.SetDistance(tripKm)
 		slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
 	}
@@ -369,4 +375,24 @@ func calcRestoredTripKm(totalKm, lastRefuelKm float64) (float64, bool) {
 		return 0, false
 	}
 	return totalKm - lastRefuelKm, true
+}
+
+// maxPlausibleKmL は1タンクで到達しうる燃費の上限 (km/L)。
+//
+// 給油記録が古いまま累計だけ伸びると、差分がいくらでも大きくなる。
+// 実際に 1,277.1 km が復元され、46L タンクでは 28 km/L 相当という
+// あり得ない値になったことがある (#118)。
+//
+// DYデミオ 1.3 の実測は 9〜15 km/L で、条件の良い巡航でも 20 を超えない。
+// 25 なら正常値を切ることはなく、桁の違う値だけを弾ける。ここを厳しくする
+// より、明らかな異常だけを止めて記録を残す方が安全である。
+const maxPlausibleKmL = 25.0
+
+// maxPlausibleTripKm はタンク容量から、給油後に走りうる距離の上限を返す。
+// タンク容量が未設定 (0) なら上限を設けない。
+func maxPlausibleTripKm(fuelTankL float64) float64 {
+	if fuelTankL <= 0 {
+		return 0
+	}
+	return fuelTankL * maxPlausibleKmL
 }
