@@ -33,16 +33,33 @@ DY デミオ (2002-2007 JDM / Mazda2 DY、ZJ-VE + FN4A-EL) のブロードキャ
 **検証済み:**
 
 - `cantools` でパースでき、実機のデコーダ (`internal/can/frame.go`) と数値が一致
-- 実車の候補ログ 169,618 フレームをデコードしてエラー 0 件
+- 実車ログの DBC 対象 19,636 フレームをデコードしてエラー 0 件
+  (`scripts/ops/verify-dbc.py`)
 - 1速の `GEAR_RATIO` が 0.26 になる（8bit ラップ）ことを実ログで再現
+
+**2026-09-09 に DLC の誤りを修正した。** 全メッセージを 8 バイトと宣言していたが、
+実フレームは `AT_STATUS` が 4、`COOLANT` と `ELECTRIC` が 7 バイトだった。
+`cantools` の `decode_message()` は長さが厳密に一致しないと
+`DecodeError: Wrong data size` で落ちるため、19,636 フレーム中 4,884 件が
+デコードできない状態だった。信号のビット位置はいずれも収まっていたので、
+宣言だけの誤り。
+
+この欠陥は「フレーム数を数えるだけ」では出ず、実ログを1本ずつ
+`decode_message()` に通して初めて出た。出す前に検証スクリプトを書くこと。
 
 **未確定な点も正直にコメントへ入れてある:**
 `ELECTRIC.UNKNOWN_B1` は未同定（電圧に連動するが電圧ではない。
 `B0 + 2*B1 ≒ 418` の拘束がある）、`FUEL_LEVEL` はセンダーが両端でクリップし
 非線形であること、`GEAR_RATIO` が滑りを含まない機械比であること。
 
-**出す前にやること:** 走行中のログでもデコードを通す（上の検証は停車中のログ）。
-opendbc の CONTRIBUTING を読んで命名規則とファイル配置を合わせる。
+**受け入れ先の前例は確認済み:** `mazda_rx8.dbc` が存在する一方 RX-8 は
+`docs/CARS.md` に載っていない。opendbc は車種ポートを伴わない DBC 単体も
+持っている。opendbc の貢献フローは openpilot の car port 向けに書かれているが、
+DBC だけの追加に前例がないわけではない。
+
+**出す前に残っていること:** 走行中のログでデコードを通す（上の検証は停車中のログ）。
+`scripts/ops/verify-dbc.py --fetch` で Pi から `raw_*.log` を回収して実行する。
+走行を含まないログしか無いときは exit 2 を返すようにしてある。
 
 
 ### `0001-brcmfmac-log-firmware-status-on-failed-connect.patch`
