@@ -179,6 +179,11 @@ func (app *App) addDistance(deltaKm float64) {
 
 // updateRealtimeData はリアルタイムデータをスレッドセーフに更新する
 func (app *App) updateRealtimeData(data RealtimeData) {
+	// ATF 最高油温はここで拾う。CAN 経路と ELM327 経路の両方が
+	// 最後にここへ合流するので、収集点を1箇所に閉じ込められる。
+	if data.ATFValid {
+		app.noteATF(data.ATFTempC)
+	}
 	app.dataMu.Lock()
 	app.latestData = data
 	app.dataMu.Unlock()

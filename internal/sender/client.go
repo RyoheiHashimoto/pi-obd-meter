@@ -172,7 +172,6 @@ func (c *Client) RetryPending(ctx context.Context) {
 	c.mu.Unlock()
 }
 
-// QueueSize はリトライキューのサイズを返す
 // LastSentAt は最後に送信が成功した時刻を返す。一度も成功していなければゼロ値。
 func (c *Client) LastSentAt() time.Time {
 	if c == nil {
@@ -183,6 +182,7 @@ func (c *Client) LastSentAt() time.Time {
 	return c.lastSentAt
 }
 
+// QueueSize はリトライキューのサイズを返す。
 func (c *Client) QueueSize() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
