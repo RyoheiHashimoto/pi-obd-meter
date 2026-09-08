@@ -45,3 +45,38 @@ func TestATFLevel_NotRaisedWhenUnavailable(t *testing.T) {
 		t.Errorf("未取得なのに区分 %q を出した", a)
 	}
 }
+
+// 最高油温が updateRealtimeData から実際に拾われること。
+//
+// noteATF は定義だけして呼び出しを入れ忘れていたため、atf_max_c が常に 0 の
+// まま出荷された (2026-09-08 に実車の /api/health で発覚)。定義の存在では
+// なく、リアルタイム更新を通したときに値が動くことを確かめる。
+func TestNoteATF_WiredIntoRealtimeUpdate(t *testing.T) {
+	app := &App{}
+
+	if got := app.ATFMaxC(); got != 0 {
+		t.Fatalf("初期値: got %v, want 0", got)
+	}
+
+	app.updateRealtimeData(RealtimeData{ATFValid: true, ATFTempC: 61.6})
+	if got := app.ATFMaxC(); got != 61.6 {
+		t.Errorf("1件目: got %v, want 61.6", got)
+	}
+
+	app.updateRealtimeData(RealtimeData{ATFValid: true, ATFTempC: 104.2})
+	if got := app.ATFMaxC(); got != 104.2 {
+		t.Errorf("上昇後: got %v, want 104.2", got)
+	}
+
+	// 下がっても最高値は保持する
+	app.updateRealtimeData(RealtimeData{ATFValid: true, ATFTempC: 80})
+	if got := app.ATFMaxC(); got != 104.2 {
+		t.Errorf("下降後: got %v, want 104.2 (最高値を保持)", got)
+	}
+
+	// 未取得の 0 を最高値に混ぜない
+	app.updateRealtimeData(RealtimeData{ATFValid: false, ATFTempC: 0})
+	if got := app.ATFMaxC(); got != 104.2 {
+		t.Errorf("未取得後: got %v, want 104.2", got)
+	}
+}
