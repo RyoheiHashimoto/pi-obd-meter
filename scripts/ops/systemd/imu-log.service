@@ -1,0 +1,16 @@
+[Unit]
+Description=IMU (MPU-6050) 100Hz logger
+# IIO のバッファは /dev/iio:device0 を root でしか開けないため User= は付けない。
+After=network.target
+RequiresMountsFor=/data
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/imu-log.py
+Restart=on-failure
+RestartSec=5
+# バッファに溜めた分を落とす猶予。SIGTERM を受けてから閉じるまで。
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -68,22 +68,115 @@ Piは車のアクセサリ電源で動いているため、**エンジンを切�
 難易度が違う。スクリプトは適用前の `cmdline.txt` を Pi 上と Mac 上の
 両方に残す。
 
-## 第2層: root を読み取り専用にする (未実施)
+## 第2層: root を読み取り専用にする (2026-09-05 実施)
 
 第1層は「壊れても起動する」だが、第2層は「そもそも壊さない」。
 overlayfs で root を読み取り専用にし、書き込みをRAMへ逃がす。
 
-ただし書き込み可能な置き場が別途要る。バイナリと状態ファイルの置き場が
-無いと、更新が保持できず、WiFiが落ちていると起動時に取得もできない。
-**ネットワークに依存させるとWiFi障害時にメーターが一切動かなくなる**ため、
-GASからの復元に頼る案は成立しない。
+書き込み可能な置き場は外付けSSDを `/data` にすることで解決した。
+ログと状態ファイルは `/data` 配下へシンボリックリンクしてある。
 
-置き場の候補は2つ。どちらを採るかは未決。
+| リンク元 | リンク先 |
+|---|---|
+| `/var/log/gps` | `/data/log/gps` |
+| `/var/log/drive-verify` | `/data/log/drive-verify` |
+| `/var/log/can-verify` | `/data/log/can-verify` |
+| `/var/log/journal` | `/data/log/journal` |
+| `/var/lib/pi-obd-meter` | `/data/pi-obd-meter` |
 
-| 案 | 利点 | 欠点 |
-|---|---|---|
-| USBメモリを `/data` にする | SDを抜かずに済む。SDへの書き込みがゼロになり摩耗も止まる。壊れてもUSBを挿し直すだけ | USBメモリ1本と空きポートが要る |
-| rootfsを縮めて `/data` を作る | 追加ハード不要 | ext4はマウント中に縮小できないため、SDを抜いてMacで作業する必要がある |
+SDへの書き込みは実測で **60秒あたり 0 セクタ**。摩耗は止まった。
 
-第1層だけでも 2026-08 の障害は防げていた（軽微な破損で起動を諦めたのが原因のため）。
-第2層は摩耗と破損確率そのものを下げる施策であり、優先度は第1層より低い。
+設定は `/etc/overlayroot.conf`:
+
+```
+overlayroot_cfgdisk="disabled"
+overlayroot="tmpfs:recurse=0"
+```
+
+**`recurse=0` は必須。** 既定の `recurse=1` は `/` 以外のマウントも
+まとめて読み取り専用にするため、`/data` までRAMのオーバーレイに載る。
+つまりログも状態ファイルも再起動で消える。有効化直後に一度これを踏み、
+2分ほどで気づいて戻した。
+
+### 恒久的な変更は overlayroot-chroot から
+
+`/` への書き込みは再起動で消える。`apt` も設定ファイルの編集も同じ。
+下層の本物のルートに入るには:
+
+```
+sudo overlayroot-chroot                 # シェルに入る
+sudo overlayroot-chroot apt update      # コマンドを直接実行
+```
+
+`/media/root-ro` を手で `mount -o remount,rw` してもよいが、
+**稼働中に `ro` へ戻すことはできない**。overlayfs が下層を掴んでいるため
+`mount -o remount,ro` は EBUSY で失敗する (サブマウントも書き込み中ファイルも
+無くても失敗する)。戻すには再起動が要る。overlayroot-chroot は終了時に
+自動で `ro` に戻すので、そちらを使うこと。
+
+### デプロイも下層へ複製しないと消える
+
+`/opt/pi-obd-meter` は `/` の上にあるため、`rsync` でバイナリを置いても
+**再起動で元に戻る**。overlayfs を有効にした 2026-09-05 以降、
+「デプロイしたのにエンジンを切ったら元のバージョンだった」が起きうる状態
+だった (実際に踏む前に気づいた)。
+
+`scripts/deploy.sh` の `deploy` は転送・再起動のあとに `persist` を呼び、
+下層へ複製するようにした。単体でも呼べる。
+
+```
+./scripts/deploy.sh persist
+```
+
+中身は下層を rw にして rsync し、`overlayroot-chroot true` で ro に戻すだけ。
+**`mount -o remount,ro` を自分で叩いてはいけない。** 稼働中は overlayfs が
+下層を掴んでいるため EBUSY で失敗し、SDのルートが rw のまま残る。
+overlayroot-chroot の終了処理なら確実に戻せるので、それを借りている。
+
+### 副作用: 時計が毎回巻き戻る (2026-09-06 に発覚・対処済み)
+
+**Pi 4 に RTC は無い** (`timedatectl` の `RTC time: n/a`)。
+時刻は systemd-timesyncd が `/var/lib/systemd/timesync/clock` の mtime に
+保存し、次回起動時にそこまで進めることで引き継いでいる。fake-hwclock と
+同じ仕組みが systemd に内蔵されている。
+
+このファイルは `/` 上にあるため、overlayfs を有効にした瞬間から
+**再起動のたびに捨てられる**ようになった。結果、毎回まったく同じ時刻
+(2026-09-06 03:22:48) から起動するようになり、次の実害が出た。
+
+- ログのファイル名が毎回衝突する。`drive-verify.py` は `open(path, "w")` で
+  開いていたため、**前回のブートの走行記録を丸ごと消していた**。2.8MB を実際に消失した
+- `can-verify.sh` は `>>` で追記するため、**複数ブートのストリームが1本のファイルに
+  混ざった**。そのまま距離パルスを積算すると 45km の走行が 139km になる
+- 車内ではNTPに繋がらないことがあり、その間ログの時刻が全て嘘になる
+
+対処は保存先を `/data` へ逃がすこと。`/etc/fstab` に追加する:
+
+```
+/data/state/timesync /var/lib/systemd/timesync none bind,nofail,x-systemd.requires-mounts-for=/data 0 0
+```
+
+timesyncd は `Before=time-set.target sysinit.target` で非常に早く動くため、
+マウント待ちを明示する drop-in も要る
+(`scripts/ops/systemd/systemd-timesyncd.service.d/data-state.conf`)。
+`Requires` ではなく **`After` のみ**にしてある。`/data` が無くてもNTPは動かしたい。
+
+fake-hwclock を `apt install` する案は採らなかった。同じ機構が二重になるうえ、
+その保存先 `/etc/fake-hwclock.data` も `/` 上なので**同じ理由で消える**。
+壊れているのは機構ではなく置き場所だけだった。
+
+あわせて、ロガー側も**同名ファイルを絶対に開かない**よう連番を振るようにした。
+時計が直っても車内でNTPに繋がらなければ時刻は巻き戻りうるため、二重に防ぐ。
+
+### fstab を触るときの注意
+
+overlayroot は起動時に `/etc/fstab` を書き換えて `/` を overlay に差し替える。
+本物は `/media/root-ro/etc/fstab` にある。`recurse=0` の場合、
+**`/` 以外の行はコメントごと原文のまま通る**
+(初期化スクリプトの `overlayrootify_fstab()` を読んで確認した)。
+
+編集したら再起動する前に必ず検証すること。起動しなくなると車内では復旧できない。
+
+```
+sudo findmnt --verify --tab-file /media/root-ro/etc/fstab
+```

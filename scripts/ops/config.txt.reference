@@ -1,0 +1,70 @@
+# Pi 実機の /boot/firmware/config.txt の写し (2026-09-06 時点)
+#
+# /boot/firmware は overlayfs の外 (別パーティション) なので、ここへの変更は
+# 再起動しても消える。ただし ro でマウントされているため、書くときだけ
+#   sudo mount -o remount,rw /boot/firmware
+# し、書き終えたら ro に戻すこと。編集前に必ずバックアップを取る。
+# 起動しなくなると車内では復旧できない (SD を Mac に挿せば FAT32 なので読める)。
+#
+# For more options and information see
+# http://rptl.io/configtxt
+# Some settings may impact device functionality. See link above for details
+
+# Uncomment some or all of these to enable the optional hardware interfaces
+#dtparam=i2c_arm=on
+#dtparam=i2s=on
+dtparam=spi=on
+
+# Enable audio (loads snd_bcm2835)
+dtparam=audio=off
+
+# Additional overlays and parameters are documented
+# /boot/firmware/overlays/README
+
+# Automatically load overlays for detected cameras
+camera_auto_detect=1
+
+# Automatically load overlays for detected DSI displays
+display_auto_detect=1
+
+# Automatically load initramfs files, if found
+auto_initramfs=1
+
+# Enable DRM VC4 V3D driver
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+
+# Don't have the firmware create an initial video= setting in cmdline.txt.
+# Use the kernel's default instead.
+disable_fw_kms_setup=1
+
+# Run in 64-bit mode
+arm_64bit=1
+
+# Disable compensation for displays with overscan
+disable_overscan=1
+
+# Run as fast as firmware / board allows
+arm_boost=1
+
+[cm4]
+# Enable host mode on the 2711 built-in XHCI USB controller.
+# This line should be removed if the legacy DWC2 controller is required
+# (e.g. for USB device mode) or if USB support is not required.
+otg_mode=1
+
+[cm5]
+dtoverlay=dwc2,dr_mode=host
+
+[all]
+disable_splash=1
+enable_uart=1
+
+# CAN HAT (Waveshare MCP2515, 8MHz)
+dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25
+
+# IMU (GY-521 / MPU-6050) — 勾配・横G・加速度の直接測定 (#165)
+# I2C は 3番(GPIO2/SDA) と 5番(GPIO3/SCL)。CAN HAT は SPI なので競合しない。
+# ドライバはカーネル内蔵の inv-mpu6050-i2c。外部ビルドは不要。
+dtparam=i2c_arm=on
+dtoverlay=i2c-sensor,mpu6050

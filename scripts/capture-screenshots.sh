@@ -3,6 +3,10 @@
 # 使い方: ./capture-screenshots.sh [start|stop]
 
 DIR="$HOME/meter-screenshots"
+# Wayland の接続先。cog は labwc のセッション上で動いている。
+XDG="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+WL="${WAYLAND_DISPLAY:-$(basename "$(ls "$XDG"/wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)" 2>/dev/null)}"
+WL="${WL:-wayland-0}"
 PIDFILE="/tmp/meter-screenshots.pid"
 INTERVAL=10
 
@@ -16,7 +20,10 @@ case "${1:-start}" in
     echo "スクリーンショット開始: ${INTERVAL}秒間隔 → $DIR"
     (
       while true; do
-        DISPLAY=:0 scrot "$DIR/meter_$(date +%Y%m%d_%H%M%S).png" 2>/dev/null
+        # この機械は Wayland (labwc + cog)。scrot は X11 専用なので
+        # DISPLAY=:0 を渡しても真っ黒な画像しか出ない (#89)。grim を使う。
+        WAYLAND_DISPLAY="$WL" XDG_RUNTIME_DIR="$XDG" \
+          grim "$DIR/meter_$(date +%Y%m%d_%H%M%S).png" 2>/dev/null
         sleep "$INTERVAL"
       done
     ) &

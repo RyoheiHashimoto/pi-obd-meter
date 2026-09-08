@@ -41,10 +41,19 @@ type WebSocketConfig struct {
 //	 2     220km     23.47L     18.80L   1.249
 //	 3     330km     30.72L     24.70L   1.244
 //
-// 平均 1.220。1.3 ÷ 1.220 = 1.066 とし、3件とも ±4% に収まる 1.07 を採る。
+// 平均 1.220。1.3 ÷ 1.220 = 1.066 から当初 1.07 とした。
+//
+// その後 2026-08-31 に 1.12 へ再調整した。減速時燃料カット中の燃料を
+// 数えていた不具合 (fuel.go) を直したため、積算が 4.0% 減ったぶんを戻す
+// 必要がある。1.07 はバグ込みのモデルに合わせて求めた値だったので、
+// バグだけ直すと 4% の過少になる。
+//
+//	燃料カットを除いた積算 91.76L / レシート 78.79L = 1.165
+//	1.3 ÷ 1.165 = 1.116 → 1.12 を採る
+//
 // この比較は走行距離を一切使っていないため、同時期に判明したトリップ距離の
 // 取りこぼし (ODO比 -17.6%) からは独立している。
-const defaultFuelRateCorrection = 1.07
+const defaultFuelRateCorrection = 1.12
 
 type Config struct {
 	CANInterface        string            `json:"can_interface"`
@@ -86,7 +95,7 @@ type RealtimeData struct {
 	EngagedGear    int     `json:"engaged_gear"`
 	ATFTempC       float64 `json:"atf_temp_c"`
 	ATFValid       bool    `json:"atf_valid"`
-	ATFAlert       string  `json:"atf_alert,omitempty"`
+	ATFLevel       string  `json:"atf_level,omitempty"` // 表示色のキー。"" / warm / caution / hot / danger
 	TripKm         float64 `json:"trip_km"`
 	CoolantTemp    float64 `json:"coolant_temp"`
 	IntakeMAP      float64 `json:"intake_map"`
@@ -108,6 +117,11 @@ type RealtimeData struct {
 	Hold           bool    `json:"hold"`
 	TCLocked       bool    `json:"tc_locked"`
 	TCCLockPct     float64 `json:"tcc_lock_pct"`
+	SlipRatio      float64 `json:"slip_ratio"`    // トルコンの滑り比。1.0=直結、1.05=5%滑り
+	BrakePedal     bool    `json:"brake_pedal"`   // ブレーキペダル
+	RadiatorFan    bool    `json:"radiator_fan"`  // ラジエータファン
+	ACCompressor   bool    `json:"ac_compressor"` // エアコンコンプレッサー
+	GradeRaw       int     `json:"grade_raw"`     // 勾配の生値。負が登り。単位未確定
 	Shifting       bool    `json:"shifting"`
 	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
 	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
@@ -168,8 +182,11 @@ func validateConfig(cfg *Config) {
 		slog.Warn("engine_displacement_l が不正、デフォルト使用", "value", cfg.EngineDisplacementL)
 		cfg.EngineDisplacementL = 1.3
 	}
-	if cfg.FuelRateCorrection < 0 {
-		slog.Warn("fuel_rate_correction が負数、デフォルト使用", "value", cfg.FuelRateCorrection)
+	// 0 も弾く。他の項目が <= 0 を見ているのにここだけ < 0 だった。
+	// 0 のまま通すと calcFuelEconomy の `if correction > 0` を素通りし、
+	// 補正なし (×1.0) で走る。約 30% の過少になるのに警告も出ない。
+	if cfg.FuelRateCorrection <= 0 {
+		slog.Warn("fuel_rate_correction が不正、デフォルト使用", "value", cfg.FuelRateCorrection)
 		cfg.FuelRateCorrection = defaultFuelRateCorrection
 	}
 	if cfg.FuelTankL <= 0 {

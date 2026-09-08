@@ -153,6 +153,11 @@ body {
 @keyframes lock-slip-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.15; } }
 .lock-slip-blink { animation: lock-slip-blink 0.6s ease-in-out infinite; }
 
+/* 変速中 (目標ギア≠実ギア) のギア番号点滅。LOCK と同じ周期。
+   実測で中央 1.00秒・95%が2秒以内なので 0.6s なら1回で2回沈む。
+   物足りなければ 0.3s (rpm-arrow-blink-mid と同じ) に上げる。 */
+.gear-shift-blink { animation: lock-slip-blink 0.6s ease-in-out infinite; }
+
 /* RPM 上昇/下降矢印の点滅 (dRPM/dt 絶対値で 3 段階) */
 .rpm-arrow-blink-slow { animation: lock-slip-blink 0.6s ease-in-out infinite; }
 .rpm-arrow-blink-mid  { animation: lock-slip-blink 0.3s ease-in-out infinite; }

@@ -193,6 +193,23 @@ func main() {
 
 // obdProcessingLoop はOBDデータの処理ループ。距離積算・メンテナンス更新・GAS送信を行う。
 // SDLモード・ブラウザモード共通で使用する。
+// isTTY は標準出力が端末かどうか。起動時に一度だけ判定する。
+//
+// 進捗表示 (🚗 ... km/h) は \r で同じ行を上書きする前提のため改行を持たない。
+// systemd 配下でこれを出すと、journald が後続のログ行までまとめて1つの
+// メッセージとして扱う。制御文字を含むメッセージを journalctl は中身を出さずに
+// [269B blob data] とだけ表示するため、起動直後のログが読めなくなる。
+//
+// 実際これで「GASからトリップ復元」が数週間読めず、#118 に
+// 「ログが実機に出力されていない」と記録された。出ていたが見えなかった。
+var isTTY = func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}()
+
 func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc, obdCh <-chan OBDEvent, fastIntervalMs int, cfg Config, retryTicker, maintTicker *time.Ticker, sigCh <-chan os.Signal) {
 	var (
 		filters        = newOBDFilters()
@@ -301,7 +318,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				EngagedGear:    data.EngagedGear,
 				ATFTempC:       atfTempOrZero(data),
 				ATFValid:       data.HasATF,
-				ATFAlert:       atfAlertOrEmpty(data),
+				ATFLevel:       atfLevelOrEmpty(data),
 				TripKm:         app.tracker.DistanceKm(),
 				CoolantTemp:    lastCoolant,
 				IntakeMAP:      lastMAP,
@@ -315,7 +332,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				IntakeAirTemp:  data.IntakeAirTemp,
 				O2Voltage:      data.O2Voltage,
 				RuntimeSec:     data.RuntimeSec,
-				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm()),
+				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm(), app.refuel.SettledLiters()),
 				Gear:           data.Gear,
 				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,
@@ -323,6 +340,11 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				Hold:           data.Hold,
 				TCLocked:       data.TCLocked,
 				TCCLockPct:     data.TCCLockPct,
+				SlipRatio:      data.SlipRatio,
+				BrakePedal:     data.BrakePedal,
+				RadiatorFan:    data.RadiatorFan,
+				ACCompressor:   data.ACCompressor,
+				GradeRaw:       data.GradeRaw,
 				Shifting:       data.Shifting,
 				OdometerCANKm:  data.OdometerCANKm,
 				ElecB0Pct:      data.ElecB0Pct,
@@ -336,7 +358,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				PendingCount:   app.client.QueueSize(),
 			})
 
-			if sampleCount%30 == 0 {
+			if isTTY && sampleCount%30 == 0 {
 				fmt.Printf("\r🚗 %3.0f km/h | %4.0f rpm",
 					data.SpeedKmh, data.RPM)
 			}
@@ -382,9 +404,9 @@ func atfTempOrZero(d *obd.OBDData) float64 {
 }
 
 // atfAlertOrEmpty は未取得のときに警告を出さない。
-func atfAlertOrEmpty(d *obd.OBDData) string {
+func atfLevelOrEmpty(d *obd.OBDData) string {
 	if !d.HasATF {
 		return ""
 	}
-	return can.ATFAlert(d.ATFTempC)
+	return can.ATFLevel(d.ATFTempC)
 }

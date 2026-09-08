@@ -281,6 +281,28 @@ func (d *Detector) ClearEvent() {
 	}
 }
 
+// SettledLiters は落ち着いた燃料残量 (L) を返す。まだ落ち着いていなければ 0。
+//
+// 航続距離の計算に使う (#188)。それまでは「満タンから trip_km 走った」前提で
+// 出していたため、トリップ開始時が満タンでない・給油検出が働かなかった、の
+// どちらでもズレたままだった。
+//
+// LitersPerPoint には ±6% の不確かさがあり、センダーは両端でクリップする。
+// ただし低残量域では実測で裏が取れている: 2026-09-06 04:34 に 14.9pt
+// (= 6.7L) で純正の給油警告灯が点灯した。DY デミオの警告灯は残り 6〜7L で
+// 点くとされるので、少なくとも警告灯付近では妥当。
+func (d *Detector) SettledLiters() float64 {
+	if d == nil {
+		return 0
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.settled || d.current <= 0 {
+		return 0
+	}
+	return d.current * LitersPerPoint
+}
+
 // Settled は落ち着いた値が得られたかを返す。
 func (d *Detector) Settled() bool {
 	if d == nil {
