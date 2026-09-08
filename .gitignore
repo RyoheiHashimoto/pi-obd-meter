@@ -38,3 +38,7 @@ configs/config.local.json
 
 # 生成物 (GPX / 地図 HTML / 中間 JSON)
 out/
+
+# 上流検証用に Pi から回収した CAN ログ（大きいので追跡しない）
+logs-pi/can-verify/*_dbc.log
+logs-pi/can-verify/*_dbc.log.gz

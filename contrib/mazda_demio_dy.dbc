@@ -78,9 +78,15 @@ R (about 2.7) wraps as well. 2nd..4th are below 2.55 and never wrap.
 Add 2.56 only for 1st and R - a naive 'below the mechanical ratio means it
 wrapped' test misfires during shifts and produces ratios that do not exist.";
 
-CM_ SG_ 560 GEAR "0x01..0x04 = 1st..4th, 0x10 = R, 0xF0 = N/P.";
+CM_ SG_ 560 GEAR "0x01..0x04 = 1st..4th, 0x10 = R, 0xF0 = N/P.
+0x00 and 0xF1 also appear but are rare and not identified: over 162750 frames
+of this message they were 0.08% and 0.02%. Both look like transient states
+around a range change rather than steady values.";
 
-CM_ SG_ 561 AT_RANGE "1=P 2=R 3=N 4=D 5=S 6=L.";
+CM_ SG_ 561 AT_RANGE "1=P 2=R 3=N 4=D 5=S 6=L.
+Raw 0 also appears in 0.06% of frames and is not identified; it is transient.
+Frequencies over 162800 frames: D 77.0%, P 10.2%, S 8.2%, R 2.7%, L 1.8%,
+N 0.03%. N is rare because the box passes through it quickly.";
 
 CM_ SG_ 1072 FUEL_LEVEL "Raw byte / 2.55, i.e. percent of sender span, not litres.
 On this car about 0.45 L per point against fill-up receipts, with roughly 6%
@@ -96,7 +102,10 @@ distance travelled. Integrating it tracks GPS distance to about 0.1% over
 80 km. Wraps; take differences modulo 256.";
 
 CM_ SG_ 513 SPEED "Raw value is offset by 10000 and scaled by 100.
-WHEEL_SPEEDS (0x4B0) uses the same encoding.";
+WHEEL_SPEEDS (0x4B0) uses the same encoding.
+The two decode consistently: over 58375 samples above 20 km/h the difference
+between SPEED and the mean of the four wheel speeds has a median of
++0.08 km/h and never exceeds 0.97 km/h.";
 
 VAL_ 560 GEAR 1 "1st" 2 "2nd" 3 "3rd" 4 "4th" 16 "R" 240 "N_P" ;
 VAL_ 561 AT_RANGE 1 "P" 2 "R" 3 "N" 4 "D" 5 "S" 6 "L" ;
