@@ -8,8 +8,9 @@ userspace only ever sees:
 
   wlan0: CTRL-EVENT-ASSOC-REJECT bssid=00:00:00:00:00:00 status_code=16
 
-The all-zero BSSID comes from the same place: conn_params is memset to zero
-and profile->bssid has not been filled in when the station never associated.
+The all-zero BSSID comes from the same place: conn_params is memset to
+zero and profile->bssid has not been filled in when the station never
+associated.
 
 status_code=16 therefore carries no information about the cause.  It is not
 an AP response and it does not mean "authentication timed out" - it is the

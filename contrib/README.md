@@ -56,15 +56,28 @@ opendbc の CONTRIBUTING を読んで命名規則とファイル配置を合わ�
 - `brcmf_err()` は `net_ratelimit()` を通るのでログが溢れない
 - Linux mainline (2026-09 時点) にクリーンに適用できることを確認済み
 
-#### 送る前にやること
+#### 検証済み (2026-09-09)
+
+Docker の arm64 コンテナで mainline を引いて確かめた。
+
+| 項目 | 結果 |
+|---|---|
+| 適用 | Linux **7.3.0-rc2** (`28924df2a`) に `git apply` がクリーンに通る |
+| コンパイル | `ARCH=arm64 W=1` で `cfg80211.o` 生成成功、**警告0** |
+| checkpatch | `--strict` で **0 errors, 0 warnings**（名前とメールを埋めた場合） |
+| 書式指定子 | `event_code` / `status` / `reason` はいずれも `u32` (`fweh.h`) なので `%u` で正しい |
+
+再現手順は `scripts/verify-brcmfmac-patch.sh`。
+
+#### 送る前に残っていること
 
 ```
 1. <YOUR NAME> <YOUR EMAIL> を2箇所（From: と Signed-off-by:）差し替える
-   Signed-off-by は DCO への署名。本名とメールで書く決まり
-2. 実機でビルドして、失敗時に実際にログが出ることを確認する
-   （このパッチはまだ実機で動かしていない）
-3. checkpatch を通す
-   ./scripts/checkpatch.pl contrib/0001-*.patch
+   Signed-off-by は DCO への署名。本名とメールで書く決まりで、
+   本人以外が代筆してはいけない
+2. 実機で「失敗時に実際にログが出る」ことを確認する
+   コンパイルは通ったが、実行時に brcmf_err() が期待どおり出るところは
+   まだ見ていない
 ```
 
 #### 送り先
