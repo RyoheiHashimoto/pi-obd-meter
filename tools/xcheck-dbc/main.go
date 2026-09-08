@@ -25,10 +25,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 	limit := 200000
 	w := bufio.NewWriter(os.Stdout)
-	defer w.Flush()
+	defer func() { _ = w.Flush() }()
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	n := 0
@@ -55,15 +55,15 @@ func main() {
 		switch uint32(id) {
 		case can.IDEngine:
 			rpm, spd, load := can.DecodeEngine(d)
-			fmt.Fprintf(w, "%d,201,RPM,%.9f\n%d,201,SPEED,%.9f\n%d,201,ENGINE_LOAD,%.9f\n", n, rpm, n, spd, n, load)
+			_, _ = fmt.Fprintf(w, "%d,201,RPM,%.9f\n%d,201,SPEED,%.9f\n%d,201,ENGINE_LOAD,%.9f\n", n, rpm, n, spd, n, load)
 		case can.IDElectric:
 			b0, b1, odo := can.DecodeElectric(d)
-			fmt.Fprintf(w, "%d,430,FUEL_LEVEL,%.9f\n%d,430,UNKNOWN_B1,%.9f\n%d,430,ODOMETER,%.9f\n", n, b0, n, b1, n, odo)
+			_, _ = fmt.Fprintf(w, "%d,430,FUEL_LEVEL,%.9f\n%d,430,UNKNOWN_B1,%.9f\n%d,430,ODOMETER,%.9f\n", n, b0, n, b1, n, odo)
 		case can.IDCoolant:
 			t, p := can.DecodeCoolant(d)
-			fmt.Fprintf(w, "%d,420,COOLANT_TEMP,%.9f\n%d,420,DISTANCE_PULSE,%.9f\n", n, t, n, float64(p))
+			_, _ = fmt.Fprintf(w, "%d,420,COOLANT_TEMP,%.9f\n%d,420,DISTANCE_PULSE,%.9f\n", n, t, n, float64(p))
 		case can.IDWheels:
-			fmt.Fprintf(w, "%d,4B0,WHEEL_MEAN,%.9f\n", n, can.DecodeWheelSpeed(d))
+			_, _ = fmt.Fprintf(w, "%d,4B0,WHEEL_MEAN,%.9f\n", n, can.DecodeWheelSpeed(d))
 		}
 	}
 }
