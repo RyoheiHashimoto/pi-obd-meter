@@ -180,3 +180,44 @@ overlayroot は起動時に `/etc/fstab` を書き換えて `/` を overlay に�
 ```
 sudo findmnt --verify --tab-file /media/root-ro/etc/fstab
 ```
+
+## USB とストレージ — 挿す場所を間違えると全部が落ちる
+
+### SSD は USB2.0 側に挿す
+
+`ELECOM ESD-EXS 250GB` (`056e:6a20`)。**青い USB3.0 ポートに挿すと 1GB の連続書き込みで
+`xhci_hcd: Host System Error` → `HC died` となり、全バスの USB 機器が同時に消える。**
+電源ではない（`throttled=0x0`、ディスプレイを外部電源にしても不変）。
+黒い USB2.0 側（VIA ハブ `2109:3431` 経由）では完走する。2026-09-05 実証。
+
+### AIC8800 ドングルは同じハブ上の SSD を殺す
+
+起動時に3回再列挙し（`a69c:5723` → `a69c:8d80` → `368b:8d83`）、その 0.5 秒後に
+同じハブの SSD が `-71` で落ちる。`/data` ごと消えるため、TRIP・燃料積算・時刻の永続化・
+journal の永続化が同時に失われる。
+
+**対処済み:** `/etc/modprobe.d/blacklist-aic8800.conf` でドライバを無効化（下層へ永続化）+
+**物理撤去**。以後の起動で `-71` は 0 回。詳細は #183。
+
+```
+blacklist aic8800_fdrv
+blacklist aic8800_bsp
+blacklist aic_load_fw
+blacklist aic8800
+```
+
+### /data の電断耐性
+
+```
+/dev/sda1 → /data   ext4, noatime, commit=5, nofail, x-systemd.device-timeout=10
+```
+
+`commit=5` で 5 秒ごとに確定し、状態ファイルは一時ファイル→rename で書く。
+**エンジン停止で失われるのは各ログの末尾数秒だけ**（実測: IMU 0.4 秒、drive-verify 2.6 秒。
+NUL バイトの塊として現れる）。TRIP・燃料積算・メンテ状態は rename 方式なので壊れない。
+
+### 画面キャプチャは grim
+
+この機械は Wayland (labwc + cog)。**`scrot` は X11 専用なので `DISPLAY=:0` を渡しても
+真っ黒な画像しか出ない** (#89)。`grim` を使い、`WAYLAND_DISPLAY` と `XDG_RUNTIME_DIR` は
+`/run/user/$(id -u)/wayland-*` から取る。
