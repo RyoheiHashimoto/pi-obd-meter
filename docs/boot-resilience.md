@@ -114,6 +114,37 @@ sudo overlayroot-chroot apt update      # コマンドを直接実行
 無くても失敗する)。戻すには再起動が要る。overlayroot-chroot は終了時に
 自動で `ro` に戻すので、そちらを使うこと。
 
+### deploy が下層を rw のまま残すことがある (2026-09-08 実際に発生)
+
+`deploy.sh` の永続化は `mount -o remount,rw /media/root-ro` → rsync →
+`overlayroot-chroot true`（終了処理を借りて ro へ戻す）という流れ。
+**最後の `overlayroot-chroot` が失敗すると、下層が rw のまま残る。**
+
+```
+  ★ /media/root-ro が rw のままです。再起動して戻してください
+ERROR: Note that [/media/root-ro] is still mounted read/write
+mount: /media/root-ro: mount point is busy.
+```
+
+`fuser -vm` で見ると掴んでいるのは `kernel mount` ＝ overlayfs 本体
+（`lowerdir=/media/root-ro`）。これは常にそうなので、これ自体が原因ではない。
+**`sync` して間を置いて数回試しても戻らなかった。**
+
+**復旧は再起動のみ。** エンジンを切って入れ直せば ro に戻る。
+
+その間のリスク評価（rw のまま電断した場合）:
+
+```
+永続化は完了している    上層と下層のバイナリが一致することを cmp で確認
+書き込みは走っていない  sync 済み
+fsck.mode=auto          不正電断時は起動時に自動検査される
+```
+
+**壊れる確率は低いが、ゼロではない。** overlayfs を入れた目的そのものが
+「下層に書かない」ことなので、気づいたら早めに再起動する。
+
+デプロイ後は毎回 `mount | grep root-ro` で `(ro` を確認すること。
+
 ### デプロイも下層へ複製しないと消える
 
 `/opt/pi-obd-meter` は `/` の上にあるため、`rsync` でバイナリを置いても
