@@ -13,6 +13,38 @@
 
 ## 未送付
 
+### `mazda_demio_dy.dbc` — opendbc へ
+
+DY デミオ (2002-2007 JDM / Mazda2 DY、ZJ-VE + FN4A-EL) のブロードキャスト CAN 定義。
+**[commaai/opendbc](https://github.com/commaai/opendbc) にこの世代のマツダは存在しない**
+（最古は `mazda_rx8.dbc`）。ADAS 非対応の車でも受け入れられている前例がある。
+
+収録した 6 メッセージ:
+
+```
+0x201 ENGINE        RPM / 車速 / エンジン負荷
+0x230 AT_CTRL       ギア / 機械ギア比（8bit ラップの注意つき）
+0x231 AT_STATUS     ギア / レンジ / HOLD / TCロックアップ / 変速中
+0x420 COOLANT       水温 / 距離パルス
+0x430 ELECTRIC      燃料残量 / 未同定B1 / オドメーター
+0x4B0 WHEEL_SPEEDS  4輪速
+```
+
+**検証済み:**
+
+- `cantools` でパースでき、実機のデコーダ (`internal/can/frame.go`) と数値が一致
+- 実車の候補ログ 169,618 フレームをデコードしてエラー 0 件
+- 1速の `GEAR_RATIO` が 0.26 になる（8bit ラップ）ことを実ログで再現
+
+**未確定な点も正直にコメントへ入れてある:**
+`ELECTRIC.UNKNOWN_B1` は未同定（電圧に連動するが電圧ではない。
+`B0 + 2*B1 ≒ 418` の拘束がある）、`FUEL_LEVEL` はセンダーが両端でクリップし
+非線形であること、`GEAR_RATIO` が滑りを含まない機械比であること。
+
+**出す前にやること:** 走行中のログでもデコードを通す（上の検証は停車中のログ）。
+opendbc の CONTRIBUTING を読んで命名規則とファイル配置を合わせる。
+
+
 ### `0001-brcmfmac-log-firmware-status-on-failed-connect.patch`
 
 `brcmf_bss_connect_done()` が、ファームウェアから受け取った失敗理由
