@@ -15,9 +15,10 @@ associated.
 status_code=16 therefore carries no information about the cause.  It is not
 an AP response and it does not mean "authentication timed out" - it is the
 only failure value this driver can produce.  This is a recurring source of
-confusion: the question "what does status=16 mean" has been open since 2023
-in [1] and [2] with no answer, and the reports there span BCM4345/6,
-BCM43430 and CYW43455 across several kernel versions.
+confusion: [1] has been open since 2023 with more than twenty follow-ups
+and no explanation of the code, and covers BCM4345/6, BCM43430 and
+CYW43455 across several kernel versions.  It supersedes [2], filed against
+the firmware repository a day earlier and closed in favour of it.
 
 The firmware's own status (BRCMF_E_STATUS_*) is more specific - FAIL,
 TIMEOUT, NO_NETWORKS, ABORT and so on - and it is already in hand.  Log it
@@ -32,6 +33,14 @@ in a non-debug build and is not rate limited, and wpa_supplicant retries
 the association every few seconds, so it would flood the log.  brcmf_err()
 goes through net_ratelimit() there, so a station retrying against an
 unreachable AP prints at most a few lines per second.
+
+All three fields are printed because only some of them are meaningful on
+each path into the failure branch.  brcmf_is_nonetwork() keys off @status,
+so that is the useful field for a join that never associated - the case in
+[1].  brcmf_is_linkdown() keys off @event_code and the 802.11 @reason and
+does not look at @status at all, so @status can read 0 there.  Printing the
+three together lets the reader tell which path was taken instead of
+guessing from one number.
 
 The status reported to cfg80211 is left alone; changing it would alter what
 userspace sees.
