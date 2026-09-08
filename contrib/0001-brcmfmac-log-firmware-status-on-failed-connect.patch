@@ -1,4 +1,4 @@
-From: <YOUR NAME> <YOUR EMAIL>
+From: Ryohei Hashimoto <laurel.medalist12@gmail.com>
 Subject: [PATCH] wifi: brcmfmac: log the firmware status when a connect fails
 
 brcmf_bss_connect_done() receives the firmware event in @e but discards it
@@ -31,7 +31,7 @@ userspace sees.
 [1] https://github.com/RPi-Distro/firmware-nonfree/issues/38
 [2] https://github.com/raspberrypi/firmware/issues/1829
 
-Signed-off-by: <YOUR NAME> <YOUR EMAIL>
+Signed-off-by: Ryohei Hashimoto <laurel.medalist12@gmail.com>
 ---
 diff --git a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
 index 872c488..114dabb 100644
