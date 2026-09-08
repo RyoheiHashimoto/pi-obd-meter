@@ -21,9 +21,17 @@ BCM43430 and CYW43455 across several kernel versions.
 
 The firmware's own status (BRCMF_E_STATUS_*) is more specific - FAIL,
 TIMEOUT, NO_NETWORKS, ABORT and so on - and it is already in hand.  Log it
-so the cause can be narrowed down without rebuilding the kernel with
-CONFIG_BRCMDBG.  brcmf_err() is rate limited through net_ratelimit(), so a
-station retrying against an unreachable AP will not flood the log.
+so the cause can be narrowed down without rebuilding the kernel.
+
+brcmf_err() is used rather than brcmf_dbg() or brcmf_info() because it is
+the only one of the three that is both visible in a distribution kernel and
+bounded.  brcmf_dbg(CONN) is compiled out without CONFIG_BRCMDBG, which is
+what makes the reports in [1] and [2] impossible to act on - the people
+hitting this run stock kernels.  brcmf_info() expands to a plain pr_info()
+in a non-debug build and is not rate limited, and wpa_supplicant retries
+the association every few seconds, so it would flood the log.  brcmf_err()
+goes through net_ratelimit() there, so a station retrying against an
+unreachable AP prints at most a few lines per second.
 
 The status reported to cfg80211 is left alone; changing it would alter what
 userspace sees.

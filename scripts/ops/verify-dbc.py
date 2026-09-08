@@ -37,15 +37,30 @@ def fetch():
 
 
 def parse(path):
-    """candump -ta 形式を (can_id, data) で返す。"""
+    """candump のログを (can_id, data) で返す。2つの形式に対応する。
+
+    candump は起動オプションで出力形式が変わる。Pi の can-verify.sh は
+    既定形式 (B) で書くが、手で取ったログには compact 形式 (A) が混ざる。
+    片方しか読めない実装だと、もう片方を渡したときに「0フレーム」と出て
+    ログが空なのかパーサが合っていないのか区別できない。
+
+      A  (1788189998.242396) can0 201#0B107C9C27100064
+      B   (1788865430.176578)  can0  201   [8]  0B 0F 7D 78 27 10 00 64
+    """
     with open(path, errors="ignore") as fh:
         for line in fh:
             parts = line.split()
-            if len(parts) < 3 or "#" not in parts[2]:
+            if len(parts) < 3:
                 continue
-            ident, _, payload = parts[2].partition("#")
             try:
-                yield int(ident, 16), bytes.fromhex(payload)
+                if "#" in parts[2]:                       # A: compact
+                    ident, _, payload = parts[2].partition("#")
+                    yield int(ident, 16), bytes.fromhex(payload)
+                elif len(parts) >= 4 and parts[3].startswith("["):
+                    n = int(parts[3].strip("[]"))          # B: 既定
+                    if len(parts) < 4 + n:
+                        continue
+                    yield int(parts[2], 16), bytes.fromhex("".join(parts[4:4 + n]))
             except ValueError:
                 continue
 
