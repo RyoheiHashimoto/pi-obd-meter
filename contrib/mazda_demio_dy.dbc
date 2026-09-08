@@ -1,0 +1,102 @@
+VERSION ""
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BU_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: XXX
+
+BO_ 513 ENGINE: 8 XXX
+ SG_ RPM : 7|16@0+ (0.25,0) [0|16383] "rpm" XXX
+ SG_ SPEED : 39|16@0+ (0.01,-100) [0|300] "km/h" XXX
+ SG_ ENGINE_LOAD : 55|8@0+ (1,0) [0|255] "" XXX
+
+BO_ 560 AT_CTRL: 8 XXX
+ SG_ GEAR : 7|8@0+ (1,0) [0|255] "" XXX
+ SG_ GEAR_RATIO : 23|8@0+ (0.01,0) [0|2.55] "" XXX
+
+BO_ 561 AT_STATUS: 8 XXX
+ SG_ GEAR_NUM : 7|4@0+ (1,0) [0|15] "" XXX
+ SG_ AT_RANGE : 3|4@0+ (1,0) [0|15] "" XXX
+ SG_ HOLD : 15|1@0+ (1,0) [0|1] "" XXX
+ SG_ TC_LOCKUP : 12|1@0+ (1,0) [0|1] "" XXX
+ SG_ SHIFTING : 11|1@0+ (1,0) [0|1] "" XXX
+
+BO_ 1056 COOLANT: 8 XXX
+ SG_ COOLANT_TEMP : 7|8@0+ (1,-40) [-40|215] "degC" XXX
+ SG_ DISTANCE_PULSE : 15|8@0+ (1,0) [0|255] "" XXX
+
+BO_ 1072 ELECTRIC: 8 XXX
+ SG_ FUEL_LEVEL : 7|8@0+ (0.392157,0) [0|100] "%" XXX
+ SG_ UNKNOWN_B1 : 15|8@0+ (1,0) [0|255] "" XXX
+ SG_ ODOMETER : 39|16@0+ (10,0) [0|655350] "km" XXX
+
+BO_ 1200 WHEEL_SPEEDS: 8 XXX
+ SG_ WHEEL_SPEED_FL : 7|16@0+ (0.01,-100) [0|300] "km/h" XXX
+ SG_ WHEEL_SPEED_FR : 23|16@0+ (0.01,-100) [0|300] "km/h" XXX
+ SG_ WHEEL_SPEED_RL : 39|16@0+ (0.01,-100) [0|300] "km/h" XXX
+ SG_ WHEEL_SPEED_RR : 55|16@0+ (0.01,-100) [0|300] "km/h" XXX
+
+CM_ "Mazda Demio DY (2002-2007, JDM) / Mazda2 DY, ZJ-VE 1.3L with FN4A-EL 4AT.
+Passive listen-only capture on the diagnostic CAN bus at 500 kbit/s.
+Reverse engineered on one vehicle over 2026-08..2026-09; validated against
+the factory instrument cluster, OBD-2 standard PIDs and GPS where possible.";
+
+CM_ BO_ 560 "GEAR_RATIO is the MECHANICAL gear ratio, not the effective one.
+It excludes torque converter slip: at a steady 3rd gear it stays at 1.00 while
+the ratio computed from rpm and road speed spreads over 1.12..1.42.
+The field is 8 bit, so ratios above 2.55 wrap: 1st (2.816) reads as 0.256 and
+R (about 2.7) wraps as well. 2nd..4th are below 2.55 and never wrap.
+Add 2.56 only for 1st and R - a naive 'below the mechanical ratio means it
+wrapped' test misfires during shifts and produces ratios that do not exist.";
+
+CM_ SG_ 560 GEAR "0x01..0x04 = 1st..4th, 0x10 = R, 0xF0 = N/P.";
+
+CM_ SG_ 561 AT_RANGE "1=P 2=R 3=N 4=D 5=S 6=L.";
+
+CM_ SG_ 1072 FUEL_LEVEL "Raw byte / 2.55, i.e. percent of sender span, not litres.
+On this car about 0.45 L per point against fill-up receipts, with roughly 6%
+spread; the sender clips at both ends and is not linear in between.
+14.9 points was the reading when the factory low-fuel lamp came on.";
+
+CM_ SG_ 1072 UNKNOWN_B1 "Not identified. Tracks battery voltage but is not the
+voltage itself, and is not independent of FUEL_LEVEL: B0 + 2*B1 is about 418.
+Use OBD-2 standard PID 0x42 for control module voltage instead.";
+
+CM_ SG_ 1056 DISTANCE_PULSE "Free running 8 bit counter that increments with
+distance travelled. Integrating it tracks GPS distance to about 0.1% over
+80 km. Wraps; take differences modulo 256.";
+
+CM_ SG_ 513 SPEED "Raw value is offset by 10000 and scaled by 100.
+WHEEL_SPEEDS (0x4B0) uses the same encoding.";
+
+VAL_ 560 GEAR 1 "1st" 2 "2nd" 3 "3rd" 4 "4th" 16 "R" 240 "N_P" ;
+VAL_ 561 AT_RANGE 1 "P" 2 "R" 3 "N" 4 "D" 5 "S" 6 "L" ;
