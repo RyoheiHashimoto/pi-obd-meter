@@ -127,14 +127,49 @@ Docker の arm64 コンテナで mainline を引いて確かめた。
 
 #### 送り先
 
+`MAINTAINERS` の `BROADCOM BRCM80211` エントリから取った。
+
 ```
-git send-email --to=linux-wireless@vger.kernel.org \
-  --cc=brcm80211@lists.linux.dev \
+git send-email \
+  --to=linux-wireless@vger.kernel.org \
   --cc="Arend van Spriel <arend.vanspriel@broadcom.com>" \
+  --cc=brcm80211@lists.linux.dev \
+  --cc=brcm80211-dev-list.pdl@broadcom.com \
+  --cc=linux-kernel@vger.kernel.org \
   contrib/0001-brcmfmac-log-firmware-status-on-failed-connect.patch
 ```
 
-正確な宛先は、その時点の `scripts/get_maintainer.pl` で確認すること。
+**Johannes Berg は入れない。** `NETWORKING DRIVERS (WIRELESS)` エントリは
+`X: drivers/net/wireless/broadcom/` でこのパスを除外している。wireless ツリーの
+管理者なので linux-wireless で見る。宛先はその時点の `scripts/get_maintainer.pl`
+で再確認すること。
+
+#### SMTP の設定状況
+
+資格情報でない項目はこのリポジトリのローカル設定に入れてある
+(`git config --local --get-regexp '^sendemail\.'`)。
+
+```
+sendemail.smtpserver      smtp.gmail.com
+sendemail.smtpserverport  587
+sendemail.smtpencryption  tls
+sendemail.smtpuser        laurel.medalist12@gmail.com
+sendemail.from            Ryohei Hashimoto <laurel.medalist12@gmail.com>
+credential.helper         osxkeychain
+```
+
+Perl 依存は確認済み (`Net::SMTP` 3.13 / `IO::Socket::SSL` 2.068 /
+`Authen::SASL` 2.16)。`Net::SMTP::SSL` は無いが git 2.51 では不要。
+
+`--dry-run` は通っている。From が `Signed-off-by` と一致し、
+`Content-Transfer-Encoding: 8bit` でパッチが再エンコードされないことも確認した。
+
+**残っているのはアプリパスワードだけ。** Google アカウントで2段階認証を有効に
+してから https://myaccount.google.com/apppasswords で発行する。通常のアカウント
+パスワードでは通らない。初回送信時に git が一度だけ聞き、keychain に入る。
+
+**Gmail の Web 画面から送ってはいけない。** 行を折り返して HTML にするので
+パッチが壊れる。SMTP 経由なら上記のとおり無改変で通る。
 
 **先に #38 のスレッドに貼って反応を見る手もある。** あそこには同じ症状の人が
 複数いるので、実機で試してもらえる可能性がある。カーネルのMLに投げるより
