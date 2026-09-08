@@ -108,8 +108,15 @@ def main():
         kmh = (max_wheel - WHEEL_ZERO) / 100 if max_wheel else 0.0
         moving = kmh > 1.0
         print(f"\n--- {os.path.relpath(path, REPO)} ---")
-        print(f"  全フレーム {total:,} / DBC対象 {sum(seen.values()):,} / "
+        in_dbc = sum(seen.values())
+        print(f"  ログ内の行 {total:,} / DBC対象 {in_dbc:,} / "
               f"デコード成功 {decoded:,}")
+        if total and total == in_dbc:
+            # 転送量を減らすために Pi 側で 6 ID に絞ったログを渡すと、
+            # 「対象 100%」が当たり前に出る。分母が元ログでないことを
+            # 明示しないと、検証範囲を実際より広く見せてしまう。
+            print("  注: DBC対象が全行と一致。事前に ID で絞られたログなので、"
+                  "この割合は元ログに対する網羅率ではない")
         print(f"  最大車輪速 {kmh:.1f} km/h  "
               f"{'走行を含む' if moving else '★停車のみ（走行ログでの検証が未達）'}")
         for fid, n in sorted(seen.items()):
