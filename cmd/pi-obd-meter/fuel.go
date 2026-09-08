@@ -104,18 +104,39 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 }
 
 // calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
-// 前提: 前回給油でタンクをほぼ満タンにした。trip_km は給油時にリセットされている。
-// 計算: 満タン時の航続距離 (タンク容量 × 累積平均燃費) − 給油後の走行距離。
-// avg_fuel_economy が未確定 (走行開始直後) なら 0 を返す。
-// 値は 0 でクリップ (タンク超過時の負値を避ける)。
-func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm float64) float64 {
+//
+// remainingL (CAN 燃料残量から求めた実残量) があればそれを使う。無ければ
+// 「満タン − 走行距離」で代用する。
+//
+// 代用式は前回給油で満タンにし、かつ trip_km がリセットされていることを前提に
+// するため、そうでない場面で必ずズレた (#188)。
+//
+//	トリップ開始時が満タンでない        → 常に楽観的
+//	給油したがトリップ未リセット        → 常に悲観的
+//	給油検出が働かなかった              → ズレたまま
+//
+// 実残量ベースなら trip_km に依存しないので、これらの影響を受けない。
+//
+// avg_fuel_economy が未確定 (走行開始直後) や異常値なら 0 を返す。
+// 値は 0 でクリップ (負値を避ける)。
+func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm, remainingL float64) float64 {
 	// 上限も見る。下限だけだと平均燃費が壊れたときに素通りする。
 	// 2026-09-06 に 132km/L が入り、46L × 132 = 6,072km と表示された。
 	// AvgFuelEconomy 側でも弾いているが、二重に止める。
 	if avgFuelEconomy < trip.MinPlausibleKmL || avgFuelEconomy > trip.MaxPlausibleKmL || fuelTankL <= 0 {
 		return 0
 	}
-	rng := fuelTankL*avgFuelEconomy - tripKm
+	var rng float64
+	if remainingL > 0 {
+		// 実残量ベース。センダーが満タン側でクリップするので、タンク容量を超える
+		// 値が来ても満タン相当で頭打ちにする。
+		if remainingL > fuelTankL {
+			remainingL = fuelTankL
+		}
+		rng = remainingL * avgFuelEconomy
+	} else {
+		rng = fuelTankL*avgFuelEconomy - tripKm
+	}
 	if rng < 0 {
 		rng = 0
 	}

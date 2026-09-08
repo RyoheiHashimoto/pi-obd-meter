@@ -332,7 +332,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				IntakeAirTemp:  data.IntakeAirTemp,
 				O2Voltage:      data.O2Voltage,
 				RuntimeSec:     data.RuntimeSec,
-				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm()),
+				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm(), app.refuel.SettledLiters()),
 				Gear:           data.Gear,
 				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,
