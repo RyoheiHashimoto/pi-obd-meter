@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"testing"
+	"time"
 )
 
 // #188: 航続距離が実燃料残量を使うこと。
@@ -55,4 +56,31 @@ func TestCalcRangeToEmpty_警告灯点灯時の実測(t *testing.T) {
 		t.Errorf("従来式 %.0f km が実残量ベース %.0f km を上回らない。前提が変わった可能性", old, got)
 	}
 	t.Logf("実残量ベース %.0f km / 従来式 %.0f km", got, old)
+}
+
+// --- 状態画面のバックエンド (#178) ---
+
+// ATF 最高値はこの走行だけのもの。0 や負の値で汚染されない。
+func TestApp_ATFMax(t *testing.T) {
+	app := &App{}
+	if got := app.ATFMaxC(); got != 0 {
+		t.Errorf("初期値 %.1f, want 0", got)
+	}
+	for _, v := range []float64{55.5, 0, 88.2, -1, 70.0} {
+		app.noteATF(v)
+	}
+	if got := app.ATFMaxC(); math.Abs(got-88.2) > 0.01 {
+		t.Errorf("ATFMaxC() = %.2f, want 88.2 (0 と負値は無視されるはず)", got)
+	}
+}
+
+// 一度も送信していないときは空文字列。1970年と区別する必要がある。
+func TestRFC3339OrEmpty(t *testing.T) {
+	if got := rfc3339OrEmpty(time.Time{}); got != "" {
+		t.Errorf("ゼロ値 = %q, want \"\"", got)
+	}
+	ts := time.Date(2026, 9, 8, 20, 30, 0, 0, time.UTC)
+	if got := rfc3339OrEmpty(ts); got != "2026-09-08T20:30:00Z" {
+		t.Errorf("= %q", got)
+	}
 }
