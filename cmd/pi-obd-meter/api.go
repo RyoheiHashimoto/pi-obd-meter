@@ -50,6 +50,20 @@ type healthResponse struct {
 	// 専用の /api/pi-health を足そうとして GET /api/health を二重登録し、
 	// 起動時パニックで実機が上がらなくなった。既存の応答に含める。
 	Pi health.Status `json:"pi"`
+
+	// 2画面目「状態画面」向け (#178)。SSH しないと分からなかったもの。
+	ATFMaxC     float64 `json:"atf_max_c"`    // この走行の ATF 最高。0 は未取得
+	LastSentAt  string  `json:"last_sent_at"` // 最後に送信が成功した時刻 (RFC3339)。空は未送信
+	PendingFuel bool    `json:"pending_fuel"` // 未送信の給油イベントがあるか
+}
+
+// rfc3339OrEmpty はゼロ値なら空文字列を返す。
+// 「一度も送信していない」と「1970年に送信した」を画面で区別するため。
+func rfc3339OrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 // writeJSON はJSONレスポンスを書き込む。エンコードエラー時はログに記録する。
@@ -174,6 +188,9 @@ func (app *App) buildMux() *http.ServeMux {
 			MemSysMB:      float64(mem.Sys) / 1024 / 1024,
 			NumGoroutine:  runtime.NumGoroutine(),
 			Pi:            app.health.Status(),
+			ATFMaxC:       app.ATFMaxC(),
+			LastSentAt:    rfc3339OrEmpty(app.client.LastSentAt()),
+			PendingFuel:   app.refuel.Event() != nil,
 		})
 	})
 

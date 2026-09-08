@@ -25,6 +25,7 @@ type Client struct {
 	sending          atomic.Bool // 送信中フラグ
 	consecutiveFails int         // 連続失敗回数（指数バックオフ用）
 	lastRetryAt      time.Time   // 最後にリトライした時刻
+	lastSentAt       time.Time   // 最後に送信が成功した時刻 (#178)
 }
 
 // NewClient は新しいクライアントを作成する
@@ -89,6 +90,11 @@ func (c *Client) doPost(ctx context.Context, payload GASPayload) ([]byte, error)
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("Webhook エラー [%s]: status %d", payload.Type, resp.StatusCode)
 	}
+
+	// 「WiFi が繋がっている」と「送れている」は別物なので分けて記録する (#178)。
+	c.mu.Lock()
+	c.lastSentAt = time.Now()
+	c.mu.Unlock()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -167,6 +173,16 @@ func (c *Client) RetryPending(ctx context.Context) {
 }
 
 // QueueSize はリトライキューのサイズを返す
+// LastSentAt は最後に送信が成功した時刻を返す。一度も成功していなければゼロ値。
+func (c *Client) LastSentAt() time.Time {
+	if c == nil {
+		return time.Time{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.lastSentAt
+}
+
 func (c *Client) QueueSize() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

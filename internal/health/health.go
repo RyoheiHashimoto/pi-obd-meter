@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/hashimoto/pi-obd-meter/internal/atomicfile"
 )
 
@@ -50,6 +52,15 @@ type Status struct {
 	BootCount        int `json:"boot_count"`
 
 	UptimeSec int64 `json:"uptime_sec"`
+
+	// 走行ログの保存先 (/data) の空き。「SDには問題ない？」に答えるため (#178)。
+	// 取得できなければ 0。
+	DataFreeGB  float64 `json:"data_free_gb"`
+	DataTotalGB float64 `json:"data_total_gb"`
+
+	// 走行ログを書くサービスが生きているか。「ログ取れてる？」に
+	// 答えるため (#178)。キーはユニット名、値は active なら true。
+	Loggers map[string]bool `json:"loggers"`
 }
 
 // Alert は注意すべき状態を短い日本語で返す。何も無ければ空文字列。
@@ -130,6 +141,8 @@ func (m *Monitor) Status() Status {
 		DiskWrittenGB: readDiskWrittenGB(),
 		UptimeSec:     readUptimeSec(),
 	}
+	s.DataFreeGB, s.DataTotalGB = readDataFree(dataDir)
+	s.Loggers = readLoggers()
 	if raw, ok := readThrottled(); ok {
 		s.UnderVoltageNow = raw&bitUnderVoltageNow != 0
 		s.FreqCappedNow = raw&bitFreqCappedNow != 0
@@ -147,6 +160,44 @@ func (m *Monitor) Status() Status {
 }
 
 // readSoCTemp は SoC の温度を℃で返す。取れなければ 0。
+// loggerUnits は生存を見る systemd ユニット。
+//
+// poll22 は ATF 油温の同定が済んだので 2026-09-07 に停止した。
+// 復活させるならここに足す。
+var loggerUnits = []string{"drive-verify", "gps-log", "imu-log", "can-verify"}
+
+// readLoggers は各ロガーが active かを返す。
+//
+// systemctl を1回だけ呼ぶ。ユニットごとに呼ぶと車載機では 4 回分の
+// プロセス起動が毎秒走ることになる。
+func readLoggers() map[string]bool {
+	out := map[string]bool{}
+	args := append([]string{"is-active"}, loggerUnits...)
+	b, _ := exec.Command("systemctl", args...).Output() //nolint:errcheck // 非0終了でも出力は使える
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	for i, u := range loggerUnits {
+		out[u] = i < len(lines) && strings.TrimSpace(lines[i]) == "active"
+	}
+	return out
+}
+
+// dataDir は走行ログの保存先。テストから差し替えられるように変数にしておく。
+var dataDir = "/data"
+
+// readDataFree は保存先の空き容量と総容量を GB で返す。
+// マウントされていない・取得できない場合は 0, 0。呼び出し側は 0 を
+// 「不明」として扱うこと（「空きゼロ」と区別する必要がある）。
+func readDataFree(path string) (freeGB, totalGB float64) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(path, &st); err != nil {
+		return 0, 0
+	}
+	const gb = 1024 * 1024 * 1024
+	// Bavail は非特権ユーザーが使える分。Bfree だと予約分を含んでしまう。
+	return float64(st.Bavail) * float64(st.Bsize) / gb,
+		float64(st.Blocks) * float64(st.Bsize) / gb
+}
+
 func readSoCTemp() float64 {
 	b, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
 	if err != nil {

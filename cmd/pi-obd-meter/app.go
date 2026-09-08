@@ -83,7 +83,33 @@ type App struct {
 	maintSending atomic.Bool
 	retrySending atomic.Bool
 
+	// この走行（電源ON〜OFF）の ATF 油温の最高値 (#178)。
+	// 給油をまたいで持ち越す tracker ではなく App に置く。
+	// 「油温はどこまで上がってた？」に答えるためのもので、
+	// エンジンを切れば忘れてよい。
+	atfMaxMu sync.Mutex
+	atfMax   float64
+
 	startedAt time.Time
+}
+
+// noteATF はこの走行の ATF 油温の最高値を更新する。
+func (app *App) noteATF(c float64) {
+	if c <= 0 {
+		return
+	}
+	app.atfMaxMu.Lock()
+	if c > app.atfMax {
+		app.atfMax = c
+	}
+	app.atfMaxMu.Unlock()
+}
+
+// ATFMaxC はこの走行の ATF 油温の最高値を返す。未取得なら 0。
+func (app *App) ATFMaxC() float64 {
+	app.atfMaxMu.Lock()
+	defer app.atfMaxMu.Unlock()
+	return app.atfMax
 }
 
 // newApp はアプリケーション状態を初期化する
