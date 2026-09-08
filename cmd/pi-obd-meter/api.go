@@ -92,7 +92,15 @@ func (app *App) buildMux() *http.ServeMux {
 		webFS = http.FS(subFS)
 		slog.Info("Web UI: 埋め込みファイルから配信")
 	}
-	mux.Handle("GET /", http.FileServer(webFS))
+	// キオスク (cog/WebKit) は location.reload() でも JS/CSS をキャッシュから
+	// 出すことがあり、デプロイしても画面が古いままになる (#186)。
+	// no-cache は「使う前に必ず問い合わせろ」の意味で、変わっていなければ
+	// 304 が返るだけなので転送量は増えない。
+	fileSrv := http.FileServer(webFS)
+	mux.Handle("GET /", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		fileSrv.ServeHTTP(w, r)
+	}))
 
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,5 @@
+[Unit]
+Description=Delayed NetworkManager start
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl start NetworkManager

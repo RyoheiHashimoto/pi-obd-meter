@@ -15,32 +15,33 @@ func TestATFTempOrZero(t *testing.T) {
 		name      string
 		data      *obd.OBDData
 		wantTemp  float64
-		wantAlert string
+		wantLevel string
 	}{
 		{"未取得", &obd.OBDData{HasATF: false, ATFTempC: 0}, 0, ""},
 		{"未取得だが値が残っている", &obd.OBDData{HasATF: false, ATFTempC: 135}, 0, ""},
-		{"正常域", &obd.OBDData{HasATF: true, ATFTempC: 90}, 90, ""},
+		{"正常域", &obd.OBDData{HasATF: true, ATFTempC: 85}, 85, ""},
+		{"高速域", &obd.OBDData{HasATF: true, ATFTempC: 95}, 95, "warm"},
 		{"氷点", &obd.OBDData{HasATF: true, ATFTempC: 0}, 0, ""},
-		{"注意域", &obd.OBDData{HasATF: true, ATFTempC: 105}, 105, "ATF注意"},
-		{"高温", &obd.OBDData{HasATF: true, ATFTempC: 122}, 122, "ATF高温"},
-		{"危険", &obd.OBDData{HasATF: true, ATFTempC: 131}, 131, "ATF危険"},
+		{"注意域", &obd.OBDData{HasATF: true, ATFTempC: 105}, 105, "caution"},
+		{"高温", &obd.OBDData{HasATF: true, ATFTempC: 115}, 115, "hot"},
+		{"危険", &obd.OBDData{HasATF: true, ATFTempC: 125}, 125, "danger"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := atfTempOrZero(tt.data); got != tt.wantTemp {
 				t.Errorf("温度 = %.1f, want %.1f", got, tt.wantTemp)
 			}
-			if got := atfAlertOrEmpty(tt.data); got != tt.wantAlert {
-				t.Errorf("警告 = %q, want %q", got, tt.wantAlert)
+			if got := atfLevelOrEmpty(tt.data); got != tt.wantLevel {
+				t.Errorf("区分 = %q, want %q", got, tt.wantLevel)
 			}
 		})
 	}
 }
 
 // 未取得なのに危険域の警告を出してはいけない。
-func TestATFAlert_NotRaisedWhenUnavailable(t *testing.T) {
+func TestATFLevel_NotRaisedWhenUnavailable(t *testing.T) {
 	d := &obd.OBDData{HasATF: false, ATFTempC: 200}
-	if a := atfAlertOrEmpty(d); a != "" {
-		t.Errorf("未取得なのに警告 %q を出した", a)
+	if a := atfLevelOrEmpty(d); a != "" {
+		t.Errorf("未取得なのに区分 %q を出した", a)
 	}
 }

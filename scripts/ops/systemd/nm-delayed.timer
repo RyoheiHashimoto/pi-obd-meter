@@ -1,0 +1,13 @@
+[Unit]
+Description=Start NetworkManager after boot
+[Timer]
+OnBootSec=10s
+[Install]
+WantedBy=timers.target
+
+# 2026-09-07 に Pi から回収。リポジトリにもgit履歴にも文書にも記録が無く、
+# 誰が何のために入れたのか不明。NetworkManager.service は disabled にされていて、
+# このタイマーだけが起動経路になっている。
+# 影響: brcmfmac は t=6.0s で準備完了するが NM の起動は t=11.0s。約5秒の遅れ。
+# ただし起動時のWiFi遅延(68秒)の主因は t=24s 以降の association 失敗の再試行で、
+# ここを削っても効果は小さい。理由が分からないので消さないこと。

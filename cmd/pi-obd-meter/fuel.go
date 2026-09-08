@@ -1,5 +1,7 @@
 package main
 
+import "github.com/hashimoto/pi-obd-meter/internal/trip"
+
 // 燃費計算用の物理定数
 const (
 	stoichiometricAFR = 14.7  // ガソリンの理論空燃比 (空気kg / 燃料kg)
@@ -10,6 +12,13 @@ const (
 	minDisplaySpeedKm = 10.0  // 燃費表示の最低速度 (km/h)
 	atmosphericKPa    = 101.3 // 標準大気圧 (kPa)
 	engineBrakeMAPKPa = 30.0  // エンブレ判定MAP閾値 (kPa) — 強い負圧
+
+	// fuelCutMinRPM は減速時燃料カット (DFCO) が成立するとみなす最低回転数。
+	//
+	// ECU はアイドル回転に近づくとエンストを避けるため燃料を復帰させる。
+	// 復帰点はおよそ 1,200rpm 前後なので、余裕を見て 1,300rpm 以上でのみ
+	// 「燃料を使っていない」と判断する。
+	fuelCutMinRPM = 1300.0
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
@@ -56,12 +65,31 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 	}
 
 	// エンブレ検出: MAP対応時は負圧で判定（より正確）、非対応時は負荷で判定
+	//
+	// このとき燃料レートを 0 にする。
+	//
+	// 減速時燃料カット (DFCO) が働いている間、エンジンは燃料を一切使わない。
+	// ところが MAF は空気の流量を測っているので、吸気は流れ続ける。空気量に
+	// 理論空燃比を掛けて燃料を求めるモデルは、燃やしていない燃料を数える。
+	//
+	// 実測 (2026-08-27〜30、1,030km) では、この条件が走行時間の 11.4% を占め、
+	// 積算 95.66L のうち 3.83L (4.0%) が実際には消費されていない燃料だった。
+	// 給油区間ごとに 3.4% / 4.4% / 3.7% と安定して乗っている。
+	//
+	// エンストを避けるため ECU はアイドル付近で燃料を復帰させるので、
+	// fuelCutMinRPM 以上でのみ 0 とする。それ未満は従来どおり計算値を返す。
 	if speed >= minDisplaySpeedKm {
 		if hasMAP && intakeMAP > 0 && intakeMAP < engineBrakeMAPKPa {
-			return -1, fuelRateLH // MAP低い = スロットル閉 = エンブレ
+			if rpm >= fuelCutMinRPM {
+				return -1, 0 // MAP低い = スロットル閉 = 燃料カット
+			}
+			return -1, fuelRateLH // 低回転では燃料が復帰している
 		}
 		if load < 5.0 {
-			return -1, fuelRateLH // 負荷ベースのフォールバック
+			if rpm >= fuelCutMinRPM {
+				return -1, 0 // 負荷ベースのフォールバック
+			}
+			return -1, fuelRateLH
 		}
 	}
 
@@ -76,15 +104,39 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 }
 
 // calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
-// 前提: 前回給油でタンクをほぼ満タンにした。trip_km は給油時にリセットされている。
-// 計算: 満タン時の航続距離 (タンク容量 × 累積平均燃費) − 給油後の走行距離。
-// avg_fuel_economy が未確定 (走行開始直後) なら 0 を返す。
-// 値は 0 でクリップ (タンク超過時の負値を避ける)。
-func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm float64) float64 {
-	if avgFuelEconomy <= 0.1 || fuelTankL <= 0 {
+//
+// remainingL (CAN 燃料残量から求めた実残量) があればそれを使う。無ければ
+// 「満タン − 走行距離」で代用する。
+//
+// 代用式は前回給油で満タンにし、かつ trip_km がリセットされていることを前提に
+// するため、そうでない場面で必ずズレた (#188)。
+//
+//	トリップ開始時が満タンでない        → 常に楽観的
+//	給油したがトリップ未リセット        → 常に悲観的
+//	給油検出が働かなかった              → ズレたまま
+//
+// 実残量ベースなら trip_km に依存しないので、これらの影響を受けない。
+//
+// avg_fuel_economy が未確定 (走行開始直後) や異常値なら 0 を返す。
+// 値は 0 でクリップ (負値を避ける)。
+func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm, remainingL float64) float64 {
+	// 上限も見る。下限だけだと平均燃費が壊れたときに素通りする。
+	// 2026-09-06 に 132km/L が入り、46L × 132 = 6,072km と表示された。
+	// AvgFuelEconomy 側でも弾いているが、二重に止める。
+	if avgFuelEconomy < trip.MinPlausibleKmL || avgFuelEconomy > trip.MaxPlausibleKmL || fuelTankL <= 0 {
 		return 0
 	}
-	rng := fuelTankL*avgFuelEconomy - tripKm
+	var rng float64
+	if remainingL > 0 {
+		// 実残量ベース。センダーが満タン側でクリップするので、タンク容量を超える
+		// 値が来ても満タン相当で頭打ちにする。
+		if remainingL > fuelTankL {
+			remainingL = fuelTankL
+		}
+		rng = remainingL * avgFuelEconomy
+	} else {
+		rng = fuelTankL*avgFuelEconomy - tripKm
+	}
 	if rng < 0 {
 		rng = 0
 	}

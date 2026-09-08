@@ -57,10 +57,20 @@ jobs:
       - name: Package release
         run: |
           mkdir -p release/pi-obd-meter
-          # selfupdate 用: バイナリのみ（goreleaser 互換命名）
+          # auto-update.sh が落とすのはこの tarball。selfupdate 互換の命名。
+          #
+          # 以前はバイナリ1個しか入れていなかった。そのため stable release を
+          # 入れても scripts/ と web/static が更新されず、v1.4.0 を配った直後に
+          # Pi 上の ops スクリプトが古いままになった。dev ビルド側は同梱済み
+          # だったので、stable を出した時だけ配布が止まるという分かりにくい
+          # 挙動になっていた。
+          cp pi-obd-meter-arm64 pi-obd-meter
           tar czf release/pi-obd-meter_linux_arm64.tar.gz \
-            --transform='s/pi-obd-meter-arm64/pi-obd-meter/' \
-            pi-obd-meter-arm64
+            pi-obd-meter \
+            pi-obd-scanner-arm64 \
+            web/static/ \
+            scripts/
+          rm -f pi-obd-meter
           # 手動インストール用: バイナリ + 設定テンプレート
           cp pi-obd-meter-arm64 release/pi-obd-meter/pi-obd-meter
           cp pi-obd-scanner-arm64 release/pi-obd-meter/pi-obd-scanner

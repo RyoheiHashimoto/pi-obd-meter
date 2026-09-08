@@ -114,3 +114,45 @@ func TestSlipCalibrator_RejectsImplausibleAbsolute(t *testing.T) {
 		t.Errorf("ありえない k を取り込んだ: %.2f → %.2f", before, c.K())
 	}
 }
+
+// 実走ログから求めた k と、既定値がずれていないことを確認する。
+//
+// 2026-08-30 の高速走行で、ロックアップ中・4速・60km/h超・変速中を除いた
+// 31,037 サンプルから k を実測した。
+//
+//	中央値 38.713   p5 38.355   p95 40.275   σ 0.671
+//
+// 既定の 38.42 との差は +0.8% で、滑り比に直すと 0.008 の誤差にとどまる。
+// 校正器が学習しなくても実用上の精度が出ることを意味する。
+func TestDefaultSpeedRatioK_MatchesMeasured(t *testing.T) {
+	const measured = 38.713
+	diff := math.Abs(DefaultSpeedRatioK-measured) / measured
+	if diff > 0.03 {
+		t.Errorf("既定 k = %.3f が実測 %.3f から %.1f%% ずれている。"+
+			"タイヤ外径か最終減速比の想定が変わっていないか確認すること",
+			DefaultSpeedRatioK, measured, diff*100)
+	}
+}
+
+// 滑り比とロック率が互いの逆数になっていること。
+// ロガーは滑り比を、UI はロック率を使うため、両者がずれると解析が食い違う。
+func TestSlipAndLockPctAreConsistent(t *testing.T) {
+	c := NewSlipCalibrator()
+	mech := MechGearRatio(3)
+	for _, speed := range []float64{40, 60, 80, 100} {
+		for _, extra := range []float64{1.00, 1.05, 1.10} {
+			rpm := speed * mech * DefaultSpeedRatioK * extra
+			slip, ok := c.Slip(rpm, speed, mech)
+			if !ok {
+				t.Fatalf("%.0fkm/h ×%.2f: 滑りが計算できない", speed, extra)
+			}
+			if math.Abs(slip-extra) > 0.001 {
+				t.Errorf("%.0fkm/h: 滑り = %.4f, want %.4f", speed, slip, extra)
+			}
+			want := 100.0 / extra
+			if got := c.LockPct(rpm, speed, mech); math.Abs(got-want) > 0.1 {
+				t.Errorf("%.0fkm/h ×%.2f: ロック率 = %.2f, want %.2f", speed, extra, got, want)
+			}
+		}
+	}
+}

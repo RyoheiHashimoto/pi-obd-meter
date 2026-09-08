@@ -68,6 +68,67 @@ const (
 //  4. 別の日には 49℃ を指しており、単調増加のカウンタではない。
 const PID22ATFTemp uint16 = 0x17B3
 
+// PID22Status は 0x1101。ブレーキとラジエータファンのビットを持つ。
+//
+// 2026-08-31 に停車・アイドル・アクセル全閉で固定し、20秒踏む→離す→20秒踏む
+// を実施して同定した。95個の全PIDのうち、この操作に一致したのはこれだけ。
+// bit0 は水温が 97→89℃ と下降する場面と一致したのでファン。
+const PID22Status uint16 = 0x1101
+
+// PID22ACCompressor は 0x1103。bit2 がエアコンコンプレッサー。
+//
+// アイドル時の MAP が二峰性 (OFF 30-31kPa / ON 43-46kPa) になることを使って
+// 同定した。フラグが立っているとき MAP が低い例は 1%。燃料は +0.40 L/h 増える。
+// 0x1104 bit0 も同じ挙動を示すが、こちらだけ読めば足りる。
+const PID22ACCompressor uint16 = 0x1103
+
+// PID22Grade は 0x3201。勾配 (符号付き16bit、負が登り)。
+//
+// 大橋JCT (高低差71m、勾配8.9%、2周の螺旋) の登坂で同定した。
+// 74km 走行中に -500 未満が20件あり、うち15件がこの2km区間に集中していた。
+// 加速度との相関は r=+0.009 で無関係。登り切った瞬間に符号が反転する。
+//
+// 単位は未確定。大橋(8.9%)で中央 -690、比叡山の急勾配区間で -2210 が出ている。
+// GPS の標高が取れれば換算式を決められる。
+const PID22Grade uint16 = 0x3201
+
+const (
+	statusBitFan    = 1 << 0 // ラジエータファン
+	statusBitBrake  = 1 << 1 // ブレーキペダル
+	acBitCompressor = 1 << 2 // 0x1103 bit2
+)
+
+// DecodeStatus1101 は 0x1101 の応答からブレーキとファンの状態を取り出す。
+func DecodeStatus1101(data []byte) (brake, fan bool, ok bool) {
+	if len(data) < 1 {
+		return false, false, false
+	}
+	return data[0]&statusBitBrake != 0, data[0]&statusBitFan != 0, true
+}
+
+// DecodeACCompressor は 0x1103 の応答からエアコンコンプレッサーの状態を取り出す。
+func DecodeACCompressor(data []byte) (on bool, ok bool) {
+	if len(data) < 1 {
+		return false, false
+	}
+	return data[0]&acBitCompressor != 0, true
+}
+
+// DecodeGrade は 0x3201 の応答から勾配の生値を返す。負が登り。
+//
+// 単位が未確定なので生値のまま返す。正負と大小には意味があるので、
+// 記録して後から較正できるようにしておく。
+func DecodeGrade(data []byte) (raw int, ok bool) {
+	if len(data) < 2 {
+		return 0, false
+	}
+	v := int(data[0])<<8 | int(data[1])
+	if v > 32767 {
+		v -= 65536
+	}
+	return v, true
+}
+
 // ATF 油温の換算係数。ScanGauge の MTH 002A0019FFC7 に由来する。
 //
 //	°F = raw × 42/25 − 57
@@ -127,22 +188,58 @@ func DecodeATFTemp(data []byte) (tempC float64, ok bool) {
 	return (f - atfFtoCOffset) / atfFtoCScale, true
 }
 
-// ATFAlert は油温に対する注意喚起を返す。何も無ければ空文字列。
+// ATF 油温の区分の境目。
 //
-// 目安は業界の経験則による。約95℃を超えると10℃ごとに油の寿命が半減する。
+// 「1区分 = 油の寿命が半分になる」で刻んだ。業界の経験則では 20°F (11.1℃)
+// 上がるごとに寿命が半減するので、10℃刻みがちょうど1段ぶんにあたる。
 //
-//	100℃ ワニス (酸化生成物) が出始める
-//	120℃ シールが硬化する
-//	130℃ 酸化が急加速する
-//	150℃ クラッチが焼ける
-func ATFAlert(tempC float64) string {
+//	劣化速度 = 2^((T-79)/11.1)   (79℃ を 1.0 とする)
+//	  2倍 →  90.1℃
+//	  4倍 → 101.2℃
+//	  8倍 → 112.3℃
+//	 16倍 → 123.4℃
+//
+// 実測 24.1時間 (2026-08-27〜09-01) での滞在割合と劣化速度:
+//
+//	         温度帯     時間割合  劣化速度
+//	(無印)   〜 90℃     59.0%     0.8倍
+//	warm     90-100     21.4%     2.7倍
+//	caution 100-110     14.2%     5.2倍
+//	hot     110-120      5.4%     8.3倍
+//	danger  120〜         0.0%    未到達
+//
+// 走行の種類との対応 (実測):
+//
+//	停車・アイドル      緑93%
+//	街乗り (<25km/h)    緑84% / 黄緑14%
+//	流れの良い道        緑55% / 黄緑35%
+//	高速巡航 (70km/h+)  黄緑39% / 黄35% / 橙15%
+//
+// 高速に乗ると warm、踏み続けると caution へ移る。danger は 24時間の実測で
+// 一度も出ていないので、出たときは何かが違うという意味を持つ。
+//
+// 参考: 100℃ でワニス (酸化生成物) が出始め、120℃ でシールが硬化し、
+// 150℃ でクラッチが焼ける。
+const (
+	atfWarmC    = 90.0
+	atfCautionC = 100.0
+	atfHotC     = 110.0
+	atfDangerC  = 120.0
+)
+
+// ATFLevel は油温の区分を返す。正常なら空文字列。
+//
+// 返り値は表示色を引くためのキーであって、そのまま画面に出す文言ではない。
+func ATFLevel(tempC float64) string {
 	switch {
-	case tempC >= 130:
-		return "ATF危険"
-	case tempC >= 120:
-		return "ATF高温"
-	case tempC >= 100:
-		return "ATF注意"
+	case tempC >= atfDangerC:
+		return "danger"
+	case tempC >= atfHotC:
+		return "hot"
+	case tempC >= atfCautionC:
+		return "caution"
+	case tempC >= atfWarmC:
+		return "warm"
 	}
 	return ""
 }

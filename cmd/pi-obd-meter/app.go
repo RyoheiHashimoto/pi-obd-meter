@@ -97,15 +97,19 @@ func newApp(cfg Config) *App {
 		oilCfg = maintenance.DefaultOilConfig()
 	}
 
-	// 給油検出の状態はメンテ状態と同じ場所に置く
-	refuelStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "fuel_state.json")
-	healthStatePath := filepath.Join(filepath.Dir(cfg.MaintenancePath), "health_state.json")
+	// 状態ファイルはすべてメンテ状態と同じ場所に置く。
+	// trip だけ NewTracker の既定値 (/var/lib/pi-obd-meter/trip_state.json) に
+	// 頼っていたため、maintenance_path を変えても付いてこなかった (#185)。
+	stateDir := filepath.Dir(cfg.MaintenancePath)
+	refuelStatePath := filepath.Join(stateDir, "fuel_state.json")
+	healthStatePath := filepath.Join(stateDir, "health_state.json")
+	tripStatePath := filepath.Join(stateDir, "trip_state.json")
 
 	app := &App{
 		cfg:       cfg,
 		client:    sender.NewClient(cfg.WebhookURL),
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
-		tracker:   trip.NewTracker(trip.TrackerConfig{}),
+		tracker:   trip.NewTracker(trip.TrackerConfig{StatePath: tripStatePath}),
 		refuel:    fuel.NewDetector(refuelStatePath),
 		health:    health.NewMonitor(healthStatePath),
 		startedAt: time.Now(),
@@ -343,8 +347,18 @@ func (app *App) restoreFromGAS(ctx context.Context) {
 	// 累計はローカルで維持されており走行で増えていくため、この式なら
 	// 復元のタイミングがいつでも正しい値になる。
 	if tripKm, ok := calcRestoredTripKm(app.maintMgr.TotalKm(), restored.LastRefuelKm); ok {
-		app.tracker.SetDistance(tripKm)
-		slog.Info("GASからトリップ復元", "trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		// 実測が1つも無いときだけ入れる。実測があるなら触らない。
+		//
+		// GAS の距離はオドメーター由来の推定値で、上書きすると燃料も
+		// 同じ比率で書き換わる。給油〜給油の燃料積算はレシートとの
+		// 突き合わせに使うため、起動のたびに歪められては較正できない。
+		if app.tracker.RestoreDistanceIfEmpty(tripKm) {
+			slog.Info("GASからトリップ復元 (実測が無いため表示用。燃料は較正に使えない)",
+				"trip_km", tripKm, "last_refuel_km", restored.LastRefuelKm)
+		} else {
+			slog.Info("GASのトリップ距離は使わない (実測を優先)",
+				"gas_trip_km", tripKm, "local_trip_km", app.tracker.DistanceKm())
+		}
 	}
 }
 

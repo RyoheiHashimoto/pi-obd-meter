@@ -83,9 +83,17 @@ func TestCalcFuelEconomy_EngineBraking(t *testing.T) {
 	if got != -1 {
 		t.Errorf("engine braking (load=0): got %.1f, want -1", got)
 	}
+	// 減速時燃料カット中は燃料を使っていない。空気は流れ続けるので
+	// 空気量から求めたレートを返すと、燃やしていない燃料を数えてしまう。
+	if rateLH != 0 {
+		t.Errorf("燃料カット中 (2000rpm): rateLH got %.2f, want 0", rateLH)
+	}
+
+	// ただしアイドル付近では ECU が燃料を復帰させる。0 にしてはいけない。
+	_, lowRPMRate := calcFuelEconomy(60, 1000, 0, 0, false, 0, false, 1.3, 1.0)
 	expectedIdleRate := idleFuelRateCoeff * 1.3
-	if rateLH != expectedIdleRate {
-		t.Errorf("engine braking: rateLH got %.2f, want %.2f", rateLH, expectedIdleRate)
+	if lowRPMRate != expectedIdleRate {
+		t.Errorf("低回転 (1000rpm): rateLH got %.2f, want %.2f (燃料は復帰している)", lowRPMRate, expectedIdleRate)
 	}
 	// 負荷3%でもエンブレ判定（<5%）
 	got3, _ := calcFuelEconomy(60, 2000, 3, 0, false, 0, false, 1.3, 1.0)
@@ -921,5 +929,69 @@ func TestWriteJSON(t *testing.T) {
 	}
 	if result["key"] != "value" {
 		t.Errorf("key: got %q, want value", result["key"])
+	}
+}
+
+// MAP が使える車での燃料カット。2026-08-27〜30 の実測で、この条件が
+// 走行時間の 11.4% を占め、積算 95.66L のうち 3.83L が実際には
+// 消費されていない燃料だった。
+func TestCalcFuelEconomy_FuelCutWithMAP(t *testing.T) {
+	const (
+		speed = 80.0
+		disp  = 1.3
+		maf   = 5.0 // g/s — 惰行中も空気は流れている
+	)
+	// MAP 20kPa = 強い負圧 = スロットル全閉
+	kmL, rate := calcFuelEconomy(speed, 2500, 0, maf, true, 20, true, disp, 1.0)
+	if kmL != -1 {
+		t.Errorf("エンブレ判定されていない: kmL=%.1f", kmL)
+	}
+	if rate != 0 {
+		t.Errorf("燃料カット中に %.2f L/h を計上した。空気は流れても燃料は流れていない", rate)
+	}
+
+	// 同じ MAP でも回転が低ければ燃料は復帰している
+	_, lowRate := calcFuelEconomy(speed, 1100, 0, maf, true, 20, true, disp, 1.0)
+	if lowRate <= 0 {
+		t.Errorf("1100rpm で 0 にした。ECU はアイドル付近で燃料を戻すので 0 にしてはいけない")
+	}
+
+	// 通常走行 (MAP 高い) では従来どおり MAF から計算する
+	_, normal := calcFuelEconomy(speed, 2500, 50, maf, true, 70, true, disp, 1.0)
+	want := maf * 3600.0 / (stoichiometricAFR * gasolineDensityGL)
+	if math.Abs(normal-want) > 0.01 {
+		t.Errorf("通常走行の計算が変わった: got %.3f want %.3f", normal, want)
+	}
+}
+
+// config.json に fuel_rate_correction が無いとき、バイナリ自身の既定値が
+// 使われることを確認する。
+//
+// この値は「車両固有の設定」ではなく「燃料モデルの一部」である。モデルを
+// 直せば係数も変わるため、config.json に焼き込むとバイナリとの食い違いが
+// 起きる。2026-08-31 に実際に起きた: 燃料カットの不具合を直して既定を
+// 1.07→1.12 にしたが、Pi 側の config.json は 1.07 のままで、そちらが優先
+// されて 4% の過少になるところだった。
+//
+// 出荷する config.json からキーを外し、常にバイナリの既定に従わせる。
+func TestLoadConfig_FuelCorrectionDefaultsWhenAbsent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(p, []byte(`{"can_interface":"can0"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := loadConfig(p)
+	validateConfig(&cfg)
+	if cfg.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("キー不在時: got %.3f, want %.3f (バイナリ既定)", cfg.FuelRateCorrection, defaultFuelRateCorrection)
+	}
+	// 0 でも既定に落ちること。0 のまま通すと燃料レートが補正なしになる。
+	if err := os.WriteFile(p, []byte(`{"fuel_rate_correction":0}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg2 := loadConfig(p)
+	validateConfig(&cfg2)
+	if cfg2.FuelRateCorrection != defaultFuelRateCorrection {
+		t.Errorf("0 指定時: got %.3f, want %.3f", cfg2.FuelRateCorrection, defaultFuelRateCorrection)
 	}
 }

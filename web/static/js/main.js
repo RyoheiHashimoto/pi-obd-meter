@@ -31,6 +31,47 @@ let wsEverConnected = false;
 let wsRetryCount = 0;
 let usingPolling = false;
 
+// 直前に確定した実ギア。変速の過渡で実ギアが不定 (0) になる間、これを表示する。
+//
+// 実測 (2026-09-01、114分・17,681サンプル) では実ギアが不定なのは 2.6% で、
+// 中央 0.40秒・最長 2.9秒。ここで 0 に落とすと変速のたびに段が消える。
+// ロック率が同じ理由で直前値を保持しているのに揃える。
+let lastEngagedGear = 0;
+
+// 機械ギア比 (FN4A-EL)。落とした先の回転を見積もるのに使う。
+const MECH_RATIO = { 1: 2.816, 2: 1.498, 3: 1.000, 4: 0.726 };
+
+// レンジの深さ。小さいほど低いギアを使う。
+const RANGE_DEPTH = { D: 3, S: 2, L: 1 };
+
+// AT がダウンシフトを許す回転の上限。
+//
+// 運転者が HOLD を入れる / レバーを D→S, S→L と落とすと AT は1段下を目標に
+// する。落とした先の回転がこの値を超える間は実行を保留し、車速が落ちるのを
+// 待つ。実測 (16.5時間) では、待たされた6件すべてが下の回転で変速した。
+//
+//   106.0km/h 3→2  3.4秒待って 5,363rpm
+//    99.7km/h 3→2  2.7秒待って 5,383rpm
+//    99.2km/h 3→2  1.7秒待って 5,365rpm
+//    98.5km/h 3→2  1.4秒待って 5,366rpm
+//    97.7km/h 3→2  1.5秒待って 5,345rpm
+//    96.8km/h 3→2  0.8秒待って 5,385rpm
+//
+// 即座に実行された指令の最高は 5,296rpm (127.5km/h からの 4→3) なので、
+// 境界は 5,296〜5,345rpm の間にある。実測はすべて 3→2。4速→3速で 5,360rpm に
+// 届くのは 142km/h なので、実用域で当たるのは2速の要求だけである。
+const DOWNSHIFT_PERMIT_RPM = 5360;
+
+// 待たされている変速の解除を遅らせる時間。
+// 回転が閾値を切ってから実際に変速するまでは実測 6/6 で 0.2秒以内。
+// 通常の変速点滅へ切れ目なくつなぐため、少し引き延ばしてから消す。
+const DOWNSHIFT_PENDING_GRACE_MS = 600;
+
+// 運転者が命じたが、速度が高すぎてまだ実行されていないダウンシフト。
+let pendingDownshift = null;
+let lastHoldState = false;
+let lastRangeStr = '';
+
 // --- データ適用 ---
 function applyData(d) {
   // OBD 未接続時 (ACC/エンジン停止) はプレースホルダー状態
@@ -40,8 +81,119 @@ function applyData(d) {
   const rpm = obdOn ? (d.rpm || 0) : 0;
   gs.update(spd, rpm, speedColor(spd), rpmColor(rpm));
   updateThrottle(obdOn ? (d.throttle_pos || 0) : 0);
-  updateGear(obdOn ? (d.gear || 0) : 0, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null);
+  const g = displayGear(obdOn, d);
+  updateGear(g.gear, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null, g.shifting);
   updateIndicators(dom, d, conf);
+}
+
+// 表示するギアを決める。
+//
+// d.gear は「目標ギア」で、変速指令が出た瞬間に切り替わる。実際に噛むのは
+// その後なので、そのまま出すと嘘の段が表示される。実測 (2026-09-01) では
+// 走行中の 2.4% で目標と実ギアが食い違っていた。114分の走行で約83秒間にあたる。
+//
+//   目標4→実3 ×179   目標3→実4 ×109   目標3→実2 ×64   目標2→実3 ×48
+//
+// 「速度が落ち切る前に2速へ落としたとき、まだ3速なのに2速と表示される」
+// という報告と一致する。d.engaged_gear (ギア比から求めた実ギア、#153) を使う。
+//
+// 目標と実ギアが違う間は「目標を点滅」で出す。段が飛ぶのではなく、
+// これから入る段が先に見えて、噛んだ瞬間に点灯へ変わる。
+// 実測 (30,993サンプル) では走行中の 6.2% がこの状態で、352回・中央 1.00秒、
+// 95% が 2秒以内に終わる。点滅周期 0.6秒なので 1秒あれば2回沈む。
+//
+// もうひとつ、目標ギアにすら出てこない「待たされている変速」がある。
+// trackPendingDownshift() を参照。こちらも同じ点滅で出す。
+function displayGear(obdOn, d) {
+  if (!obdOn) {
+    lastEngagedGear = 0;
+    pendingDownshift = null;
+    lastHoldState = false;
+    lastRangeStr = '';
+    return { gear: 0, shifting: false };
+  }
+  const eng = d.engaged_gear || 0;
+  if (eng > 0) lastEngagedGear = eng;
+  const tgt = d.gear || 0;
+  trackPendingDownshift(d, tgt);
+  if (tgt >= 1 && tgt <= 4 && lastEngagedGear > 0 && tgt !== lastEngagedGear) {
+    return { gear: tgt, shifting: true };
+  }
+  if (pendingDownshift) {
+    return { gear: pendingDownshift.to, shifting: true };
+  }
+  return { gear: lastEngagedGear, shifting: false };
+}
+
+// 1段下のギアに入れたときの回転を見積もる。トルコンの滑りは変速の前後で
+// ほぼ変わらないので、機械ギア比の比だけで足りる。
+function wouldBeRPM(rpm, from, to) {
+  const mf = MECH_RATIO[from];
+  const mt = MECH_RATIO[to];
+  if (!mf || !mt || rpm < 300) return 0;
+  return (rpm * mt) / mf;
+}
+
+// 運転者が命じたのに、速度が高すぎてまだ実行されていないダウンシフトを追う。
+//
+// この状態は CAN のどこにも出ない。ギア番号 (0x230 B0) は元の段のまま、
+// ギア比 (B2) も動かず、0x231 の変速中フラグも立たない。だから目標ギアと
+// 実ギアの比較では拾えない。実測 (2026-08-30) では 107.5km/h で S に入れた
+// あと 6.5秒間まったく無反応で、運転者が D へ戻している。
+//
+// 拾えるのは運転者の指令のほうである。HOLD もレンジも即座に CAN に出る。
+// 指令の瞬間に「1段下がまだ回りすぎるか」を計算すれば、待たされているか
+// どうかが分かる。落ちる先は必ず1段だけで、S に入れて4速から3速へ落ちた
+// あと自分から2速を追いに行くことはない (実測 31件すべて)。
+//
+// 閾値を下回っても AT が動かない要求 — S レンジで HOLD を押して2速から1速を
+// 求める類 — では点滅しない。これは速度ではなく変速スケジュールによる拒否で、
+// 待っても来ないからである。実測でも 34件すべて実行されなかった。
+function trackPendingDownshift(d, tgt) {
+  const rng = d.at_range_str || '';
+  const hold = !!d.hold;
+  const prevHold = lastHoldState;
+  const prevRange = lastRangeStr;
+  lastHoldState = hold;
+  lastRangeStr = rng;
+
+  // 指令が取り消された / ギア番号が動いた (通常の変速点滅へ引き継ぐ)
+  if (pendingDownshift) {
+    const cancelled = pendingDownshift.byHold
+      ? !hold
+      : (RANGE_DEPTH[rng] || 0) > RANGE_DEPTH[pendingDownshift.range];
+    const moved = tgt >= 1 && tgt <= 4 && tgt !== pendingDownshift.from;
+    if (cancelled || moved) pendingDownshift = null;
+  }
+
+  // 新しいダウンシフト指令 — HOLD を入れた、またはレンジを深いほうへ動かした
+  const holdOn = hold && !prevHold;
+  const rangeDown = (RANGE_DEPTH[rng] || 0) > 0 && (RANGE_DEPTH[prevRange] || 0) > 0
+    && RANGE_DEPTH[rng] < RANGE_DEPTH[prevRange];
+  if (!pendingDownshift && (holdOn || rangeDown)) {
+    // 起点は実ギアを使う。ギア番号 (0x230 B0) では駄目である。指令と同じ
+    // 200ms フレームの中で AT が実行してしまうことがあり、そのときギア番号は
+    // もう落ちた先を指しているので、「さらに1段下」を求められたと誤読する。
+    // 実測ではこの誤読で 122km/h の3速から2速を、86km/h の2速から1速を
+    // 要求したことにされ、20秒以上点滅し続けた。
+    const from = lastEngagedGear;
+    const to = from - 1;
+    if (to >= 1 && wouldBeRPM(d.rpm || 0, from, to) > DOWNSHIFT_PERMIT_RPM) {
+      pendingDownshift = { from, to, byHold: holdOn, range: rng, releaseAt: 0 };
+    }
+  }
+
+  // 回転が閾値を切ったら、ここから 0.2秒で AT が動く。少し待ってから消す。
+  if (pendingDownshift) {
+    const over = wouldBeRPM(d.rpm || 0, pendingDownshift.from, pendingDownshift.to) > DOWNSHIFT_PERMIT_RPM;
+    if (over) {
+      pendingDownshift.releaseAt = 0;
+    } else {
+      const now = performance.now();
+      if (!pendingDownshift.releaseAt) pendingDownshift.releaseAt = now + DOWNSHIFT_PENDING_GRACE_MS;
+      if (now >= pendingDownshift.releaseAt) pendingDownshift = null;
+    }
+  }
 }
 
 // --- WebSocket 接続 ---
