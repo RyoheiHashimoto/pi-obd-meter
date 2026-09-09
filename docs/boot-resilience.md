@@ -86,23 +86,41 @@ overlayfs で root を読み取り専用にし、書き込みをRAMへ逃がす�
 
 SDへの書き込みは実測で **60秒あたり 0 セクタ**。摩耗は止まった。
 
-### journald を volatile から persistent に戻した (2026-09-09)
+### journald の設定が2つに割れていた (2026-09-09 に確認・統合)
 
-第1層で `Storage=volatile` にしたのは SD の摩耗と電断破損を避けるためで、
-当時は正しかった。第2層で `/data` に SSD を足し `/var/log/journal` を
-そこへリンクした時点で、その理由は消えている。
+**最初「ジャーナルは volatile で再起動をまたぐログが残っていない」と判断したが、
+これは誤り。** `harden-boot.sh` のコードだけを読んで実機を見ていなかった。
+実際の状態はこうだった。
 
-volatile のままだと **再起動をまたぐログが一切残らない**。この機体で
-追っている内蔵WiFi の association 失敗 (#184) は起動時の事象なので、
-記録が起動の境界で毎回消えるのは致命的だった。`/data` に直接書く
-ロガー4本だけが例外的に残っていた。
+```
+/etc/systemd/journald.conf.d/pi-obd-volatile.conf   Storage=volatile   RuntimeMaxUse=32M
+/etc/systemd/journald.conf.d/zz-debug-persist.conf  Storage=persistent SystemMaxUse=64M
+```
 
-`harden-boot.sh` を `Storage=persistent` + `SystemMaxUse=512M` に変更した。
+`conf.d` は名前順で後勝ちなので `zz-` が勝ち、**ジャーナルは永続していた**
+(`/var/log/journal` は SSD 上、`journalctl --list-boots` に複数ブート)。
+
+ただし2つの問題があった。
+
+1. **意図が2箇所に割れている。** 片方だけ読むと逆の結論に至る。実際そうなった
+2. **上限が 64M しかなく、4ブート分しか残らない。** #184 は複数の起動を並べ
+   ないと傾向が見えないのに、履歴が足りていなかった。`/data` は 222GB 空いている
+
+`harden-boot.sh` で両方を消し、`zz-pi-obd-journal.conf` 1本に統合した
+(`Storage=persistent` / `SystemMaxUse=512M`)。名前を `zz-` で始めて後勝ちを確実にする。
+
 同時に、同スクリプトにあった `rm -rf /var/log/journal` を撤去した。
-リンクになった後のこの機体で再実行すると、**リンクごと消してしまう**。
+「RAM運用にしたので SD の過去ジャーナルは不要」という趣旨だが、いまの
+構成で再実行すると保存先ごと消してしまう。
 
-`wifi-watchdog.sh` も `/var/log/wifi-watchdog.log` (tmpfs) への書き込みを
-やめ、journal へ出すようにした。自前の日時も外した。RTC が無く、WiFi が
+### wifi-watchdog のログは本当に消えていた
+
+`/var/log/wifi-watchdog.log` は `/data` にリンクされておらず overlay の
+上層 (tmpfs)。**実機のファイルは 2026-09-06 02:49 で更新が止まっていた** ——
+overlayfs が効いた時点以降の書き込みは RAM に載り、毎回消えている。
+残っていたのは下層 (SD) に焼かれた、それ以前のコピーだった。
+
+`journal` へ出すように変更した。自前の日時も外した。RTC が無く、WiFi が
 繋がって NTP が効くまで壁時計が当てにならないため、
 `journalctl -u wifi-watchdog -o short-monotonic` で読む。
 
