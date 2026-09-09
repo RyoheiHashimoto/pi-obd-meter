@@ -7,8 +7,30 @@
 set -euo pipefail
 
 REPO="RyoheiHashimoto/pi-obd-meter"
-DEST="/opt/pi-obd-meter"
-STATE_DIR="/var/lib/pi-obd-meter"
+# 更新の設置先は SSD 側にする。
+#
+# 【なぜ /opt ではないか】
+# / は overlayfs で、上層は tmpfs (/media/root-rw)。/opt への書き込みは RAM に
+# 載るだけで再起動で消える。一方バージョン記録は /var/lib/pi-obd-meter
+# (= /data へのリンク) にあり永続する。この食い違いのため、
+#   更新は適用される → 再起動で消える → 記録だけ残るので再取得もされない
+# という状態になっていた。overlayfs を入れた 2026-09-05 以降、OTA は一度も
+# 生き残っていない (2026-09-09 に実機で確認)。
+#
+# 【なぜ /opt へのリンクにしないか】
+# メーターの実行を SSD のマウントに依存させたくない。ドングルの件で /data は
+# 何度も落ちており、そのときメーターが動き続けたのはバイナリが SD にあった
+# ため。リンクにすると SSD が落ちた瞬間にメーターごと止まる。
+#
+# よって「SSD に置き、無ければ SD のものを使う」。切り替えは run.sh が行う。
+DEST="/opt/pi-obd-meter"        # SD 側の基準 (make deploy が overlayroot-chroot 経由で書く)
+APP_DIR="/data/pi-obd-meter/app"  # OTA の設置先 (永続)
+# バージョン記録はバイナリと同じ層に置く。
+#
+# 別の層に置くと「記録はあるがバイナリは無い」状態が作れてしまい、
+# 再取得もされなくなる。実際それが起きていた。APP_DIR と一緒に消え、
+# 一緒に残る場所に置くこと。
+STATE_DIR="/data/pi-obd-meter/app"
 LOCKFILE="/tmp/pi-obd-meter-update.lock"
 SERVICE="pi-obd-meter"
 
@@ -170,15 +192,16 @@ check_stable() {
     tar xzf "${tmpdir}/release.tar.gz" -C "$tmpdir"
 
     # バックアップ（ロールバック用）
-    cp "${DEST}/pi-obd-meter" "${DEST}/pi-obd-meter.bak" 2>/dev/null || true
+    mkdir -p "$APP_DIR"
+    cp "${APP_DIR}/pi-obd-meter" "${APP_DIR}/pi-obd-meter.bak" 2>/dev/null || true
 
     # インストール
     systemctl stop "$SERVICE" 2>/dev/null || true
-    cp "${tmpdir}/pi-obd-meter" "${DEST}/pi-obd-meter"
-    chmod +x "${DEST}/pi-obd-meter"
+    cp "${tmpdir}/pi-obd-meter" "${APP_DIR}/pi-obd-meter"
+    chmod +x "${APP_DIR}/pi-obd-meter"
     if [ -f "${tmpdir}/pi-obd-scanner" ]; then
-        cp "${tmpdir}/pi-obd-scanner" "${DEST}/pi-obd-scanner"
-        chmod +x "${DEST}/pi-obd-scanner"
+        cp "${tmpdir}/pi-obd-scanner" "${APP_DIR}/pi-obd-scanner"
+        chmod +x "${APP_DIR}/pi-obd-scanner"
     fi
     # web/static を更新 (stable release でも UI 差し替え)
     if [ -d "${tmpdir}/web/static" ]; then
@@ -196,7 +219,7 @@ check_stable() {
     sleep 10
     if ! systemctl is-active --quiet "$SERVICE"; then
         log_warn "リリース $tag 起動失敗、ロールバック"
-        cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
+        cp "${APP_DIR}/pi-obd-meter.bak" "${APP_DIR}/pi-obd-meter"
         systemctl start "$SERVICE"
         rm -rf "$tmpdir"
         return 1
@@ -245,15 +268,16 @@ check_dev() {
     tar xzf "${tmpdir}/dev.tar.gz" -C "$tmpdir"
 
     # バックアップ（ロールバック用）
-    cp "${DEST}/pi-obd-meter" "${DEST}/pi-obd-meter.bak" 2>/dev/null || true
+    mkdir -p "$APP_DIR"
+    cp "${APP_DIR}/pi-obd-meter" "${APP_DIR}/pi-obd-meter.bak" 2>/dev/null || true
 
     # インストール
     systemctl stop "$SERVICE" 2>/dev/null || true
-    cp "${tmpdir}/pi-obd-meter" "${DEST}/pi-obd-meter"
-    chmod +x "${DEST}/pi-obd-meter"
+    cp "${tmpdir}/pi-obd-meter" "${APP_DIR}/pi-obd-meter"
+    chmod +x "${APP_DIR}/pi-obd-meter"
     if [ -f "${tmpdir}/pi-obd-scanner" ]; then
-        cp "${tmpdir}/pi-obd-scanner" "${DEST}/pi-obd-scanner"
-        chmod +x "${DEST}/pi-obd-scanner"
+        cp "${tmpdir}/pi-obd-scanner" "${APP_DIR}/pi-obd-scanner"
+        chmod +x "${APP_DIR}/pi-obd-scanner"
     fi
     # scripts/ を更新する。
     #
@@ -273,7 +297,7 @@ check_dev() {
     sleep 10
     if ! systemctl is-active --quiet "$SERVICE"; then
         log_warn "dev ビルド起動失敗、ロールバック: $published"
-        cp "${DEST}/pi-obd-meter.bak" "${DEST}/pi-obd-meter"
+        cp "${APP_DIR}/pi-obd-meter.bak" "${APP_DIR}/pi-obd-meter"
         systemctl start "$SERVICE"
         rm -rf "$tmpdir"
 
