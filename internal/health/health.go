@@ -46,8 +46,17 @@ type Status struct {
 	// SDへの書き込み量。寿命の目安になる。
 	DiskWrittenGB float64 `json:"disk_written_gb"`
 
-	// 不正終了の累計。エンジン停止のたびに増えるのが正常な状態。
-	// 増え方が異常なら、走行中に電源が落ちている疑いがある。
+	// 【数えているのは OS の起動ではなくアプリの起動】
+	//
+	// BootCount は pi-obd-meter プロセスが立ち上がった回数。make deploy も
+	// systemctl restart も auto-update による入れ替えも 1 回として数える。
+	// UncleanShutdowns は「前回が正常終了を記録せずに終わった」回数で、
+	// 電源断だけでなく SIGKILL や強制停止も含む。
+	//
+	// この2つの比を「走行のうち何割で電源断が起きたか」と読んではいけない。
+	// 開発中の再デプロイが混ざる。2026-09-09 に実際に誤読し、safe shutdown
+	// (#60) の緊急度を過大に見積もった。電源断そのものを数えたいなら
+	// OS の起動回数 (journalctl --list-boots) と突き合わせること。
 	UncleanShutdowns int `json:"unclean_shutdowns"`
 	BootCount        int `json:"boot_count"`
 

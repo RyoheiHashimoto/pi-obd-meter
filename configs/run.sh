@@ -12,8 +12,9 @@
 # から。リンクにすると SSD が落ちた瞬間にメーターごと止まる。
 # ここでフォールバックしておけば、SSD が無くても古い版で動き続ける。
 #
-# このスクリプト自身は /opt (SD側) に置く。make deploy が overlayroot-chroot
-# 経由で書くので永続する。OTA では入れ替えない。
+# このスクリプト自身は /opt/pi-obd-meter/configs/ に置く (deploy が configs/ を
+# そこへ rsync し、overlayroot-chroot 経由で下層にも書くので永続する)。
+# cog-kiosk.sh など実行スクリプトが同居しているのと同じ扱い。OTA では触らない。
 set -u
 
 SD_BIN=/opt/pi-obd-meter/pi-obd-meter
