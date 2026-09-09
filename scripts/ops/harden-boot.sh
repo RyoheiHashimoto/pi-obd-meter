@@ -16,7 +16,7 @@
 # 【このスクリプトがやること】
 #   1. fsck を preen (自動修復できるものだけ直して先へ進む) に変更
 #   2. fsck が失敗しても起動を続行させる
-#   3. journald をRAM運用にして SD への書き込みを激減させる
+#   3. journald を SSD へ永続化する (上限512M)
 #   4. swap を無効化 (SD書き込みの最大要因)
 #   5. noatime で読み込みのたびの書き込みを止める
 #
@@ -44,7 +44,8 @@ if [ "${1:-}" = "--rollback" ]; then
     latest=$(ls -t "$BACKUP_DIR"/fstab.* 2>/dev/null | head -1) || true
     [ -n "${latest:-}" ] && { cp "$latest" /etc/fstab; note "fstab を復元した"; }
     rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
-           /etc/systemd/journald.conf.d/pi-obd-journal.conf
+           /etc/systemd/journald.conf.d/pi-obd-journal.conf \
+           /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf
     note "再起動すると元の設定に戻る"
     exit 0
 fi
@@ -109,18 +110,30 @@ note "emergency: 90秒待って自動再起動するようにした"
 # 事象なので、記録が起動の境界で毎回消えるのは致命的だった。
 #
 # 上限を付けて /data を埋めないようにする。
+# 実機には設定が2つあり競合していた (2026-09-09 に確認):
+#   pi-obd-volatile.conf   Storage=volatile   RuntimeMaxUse=32M
+#   zz-debug-persist.conf  Storage=persistent SystemMaxUse=64M
+# conf.d は名前順で後勝ちなので zz- が勝ち、実際には永続化されていた。
+# ただし 64M しか保持できず、残っていたのは4ブート分だけだった。
+# 意図が2箇所に割れていると次に読む人が誤読するので1本に統合する。
+# 名前を zz- で始めて、確実に後勝ちさせる。
 mkdir -p /etc/systemd/journald.conf.d
-rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf
-cat > /etc/systemd/journald.conf.d/pi-obd-journal.conf <<'CONF'
-# ジャーナルを /var/log/journal (= /data の SSD) に永続化する。
-# SD には書かない。リンク先が SSD であることが前提。
+rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
+      /etc/systemd/journald.conf.d/pi-obd-journal.conf \
+      /etc/systemd/journald.conf.d/zz-debug-persist.conf
+cat > /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf <<'CONF'
+# ジャーナルを /var/log/journal (SSD) に永続化する。SD には書かない。
+#
+# 上限を 64M から 512M へ上げる。起動時の WiFi association 失敗 (#184) は
+# 複数の起動を並べないと傾向が見えないが、64M では4ブート分しか残らなかった。
+# /data は 222GB 空いているので 512M は誤差。
 [Journal]
 Storage=persistent
 SystemMaxUse=512M
 SystemMaxFileSize=64M
 Compress=yes
 CONF
-note "journald: SSDへ永続化 (Storage=persistent, 上限512M)"
+note "journald: 永続化を1本に統合 (Storage=persistent, 上限512M)"
 
 # 保存先が SSD を向いていることを確かめる。
 #
@@ -144,10 +157,10 @@ fi
 # 後から読まれる設定に負けていないか確認する。conf.d はファイル名順で、
 # 後に読まれた方が勝つ。volatile を書く設定が後ろにあると無効化される。
 conflict=$(grep -l "^Storage=volatile" /etc/systemd/journald.conf.d/*.conf 2>/dev/null \
-           | grep -v pi-obd-journal || true)
+           | grep -v zz-pi-obd-journal || true)
 if [ -n "$conflict" ]; then
     for c in $conflict; do
-        if [ "$(basename "$c")" \> "pi-obd-journal.conf" ]; then
+        if [ "$(basename "$c")" \> "zz-pi-obd-journal.conf" ]; then
             die "$c が後に読まれるため persistent が効かない。ファイル名を見直すこと"
         fi
         note "  $c があるが pi-obd-journal.conf が後勝ちするので問題ない"
