@@ -4,6 +4,24 @@
 
 ## 投稿済み
 
+**linux-wireless — brcmfmac のパッチ**
+2026-09-09 15:41 JST 送信。SMTP 受理 (250)。
+
+```
+Message-ID: <20260909064125.67844-1-laurel.medalist12@gmail.com>
+Subject:    [PATCH] wifi: brcmfmac: log the firmware status when a connect fails
+To:         linux-wireless@vger.kernel.org
+Cc:         Arend van Spriel, brcm80211@lists.linux.dev,
+            brcm80211-dev-list.pdl@broadcom.com, linux-kernel@vger.kernel.org
+lore:       https://lore.kernel.org/linux-wireless/20260909064125.67844-1-laurel.medalist12@gmail.com/
+patchwork:  https://patchwork.kernel.org/project/linux-wireless/list/?submitter=&q=brcmfmac+firmware+status
+```
+
+返信が来たら v2 で対応する。指摘されそうな点は本文で先回りしてある
+(なぜ `brcmf_dbg`/`brcmf_info` でないか、`@status` が有効なのはどちらの
+経路かの2点)。
+
+
 **RPi-Distro/firmware-nonfree#38 — `status_code=16` の正体**
 [コメント](https://github.com/RPi-Distro/firmware-nonfree/issues/38#issuecomment-5584166077)（2026-09-08）
 
