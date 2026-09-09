@@ -83,6 +83,15 @@ CM_ SG_ 560 GEAR "0x01..0x04 = 1st..4th, 0x10 = R, 0xF0 = N/P.
 of this message they were 0.08% and 0.02%. Both look like transient states
 around a range change rather than steady values.";
 
+CM_ SG_ 561 GEAR_NUM "The gear the box is commanding, not the one engaged.
+They differ during a deferred downshift. Measured 2026-08-29: selecting S at
+95 km/h moved GEAR_NUM from 3 to 2 at once, but GEAR_RATIO (0x230) stayed at
+1.000 and rpm barely moved (3580 -> 3554). The box only engaged 2nd at
+92.8 km/h, where GEAR_RATIO went to 1.090 - 2nd at 95 km/h would have been
+about 5500 rpm, so the ECU waited.
+Computing torque converter slip from GEAR_NUM gives 0.647 over that stretch
+when the real figure is 0.970. Use GEAR_RATIO (0x230) for the engaged gear.";
+
 CM_ SG_ 561 AT_RANGE "1=P 2=R 3=N 4=D 5=S 6=L.
 Raw 0 also appears in 0.06% of frames and is not identified; it is transient.
 Frequencies over 162800 frames: D 77.0%, P 10.2%, S 8.2%, R 2.7%, L 1.8%,
@@ -93,6 +102,9 @@ On this car about 0.45 L per point against fill-up receipts, with roughly 6%
 spread; the sender clips at both ends and is not linear in between.
 14.9 points was the reading when the factory low-fuel lamp came on.";
 
+CM_ SG_ 1072 ODOMETER "Resolution is 10 km, not 1 km - the raw 16 bit field
+counts tens of kilometres. Do not expect it to track short trips.";
+
 CM_ SG_ 1072 UNKNOWN_B1 "Not identified. Tracks battery voltage but is not the
 voltage itself, and is not independent of FUEL_LEVEL: B0 + 2*B1 is about 418.
 Use OBD-2 standard PID 0x42 for control module voltage instead.";
@@ -100,6 +112,11 @@ Use OBD-2 standard PID 0x42 for control module voltage instead.";
 CM_ SG_ 1056 DISTANCE_PULSE "Free running 8 bit counter that increments with
 distance travelled. Integrating it tracks GPS distance to about 0.1% over
 80 km. Wraps; take differences modulo 256.";
+
+CM_ SG_ 513 ENGINE_LOAD "Raw engine load as the ECU broadcasts it, not a
+percentage. Idle sits at 0..1 and the highest value seen over 407321 frames
+of normal driving is 128, so neither 100 nor 255 is the full scale. Pick the
+reference points from your own vehicle before scaling it.";
 
 CM_ SG_ 513 SPEED "Raw value is offset by 10000 and scaled by 100.
 WHEEL_SPEEDS (0x4B0) uses the same encoding.

@@ -13,13 +13,13 @@ from collections import defaultdict
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DBC = os.path.join(REPO, "contrib", "mazda_demio_dy.dbc")
-# Go 側と同じ順序・同じ 200000 フレームを見る
-LIMIT = 200000
 # Go 側が出している信号だけを比べる
 FIELDS = {0x201: ["RPM", "SPEED", "ENGINE_LOAD"],
           0x430: ["FUEL_LEVEL", "UNKNOWN_B1", "ODOMETER"],
           0x420: ["COOLANT_TEMP", "DISTANCE_PULSE"],
-          0x4B0: ["WHEEL_MEAN"]}
+          0x4B0: ["WHEEL_MEAN"],
+          0x230: ["GEAR_MAPPED", "GEAR_RATIO_UNWRAPPED"],
+          0x231: ["GEAR_NUM", "AT_RANGE", "HOLD", "TC_LOCKUP", "SHIFTING"]}
 
 # Go の DecodeWheelSpeed は FL ではなく4輪平均を返し、負値を 0 にクランプする。
 # 信号名をそのまま突き合わせると「DBC が間違っている」ように見えるので、
@@ -49,14 +49,24 @@ def main():
             except ValueError:
                 continue
             n += 1
-            if n > LIMIT:
-                break
             if fid not in FIELDS:
                 continue
             m = db.decode_message(fid, data)
             for k in FIELDS[fid]:
                 if k == "WHEEL_MEAN":
                     v = sum(max(0.0, float(raw(m[w]))) for w in WHEELS) / 4
+                elif k == "GEAR_MAPPED":
+                    # Go の DecodeATCtrl は生バイトを 1..4 / それ以外 0 に畳む。
+                    g = int(raw(m["GEAR"]))
+                    v = float(g) if 1 <= g <= 4 else 0.0
+                elif k == "GEAR_RATIO_UNWRAPPED":
+                    # DBC は生の(ラップした)比を持つ。CM_ BO_ 560 に書いた
+                    # 「1速と R だけ 2.56 を足す」規則を適用して突き合わせる。
+                    # DBC そのものではなく「DBC + その注記」を検証している。
+                    g = int(raw(m["GEAR"]))
+                    v = float(raw(m["GEAR_RATIO"]))
+                    if (g == 1 or g == 0x10) and v < 0.5:
+                        v += 2.56
                 else:
                     v = float(raw(m[k]))
                 mine[(n, f"{fid:03X}", k)] = v
