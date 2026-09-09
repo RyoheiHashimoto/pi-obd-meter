@@ -3,9 +3,20 @@
 #
 # 重要: pi-obd-meter は CAN 接続のたびに `ip link set can0 down/up` を実行する。
 # （この監視が無かったため 2026-08-18 の走行データを取り逃した）
-LOG=/var/log/wifi-watchdog.log
 GW=192.168.179.1
-log(){ echo "$(date '+%F %T') $*" >> $LOG; }
+
+# journal に出す。以前は /var/log/wifi-watchdog.log に書いていたが、
+# root は overlayfs の tmpfs で、このパスは /data にリンクされていない。
+# つまり再起動のたびに消えていた。起動時の association 失敗 (#184) を
+# 追っているのに、記録が起動の境界で毎回失われていた。
+#
+# 自前の日時も付けない。Pi に RTC が無く、WiFi が繋がって NTP が効くまで
+# 壁時計が当てにならない。journald は単調時間も持っているので
+# `journalctl -u wifi-watchdog -o short-monotonic` で正しい順序が読める。
+#
+# 永続化には journald が Storage=persistent であることが要る
+# (harden-boot.sh で設定。2026-09-09 に volatile から変更した)。
+log(){ echo "$*"; }
 
 # 既に到達できるなら何もしない
 if ping -c1 -W2 $GW >/dev/null 2>&1; then exit 0; fi

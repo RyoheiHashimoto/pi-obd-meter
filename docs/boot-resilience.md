@@ -32,7 +32,7 @@ Piは車のアクセサリ電源で動いているため、**エンジンを切�
 | `fsck.repair=preen` | 自動で直せるものだけ直して先へ進む。直しきれなくても止まらない |
 | `systemd-fsck-root` の `SuccessExitStatus=0 1 2 4` | fsck が直しきれなくても起動を続ける |
 | `emergency.service` に90秒後の自動再起動 | 落ちても誰も応答できないので、待つより再起動する |
-| journald を `Storage=volatile` | ログをRAMだけに置き、SDへ書かない。常時書き続けるため影響が大きい |
+| journald を `Storage=persistent` (SSD) | 2026-09-09 に volatile から変更。理由は下記 |
 | swap 無効化 | SD書き込みの最大要因 |
 | root に `noatime` | 読み込みのたびに発生する書き込みを止める |
 
@@ -85,6 +85,26 @@ overlayfs で root を読み取り専用にし、書き込みをRAMへ逃がす�
 | `/var/lib/pi-obd-meter` | `/data/pi-obd-meter` |
 
 SDへの書き込みは実測で **60秒あたり 0 セクタ**。摩耗は止まった。
+
+### journald を volatile から persistent に戻した (2026-09-09)
+
+第1層で `Storage=volatile` にしたのは SD の摩耗と電断破損を避けるためで、
+当時は正しかった。第2層で `/data` に SSD を足し `/var/log/journal` を
+そこへリンクした時点で、その理由は消えている。
+
+volatile のままだと **再起動をまたぐログが一切残らない**。この機体で
+追っている内蔵WiFi の association 失敗 (#184) は起動時の事象なので、
+記録が起動の境界で毎回消えるのは致命的だった。`/data` に直接書く
+ロガー4本だけが例外的に残っていた。
+
+`harden-boot.sh` を `Storage=persistent` + `SystemMaxUse=512M` に変更した。
+同時に、同スクリプトにあった `rm -rf /var/log/journal` を撤去した。
+リンクになった後のこの機体で再実行すると、**リンクごと消してしまう**。
+
+`wifi-watchdog.sh` も `/var/log/wifi-watchdog.log` (tmpfs) への書き込みを
+やめ、journal へ出すようにした。自前の日時も外した。RTC が無く、WiFi が
+繋がって NTP が効くまで壁時計が当てにならないため、
+`journalctl -u wifi-watchdog -o short-monotonic` で読む。
 
 設定は `/etc/overlayroot.conf`:
 

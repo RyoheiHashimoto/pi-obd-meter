@@ -293,7 +293,7 @@ Wayland では `unclutter` (X11 専用) は効かない。代わりに:
 
 ### 自動（setup 時に適用済み）
 - **swap 無効化**: `dphys-swapfile` を停止・無効化
-- **ログ**: journald（RAM上、SDに書き込まない）
+- **ログ**: journald（SSD `/data/log/journal` に永続化。SDには書かない）
 
 ### アプリ側の対策
 - **アトミック書き込み**: maintenance.json / trip_state.json は tmp + rename + fsync で保存。電源断でファイルが壊れない
