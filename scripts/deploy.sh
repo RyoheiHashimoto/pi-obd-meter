@@ -59,6 +59,21 @@ cmd_persist() {
     fi
     sudo mount -o remount,rw /media/root-ro
     sudo rsync -a ${DEST}/ /media/root-ro${DEST}/
+
+    # systemd ユニットも下層へ書く。
+    #
+    # /etc/systemd/system は overlay の上層 (tmpfs) なので、ここに置いた
+    # ユニットは再起動で消え、SD に焼かれた古い版に戻る。auto-update から
+    # 永続化するのは overlayroot-chroot を自動で叩くことになり危険なので、
+    # deploy でだけ行う (#191)。
+    for u in ${DEST}/scripts/ops/systemd/*.service ${DEST}/scripts/ops/systemd/*.timer \
+             ${DEST}/configs/pi-obd-meter.service; do
+      [ -f "$u" ] || continue
+      n=$(basename "$u")
+      sudo cp "$u" "/etc/systemd/system/$n"
+      sudo cp "$u" "/media/root-ro/etc/systemd/system/$n"
+    done
+    sudo systemctl daemon-reload
     sync
     # 稼働中の remount,ro は overlayfs が下層を掴んでいるため EBUSY で失敗する。
     # overlayroot-chroot は終了時に確実に ro へ戻すので、その後始末を借りる。

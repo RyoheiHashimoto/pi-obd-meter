@@ -167,6 +167,60 @@ func TestTrackerSetDistance_Zero(t *testing.T) {
 	}
 }
 
+// SetDistance(0) は給油時の経路。距離だけでなくトリップごと作り直す。
+// 距離だけ 0 にしていた頃は最高速度と開始時刻が前のタンクのまま残り、
+// 給油後の最高速度として 9/7 の 134 km/h が表示された。
+func TestTrackerSetDistance_Zero_StartsNewTrip(t *testing.T) {
+	tr := newTestTracker(t)
+	feedWithFuel(tr, 120, 8, 20)
+
+	before := tr.GetCurrent()
+	if before.MaxSpeedKmh != 120 {
+		t.Fatalf("前提が崩れている MaxSpeedKmh: got %.1f, want 120", before.MaxSpeedKmh)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	tr.SetDistance(0)
+
+	got := tr.GetCurrent()
+	if got.MaxSpeedKmh != 0 {
+		t.Errorf("MaxSpeedKmh: got %.1f, want 0", got.MaxSpeedKmh)
+	}
+	if got.DistanceKm != 0 {
+		t.Errorf("DistanceKm: got %.6f, want 0", got.DistanceKm)
+	}
+	if got.FuelConsumptionL != 0 {
+		t.Errorf("FuelConsumptionL: got %.6f, want 0", got.FuelConsumptionL)
+	}
+	if got.DrivingTimeSec != 0 || got.IdleTimeSec != 0 {
+		t.Errorf("走行/アイドル時間が残った: driving=%.3f idle=%.3f", got.DrivingTimeSec, got.IdleTimeSec)
+	}
+	if got.Samples != 0 {
+		t.Errorf("Samples: got %d, want 0", got.Samples)
+	}
+	// TripID は秒精度なので同一秒だと一致しうる。開始時刻で見る。
+	if !got.StartTime.After(before.StartTime) {
+		t.Errorf("StartTime が更新されていない: before=%s after=%s", before.StartTime, got.StartTime)
+	}
+}
+
+// 0 以外の補正はトリップを作り直さない（純正メーター値との突き合わせ用）
+func TestTrackerSetDistance_NonZero_KeepsTrip(t *testing.T) {
+	tr := newTestTracker(t)
+	feed(tr, 120, 20)
+
+	before := tr.GetCurrent()
+	tr.SetDistance(500)
+
+	got := tr.GetCurrent()
+	if got.MaxSpeedKmh != 120 {
+		t.Errorf("MaxSpeedKmh: got %.1f, want 120", got.MaxSpeedKmh)
+	}
+	if got.TripID != before.TripID {
+		t.Errorf("TripID が変わった: before=%s after=%s", before.TripID, got.TripID)
+	}
+}
+
 func TestTrackerSetDistance_Negative(t *testing.T) {
 	tr := newTestTracker(t)
 	feed(tr, 60, 20)

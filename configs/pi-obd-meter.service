@@ -14,7 +14,7 @@ ExecStartPre=-/sbin/ip link set can0 type can bitrate 500000 restart-ms 100 list
 ExecStartPre=-/sbin/ip link set can0 up
 # run.sh が SSD 側 (OTA 適用済み) と SD 側 (deploy 済み) のどちらを使うか決める。
 # 直接バイナリを指すと、OTA の設置先が overlayfs の RAM 層になり再起動で消える。
-ExecStart=/opt/pi-obd-meter/run.sh
+ExecStart=/opt/pi-obd-meter/configs/run.sh
 Restart=always
 RestartSec=5
 User=root

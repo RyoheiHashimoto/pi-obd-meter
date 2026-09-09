@@ -137,27 +137,56 @@ install_scripts() {
         fi
     done
 
-    # ロガーは /usr/local/bin から起動しているので、変わっていれば入れ替えて
-    # サービスを再起動する。再起動しないと古いコードのまま動き続ける。
-    local pair name unit
-    for pair in "ops/drive-verify.py:drive-verify" "ops/poll22-lean.py:poll22" "ops/gps-log.py:gps-log"; do
-        name="${pair%%:*}"; unit="${pair##*:}"
-        [ -f "${DEST}/scripts/${name}" ] || continue
-        dst="/usr/local/bin/$(basename "$name")"
-        if ! cmp -s "${DEST}/scripts/${name}" "$dst"; then
-            # 失敗したまま再起動すると、古いコードのまま止まるだけ損をする。
+    # スクリプトの配布先は systemd ユニットの ExecStart から導く。
+    #
+    # 以前は "ops/drive-verify.py:drive-verify" のような対応表をここに
+    # 書いていた。ユニットを足しても表に足し忘れると、そのスクリプトだけ
+    # 永久に更新されない。2026-09-09 に実際そうなっており、can-verify.sh /
+    # imu-log.py / wifi-watchdog.sh / log-retention.sh の4本が対象外だった。
+    # 直した wifi-watchdog.sh が Pi に届かないことで発覚した (#191)。
+    #
+    # ExecStart を読めば「そのユニットがどこの何を起動するか」が分かる。
+    # 表を二重に持たない。
+    local unit_file uname_ execpath dst src
+    for unit_file in "${DEST}/scripts/ops/systemd/"*.service; do
+        [ -f "$unit_file" ] || continue
+        uname_=$(basename "$unit_file" .service)
+        # ExecStart=/usr/bin/python3 /usr/local/bin/foo.py のように
+        # インタプリタが前置される形もあるので、/usr/local 配下の引数を拾う。
+        execpath=$(awk -F= '/^ExecStart=/{print $2}' "$unit_file" \
+                   | tr ' ' '\n' | grep '^/usr/local/' | head -1)
+        [ -n "$execpath" ] || continue
+        src="${DEST}/scripts/ops/$(basename "$execpath")"
+        [ -f "$src" ] || continue
+        cmp -s "$src" "$execpath" && continue
+        mkdir -p "$(dirname "$execpath")"
+        if cp "$src" "${execpath}.new" && chmod +x "${execpath}.new" \
+           && mv -f "${execpath}.new" "$execpath"; then
+            log "スクリプト更新: $execpath ($uname_)"
+            # 失敗したまま再起動すると古いコードで止まるだけ損をするので、
             # 入れ替えが成功したときだけ再起動する。
-            if cp "${DEST}/scripts/${name}" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
-                log "ロガー更新: $(basename "$name")"
-                if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
-                    systemctl restart "$unit" 2>/dev/null || log_warn "$unit の再起動に失敗"
-                fi
-            else
-                rm -f "${dst}.new"
-                log_warn "ロガー更新失敗: $(basename "$name")"
+            if systemctl is-enabled --quiet "$uname_" 2>/dev/null \
+               && systemctl is-active --quiet "$uname_" 2>/dev/null; then
+                systemctl restart "$uname_" 2>/dev/null || log_warn "$uname_ の再起動に失敗"
             fi
+        else
+            rm -f "${execpath}.new"
+            log_warn "スクリプト更新失敗: $execpath"
         fi
     done
+
+    # poll22 だけはユニットがリポジトリに無く Pi 側にしかないので個別に扱う。
+    # ユニットを scripts/ops/systemd/ に移せばこの分岐は不要になる。
+    src="${DEST}/scripts/ops/poll22-lean.py"
+    dst=/usr/local/bin/poll22-lean.py
+    if [ -f "$src" ] && ! cmp -s "$src" "$dst"; then
+        if cp "$src" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
+            log "スクリプト更新: $dst (poll22)"
+            systemctl is-active --quiet poll22 2>/dev/null && { systemctl restart poll22 2>/dev/null || true; }
+        else
+            rm -f "${dst}.new"
+        fi
+    fi
 }
 
 # --- Stable release チェック ---
