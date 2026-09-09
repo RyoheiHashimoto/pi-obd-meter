@@ -66,12 +66,14 @@ cmd_persist() {
     # ユニットは再起動で消え、SD に焼かれた古い版に戻る。auto-update から
     # 永続化するのは overlayroot-chroot を自動で叩くことになり危険なので、
     # deploy でだけ行う (#191)。
+    # \$u / \$n はリモート側で評価させる。ここは二重引用符の中なので
+    # エスケープしないと Mac 側で空に展開され、set -u で落ちる。
     for u in ${DEST}/scripts/ops/systemd/*.service ${DEST}/scripts/ops/systemd/*.timer \
              ${DEST}/configs/pi-obd-meter.service; do
-      [ -f "$u" ] || continue
-      n=$(basename "$u")
-      sudo cp "$u" "/etc/systemd/system/$n"
-      sudo cp "$u" "/media/root-ro/etc/systemd/system/$n"
+      [ -f \"\$u\" ] || continue
+      n=\$(basename \"\$u\")
+      sudo cp \"\$u\" \"/etc/systemd/system/\$n\"
+      sudo cp \"\$u\" \"/media/root-ro/etc/systemd/system/\$n\"
     done
     sudo systemctl daemon-reload
     sync
