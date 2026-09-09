@@ -29,9 +29,21 @@ usable() {
     [ "$sz" -ge 1048576 ]
 }
 
-if usable "$SSD_BIN"; then
+# 【新しい方を使う。SSD 側を無条件に優先してはいけない】
+#
+# 初版は usable なら常に SSD 側を選んでいた。そのため OTA が一度でも走ると
+# make deploy で /opt に置いたバイナリが永久に使われなくなる。デプロイした
+# のに反映されない、という分かりにくい壊れ方をする。2026-09-09 に別セッション
+# が実機で踏んで報告してきた (deploy 直後でも SSD 側の古い md5 で起動していた)。
+#
+# mtime で新しい方を選ぶ。OTA も deploy も書いた時刻が入るので、
+# 「最後に入れた方が動く」という素直な意味になる。
+if usable "$SSD_BIN" && [ "$SSD_BIN" -nt "$SD_BIN" ]; then
     BIN=$SSD_BIN
-    echo "起動: $BIN (SSD側、OTA適用済み)"
+    echo "起動: $BIN (SSD側。OTA が deploy より新しい)"
+elif usable "$SSD_BIN"; then
+    BIN=$SD_BIN
+    echo "起動: $BIN (SD側。deploy が OTA より新しい)"
 else
     BIN=$SD_BIN
     if [ -e "$SSD_BIN" ]; then
