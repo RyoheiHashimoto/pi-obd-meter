@@ -26,13 +26,12 @@ func main() {
 		panic(err)
 	}
 	defer func() { _ = fh.Close() }()
-	limit := 200000
 	w := bufio.NewWriter(os.Stdout)
 	defer func() { _ = w.Flush() }()
 	sc := bufio.NewScanner(fh)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	n := 0
-	for sc.Scan() && n < limit {
+	for sc.Scan() {
 		f := strings.Fields(sc.Text())
 		if len(f) < 5 || !strings.HasPrefix(f[3], "[") {
 			continue
@@ -64,6 +63,22 @@ func main() {
 			_, _ = fmt.Fprintf(w, "%d,420,COOLANT_TEMP,%.9f\n%d,420,DISTANCE_PULSE,%.9f\n", n, t, n, float64(p))
 		case can.IDWheels:
 			_, _ = fmt.Fprintf(w, "%d,4B0,WHEEL_MEAN,%.9f\n", n, can.DecodeWheelSpeed(d))
+		case can.IDATCtrl:
+			g, ratio := can.DecodeATCtrl(d)
+			_, _ = fmt.Fprintf(w, "%d,230,GEAR_MAPPED,%.9f\n%d,230,GEAR_RATIO_UNWRAPPED,%.9f\n",
+				n, float64(g), n, ratio)
+		case can.IDATStatus:
+			gn, rng, hold, tcl, shift := can.DecodeATStatus(d)
+			b := func(v bool) float64 {
+				if v {
+					return 1
+				}
+				return 0
+			}
+			_, _ = fmt.Fprintf(w,
+				"%d,231,GEAR_NUM,%.9f\n%d,231,AT_RANGE,%.9f\n%d,231,HOLD,%.9f\n"+
+					"%d,231,TC_LOCKUP,%.9f\n%d,231,SHIFTING,%.9f\n",
+				n, float64(gn), n, float64(rng), n, b(hold), n, b(tcl), n, b(shift))
 		}
 	}
 }
