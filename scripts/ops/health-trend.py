@@ -26,7 +26,12 @@ def load(path):
         f = open(path, errors="replace")
     except OSError:
         return None
-    r = csv.reader(f)
+    # 電断で切れたファイルは末尾が NUL で埋まる。csv.reader は NUL を見ると
+    # _csv.Error を投げ、下の「行の長さが合わなければ捨てる」分岐まで届かない。
+    # 実測 (2026-09-09): 手元の走行ログ 45 本中 30 本、GPS 22 本中 17 本が該当。
+    # 1本あたりの欠損は 252〜3,873 バイトで実害は無いが、1本でも混ざると
+    # 解析全体が起動しない。ここで落としてから csv に渡す。
+    r = csv.reader(line.replace("\0", "") for line in f)
     try:
         hdr = next(r)
     except StopIteration:
@@ -61,10 +66,22 @@ def idle_voltage(c):
     """アイドル中の電圧。オルタネータ・充電制御の劣化が出る。"""
     if "volt" not in c:
         return None
-    v = [c["volt"][i] for i in range(len(c["t"]))
+    v = [c["volt"][i] for i in range(len(elapsed(c)))
          if c["speed"][i] == 0 and c["rpm"][i] and 550 < c["rpm"][i] < 950
          and c["volt"][i] and c["volt"][i] > 10]
     return med(v)
+
+
+def elapsed(c):
+    """経過時間の列を返す。単調時刻 tm があればそちらを使う。
+
+    壁時計 t は RTC 無しの Pi で NTP が効いた瞬間に数時間跳ぶ。跳びは
+    WiFi の association 完了と同時に起きるため走行の途中に来る (#184)。
+    実測 (2026-09-09) で 45 走行中 3 件が 1070〜1374 分と出て、暖機の傾きが
+    全滅していた。tm は 2026-09-09 に drive-verify.py へ追加した列なので、
+    それ以前のログには無い。無ければ t で代用する (跳びは弾けない)。
+    """
+    return c["tm"] if c.get("tm") else c["t"]
 
 
 def warmup_slope(c):
@@ -75,9 +92,14 @@ def warmup_slope(c):
     (b) 18時間アイドル放置した記録が混ざり分母が巨大になっていた。
 
     採用するのは「40℃未満から始まり、20分以内に80℃へ達した」記録だけ。
+
+    さらに 0℃ は捨てる (2026-09-09 追加)。CAN の最初の 0x420 が届く前の
+    未取得値が 0 で流れており、これを冷間始動と読むと「0℃から0.0分で80℃」
+    という記録が量産される。実測で 17 件の「冷間」のうち 8 件がこれだった。
+    ATF で HasATF を併走させたのと同じ問題で、水温側には印が無いので値で弾く。
     """
-    t, w = c["t"], c["coolant"]
-    if not t or w[0] is None or w[0] >= 40:
+    t, w = elapsed(c), c["coolant"]
+    if not t or w[0] is None or w[0] <= 0 or w[0] >= 40:
         return None
     for i in range(len(t)):
         if w[i] is not None and w[i] >= 80:
@@ -110,7 +132,7 @@ def slip_at_lock(c):
     """ロックアップ中の滑り。トルコンの劣化。"""
     if "locked" not in c:
         return None
-    s = [c["slip"][i] for i in range(len(c["t"]))
+    s = [c["slip"][i] for i in range(len(elapsed(c)))
          if c["locked"][i] and c["slip"][i] and 0 < c["slip"][i] < 2]
     return med(s) if len(s) > 50 else None
 
@@ -130,7 +152,7 @@ def main():
         rows.append({
             "file": os.path.basename(p),
             "date": datetime.datetime.fromtimestamp(c["t"][0]).strftime("%m/%d %H:%M"),
-            "min": (c["t"][-1] - c["t"][0]) / 60.0,
+            "min": (elapsed(c)[-1] - elapsed(c)[0]) / 60.0,
             "km": dist,
             "volt": idle_voltage(c),
             "warm": warmup_slope(c),

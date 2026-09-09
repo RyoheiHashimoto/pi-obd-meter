@@ -19,12 +19,33 @@ WINDOW = 60.0      # 秒
 HALF   = 0.5       # 車速微分の半幅
 
 def load_speed(p):
-    out=[]
-    for row in csv.reader(open(p, errors='replace')):
-        if len(row)<2 or not row[0].replace('.','',1).isdigit(): continue
-        try: out.append((float(row[0]), float(row[1])))
-        except ValueError: pass
-    out.sort(); return out
+    """走行ログから (時刻, 車速) を読む。
+
+    列番号ではなくヘッダ名で引く。drive-verify.py の列は増えることがあり
+    (14 -> 27 -> 28)、位置で読むと足された日に静かに壊れる。2026-09-09 に
+    tm 列を足したとき、index 1 に入れていたら車速が単調時刻として読まれ、
+    時速 1000km 相当の値になるところだった。
+    電断で末尾が NUL になっているファイルがあるので、それも落とす。
+    """
+    out = []
+    with open(p, errors="replace") as fh:
+        r = csv.reader(line.replace("\0", "") for line in fh)
+        try:
+            hdr = next(r)
+        except StopIteration:
+            return out
+        if "t" not in hdr or "speed" not in hdr:
+            return out
+        it, isp = hdr.index("t"), hdr.index("speed")
+        for row in r:
+            if len(row) != len(hdr):
+                continue
+            try:
+                out.append((float(row[it]), float(row[isp])))
+            except ValueError:
+                pass
+    out.sort()
+    return out
 speed = load_speed(drv_path)
 
 def speed_at(t):

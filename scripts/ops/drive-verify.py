@@ -29,9 +29,16 @@ while os.path.exists(path):
     n += 1
     path = "%s-%d.csv" % (base, n)
 f = open(path, "w", buffering=1)
+# tm は単調時刻。壁時計 t とは別に持つ。
+#
+# Pi に RTC が無いため、起動直後は前回の時刻から始まり、WiFi が繋がって
+# NTP が効いた瞬間に t が数時間跳ぶ。内蔵 WiFi の association は 20〜632 秒
+# かかることがある (#184) ので、跳びは走行の途中で起きる。
+# 実測 (2026-09-09): 手元の45走行のうち3件で経過時間が 1070〜1374 分と出て、
+# 暖機の傾き (#187) が計算できなかった。所要時間は必ず tm の差で取ること。
 f.write("t,speed,rpm,gear,engaged,ratio,mech,slip,tcc,locked,hold,range,shifting,"
         "atf,volt,odo,trip_km,fuel_pt,rate_lh,eco,coolant,map,load,"
-        "brake,fan,ac,grade\n")
+        "brake,fan,ac,grade,tm\n")
 print("記録先: %s" % path, flush=True)
 
 while True:
@@ -55,7 +62,7 @@ while True:
     # 正しい滑りは rpm / (車速 × 機械ギア比 × k) で、k はロックアップ中に学習する。
     # アプリの SlipCalibrator がそれを持っているので、API から受け取る。
     slip = d.get("slip_ratio") or 0
-    f.write("%.1f,%.2f,%.1f,%d,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f,%s,%s,%s,%d\n" % (
+    f.write("%.1f,%.2f,%.1f,%d,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f,%s,%s,%s,%d,%.3f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, eng, r, mech, slip,
         d.get("tcc_lock_pct") or 0, d.get("tc_locked"),
@@ -75,6 +82,7 @@ while True:
         # 勾配は符号付きの生値で単位未確定 (負が登り)。
         d.get("brake_pedal"), d.get("radiator_fan"), d.get("ac_compressor"),
         d.get("grade_raw") or 0,
+        time.monotonic(),
     ))
     # 0.2秒周期。加速度を差分から求めるため、0.5秒では全開加速のサンプルが
     # 数点しか取れずトルク推定の分解能が足りなかった。書き込み量は
