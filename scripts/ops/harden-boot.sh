@@ -43,7 +43,8 @@ if [ "${1:-}" = "--rollback" ]; then
     note "cmdline.txt を $latest から復元した"
     latest=$(ls -t "$BACKUP_DIR"/fstab.* 2>/dev/null | head -1) || true
     [ -n "${latest:-}" ] && { cp "$latest" /etc/fstab; note "fstab を復元した"; }
-    rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf
+    rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
+           /etc/systemd/journald.conf.d/pi-obd-journal.conf
     note "再起動すると元の設定に戻る"
     exit 0
 fi
@@ -94,37 +95,63 @@ ExecStartPost=/bin/sh -c 'sleep 90; systemctl reboot -f'
 CONF
 note "emergency: 90秒待って自動再起動するようにした"
 
-# ----------------------------------------- 3. journald を RAM 運用にする
+# ------------------------------ 3. journald を SSD へ永続化する
+#
+# 【2026-09-09 に volatile から変更】
+#
+# 元は Storage=volatile だった。SD カードの摩耗と不正電断による破損を
+# 避けるためで、当時は正しかった。その後 /data に外付け SSD を追加し、
+# /var/log/journal を /data/log/journal へリンクしたことで前提が消えた。
+# SSD は MAX ENDURANCE 品で 222GB 空いており、ジャーナルを書く余裕がある。
+#
+# volatile のままだと再起動をまたぐログが一切残らない。この機体で
+# 追いかけている内蔵WiFi の association 失敗 (#184) は起動時に起きる
+# 事象なので、記録が起動の境界で毎回消えるのは致命的だった。
+#
+# 上限を付けて /data を埋めないようにする。
 mkdir -p /etc/systemd/journald.conf.d
-cat > /etc/systemd/journald.conf.d/pi-obd-volatile.conf <<'CONF'
-# ログをRAMだけに置き、SDへ一切書かない。
-# SDへの書き込みは不正電断で壊れる最大の要因であり、
-# journald は常時書き続けるため影響が大きい。
-# 走行ログは別途 /var/log/ に明示的に書いているものだけ残す。
+rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf
+cat > /etc/systemd/journald.conf.d/pi-obd-journal.conf <<'CONF'
+# ジャーナルを /var/log/journal (= /data の SSD) に永続化する。
+# SD には書かない。リンク先が SSD であることが前提。
 [Journal]
-Storage=volatile
-RuntimeMaxUse=32M
+Storage=persistent
+SystemMaxUse=512M
+SystemMaxFileSize=64M
+Compress=yes
 CONF
-note "journald: RAM運用 (Storage=volatile, 上限32M)"
+note "journald: SSDへ永続化 (Storage=persistent, 上限512M)"
 
-# 既存の設定と競合していないか確認する。conf.d はファイル名順に読まれ、
-# 後に読まれた方が勝つ。Raspberry Pi OS には persistent.conf が入って
-# いることがあり、名前次第では上書きされてしまう。
-conflict=$(grep -l "^Storage=persistent" /etc/systemd/journald.conf.d/*.conf 2>/dev/null | grep -v pi-obd-volatile || true)
-if [ -n "$conflict" ]; then
-    for c in $conflict; do
-        if [ "$(basename "$c")" \> "pi-obd-volatile.conf" ]; then
-            die "$c が後に読まれるため volatile が効かない。ファイル名を見直すこと"
-        fi
-        note "  $c があるが pi-obd-volatile.conf が後勝ちするので問題ない"
-    done
+# 保存先が SSD を向いていることを確かめる。
+#
+# /var/log/journal が実ディレクトリのままだと SD に書いてしまう。
+# 以前ここで rm -rf /var/log/journal をしていたが、リンクになった後は
+# リンクごと消してしまうので撤去した。
+if [ -L /var/log/journal ]; then
+    tgt=$(readlink -f /var/log/journal)
+    case "$tgt" in
+        /data/*) note "  保存先: $tgt (SSD)" ;;
+        *) note "  警告: /var/log/journal が $tgt を指している。SSD ではない" ;;
+    esac
+elif [ -d /var/log/journal ]; then
+    note "  警告: /var/log/journal が実ディレクトリ。SD に書き込む。"
+    note "        /data/log/journal へのリンクに置き換えること"
+else
+    mkdir -p /data/log/journal 2>/dev/null && ln -s /data/log/journal /var/log/journal \
+        && note "  /var/log/journal -> /data/log/journal を作成"
 fi
 
-# RAM運用に切り替えたので、SDに残った過去のジャーナルは不要。
-if [ -d /var/log/journal ]; then
-    sz=$(du -sh /var/log/journal 2>/dev/null | cut -f1)
-    rm -rf /var/log/journal
-    note "  /var/log/journal を削除 ($sz 回収)"
+# 後から読まれる設定に負けていないか確認する。conf.d はファイル名順で、
+# 後に読まれた方が勝つ。volatile を書く設定が後ろにあると無効化される。
+conflict=$(grep -l "^Storage=volatile" /etc/systemd/journald.conf.d/*.conf 2>/dev/null \
+           | grep -v pi-obd-journal || true)
+if [ -n "$conflict" ]; then
+    for c in $conflict; do
+        if [ "$(basename "$c")" \> "pi-obd-journal.conf" ]; then
+            die "$c が後に読まれるため persistent が効かない。ファイル名を見直すこと"
+        fi
+        note "  $c があるが pi-obd-journal.conf が後勝ちするので問題ない"
+    done
 fi
 
 # ------------------------------------------------------- 4. swap を無効化
