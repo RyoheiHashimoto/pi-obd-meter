@@ -53,9 +53,14 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 # ---------------------------------------------- 1. fsck を止まらない設定に
-cp "$CMDLINE" "$BACKUP_DIR/cmdline.txt.$STAMP"
-note "cmdline.txt を退避: $BACKUP_DIR/cmdline.txt.$STAMP"
-
+#
+# 内容が変わるときだけ書く。
+#
+# 以前は無条件に書いていたため、既に目的の内容でも書き込みを試み、
+# overlayfs 有効化後に /boot/firmware が読み取り専用の環境では
+# 「Read-only file system」で1段目から先へ進めなかった (2026-09-10 実機)。
+# journald の設定はこの後ろにあるのに、そこへ到達できない。
+# べき等を謳うなら、変化が無いときは何もしないのが正しい。
 line=$(tr -d '\n' < "$CMDLINE")
 
 # 既存の fsck 指定をすべて外してから付け直す (べき等にするため)
@@ -69,8 +74,18 @@ line="$line fsck.mode=auto fsck.repair=preen"
 
 # 余分な空白を潰す
 line=$(echo "$line" | tr -s ' ' | sed 's/^ //; s/ $//')
-echo "$line" > "$CMDLINE"
-note "cmdline.txt を更新: fsck.mode=auto fsck.repair=preen"
+if [ "$line" = "$(tr -d '\n' < "$CMDLINE")" ]; then
+    note "cmdline.txt: 既に目的の内容。変更しない"
+else
+    cp "$CMDLINE" "$BACKUP_DIR/cmdline.txt.$STAMP"
+    note "cmdline.txt を退避: $BACKUP_DIR/cmdline.txt.$STAMP"
+    if echo "$line" > "$CMDLINE" 2>/dev/null; then
+        note "cmdline.txt を更新: fsck.mode=auto fsck.repair=preen"
+    else
+        note "警告: $CMDLINE が読み取り専用で更新できない。この段は飛ばす"
+        note "      必要なら: sudo mount -o remount,rw /boot/firmware"
+    fi
+fi
 
 # ------------------------------- 2. fsck が失敗しても emergency に落ちない
 # systemd-fsck-root は cmdline だけでは制御しきれないので、
