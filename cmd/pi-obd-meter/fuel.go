@@ -105,8 +105,8 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 
 // calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
 //
-// remainingL (CAN 燃料残量から求めた実残量) があればそれを使う。無ければ
-// 「満タン − 走行距離」で代用する。
+// remainingL (燃料残量の推定値。internal/fuel/estimate.go) があればそれを使う。
+// 無ければ「満タン − 走行距離」で代用する。
 //
 // 代用式は前回給油で満タンにし、かつ trip_km がリセットされていることを前提に
 // するため、そうでない場面で必ずズレた (#188)。
