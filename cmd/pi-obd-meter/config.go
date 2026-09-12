@@ -109,7 +109,8 @@ type RealtimeData struct {
 	IntakeAirTemp  float64 `json:"intake_air_temp"`
 	O2Voltage      float64 `json:"o2_voltage"`
 	RuntimeSec     int     `json:"runtime_sec"`
-	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (タンク満タン × ECO − TRIP)
+	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (推定残量 × ECO)
+	FuelEstimateL  float64 `json:"fuel_estimate_l"`   // 航続距離に使う燃料残量の推定値 (L)。0 = 未推定
 	Gear           int     `json:"gear"`
 	GearRatio      float64 `json:"gear_ratio"`
 	ATRange        int     `json:"at_range"`

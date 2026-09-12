@@ -304,6 +304,14 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 給油の自動検出 (#120)。
 			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
 			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
+
+			// 航続距離に使う燃料残量。使った燃料で減らし、燃料計へはゆっくり寄せる。
+			// 停車中の燃料計を直接使うと、スロッシングで停車のたびに 10〜25km 跳ねる。
+			burnL := 0.0
+			if dtSec > 0 && dtSec <= 10 { // tracker と同じく、長い空白は数えない
+				burnL = trackerFuelRate / 3600.0 * dtSec
+			}
+			app.fuelEst.Update(data.ElecB0Pct, burnL, dtSec, app.refuel.SettledLiters())
 			app.addDistance((data.SpeedKmh / 3600.0) * dtSec)
 
 			oil := app.maintMgr.OilStatus()
@@ -332,7 +340,8 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				IntakeAirTemp:  data.IntakeAirTemp,
 				O2Voltage:      data.O2Voltage,
 				RuntimeSec:     data.RuntimeSec,
-				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm(), app.refuel.SettledLiters()),
+				RangeToEmptyKm: calcRangeToEmpty(cfg.FuelTankL, app.tracker.AvgFuelEconomy(), app.tracker.DistanceKm(), app.fuelEst.Liters()),
+				FuelEstimateL:  app.fuelEst.Liters(),
 				Gear:           data.Gear,
 				GearRatio:      data.GearRatio,
 				ATRange:        data.ATRange,
@@ -378,6 +387,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			go func() {
 				app.tracker.SaveState()
 				app.maintMgr.SaveState()
+				app.fuelEst.Save()
 				close(done)
 			}()
 			select {

@@ -66,6 +66,8 @@ type App struct {
 	wsHub    *WSHub
 	// 給油の自動検出。起動時の燃料残量の跳躍から給油を判定する (#120)
 	refuel *fuel.Detector
+	// 航続距離に使う燃料残量の推定。停車時に跳ねないよう、使った燃料で減らす
+	fuelEst *fuel.Estimator
 	// Pi 本体の健全性。電圧降下と不正終了を記録する (#124)
 	health *health.Monitor
 
@@ -128,6 +130,7 @@ func newApp(cfg Config) *App {
 	// 頼っていたため、maintenance_path を変えても付いてこなかった (#185)。
 	stateDir := filepath.Dir(cfg.MaintenancePath)
 	refuelStatePath := filepath.Join(stateDir, "fuel_state.json")
+	fuelEstimatePath := filepath.Join(stateDir, "fuel_estimate.json")
 	healthStatePath := filepath.Join(stateDir, "health_state.json")
 	tripStatePath := filepath.Join(stateDir, "trip_state.json")
 
@@ -137,6 +140,7 @@ func newApp(cfg Config) *App {
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{StatePath: tripStatePath}),
 		refuel:    fuel.NewDetector(refuelStatePath),
+		fuelEst:   fuel.NewEstimator(fuelEstimatePath, cfg.FuelTankL),
 		health:    health.NewMonitor(healthStatePath),
 		startedAt: time.Now(),
 	}
