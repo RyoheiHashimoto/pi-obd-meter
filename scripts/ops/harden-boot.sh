@@ -135,7 +135,9 @@ note "emergency: 90秒待って自動再起動するようにした"
 mkdir -p /etc/systemd/journald.conf.d
 rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
       /etc/systemd/journald.conf.d/pi-obd-journal.conf \
-      /etc/systemd/journald.conf.d/zz-debug-persist.conf
+      /etc/systemd/journald.conf.d/zz-debug-persist.conf \
+      /etc/systemd/journald.conf.d/99-debug-persist.conf \
+      /etc/systemd/journald.conf.d/persistent.conf
 cat > /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf <<'CONF'
 # ジャーナルを /var/log/journal (SSD) に永続化する。SD には書かない。
 #
@@ -147,6 +149,17 @@ Storage=persistent
 SystemMaxUse=512M
 SystemMaxFileSize=64M
 Compress=yes
+
+# レート制限を切る。
+#
+# 99-debug-persist.conf にこの2行が入っていた。統合するとき読まずに消すと、
+# 既定のレート制限 (10秒に1000件) が復活する。追っている WiFi の
+# association 失敗はバーストで出る (2026-09-07 の記録では1回の起動で31回)
+# ので、間引かれると肝心なところが残らない。
+#
+# 車載機のログ量は限られており、上限 512M とローテーションで抑えられる。
+RateLimitIntervalSec=0
+RateLimitBurst=0
 CONF
 note "journald: 永続化を1本に統合 (Storage=persistent, 上限512M)"
 
@@ -155,18 +168,27 @@ note "journald: 永続化を1本に統合 (Storage=persistent, 上限512M)"
 # /var/log/journal が実ディレクトリのままだと SD に書いてしまう。
 # 以前ここで rm -rf /var/log/journal をしていたが、リンクになった後は
 # リンクごと消してしまうので撤去した。
-if [ -L /var/log/journal ]; then
-    tgt=$(readlink -f /var/log/journal)
-    case "$tgt" in
-        /data/*) note "  保存先: $tgt (SSD)" ;;
-        *) note "  警告: /var/log/journal が $tgt を指している。SSD ではない" ;;
-    esac
-elif [ -d /var/log/journal ]; then
-    note "  警告: /var/log/journal が実ディレクトリ。SD に書き込む。"
-    note "        /data/log/journal へのリンクに置き換えること"
+# 保存先が overlay(RAM) でないことを確かめる。
+#
+# 判定をシンボリックリンクの有無でやってはいけない。この機体は
+# /etc/fstab の bind マウントで /data/log/journal を結びつけている
+# (fstab のコメントに「journald はシンボリックリンクの /var/log/journal を
+# 使わない (実測)」と理由まで書いてある)。-L で見ると実ディレクトリに
+# 見えるため、正しく永続しているのに誤警告を出していた (2026-09-12)。
+#
+# 見るべきは「どのファイルシステム上にあるか」。
+if [ ! -d /var/log/journal ]; then
+    note "  警告: /var/log/journal が無い。journald は /run (RAM) に書く"
+    note "        /etc/fstab に /data/log/journal からの bind を足すこと"
 else
-    mkdir -p /data/log/journal 2>/dev/null && ln -s /data/log/journal /var/log/journal \
-        && note "  /var/log/journal -> /data/log/journal を作成"
+    src=$(df --output=source /var/log/journal 2>/dev/null | tail -1)
+    case "$src" in
+        overlay*|tmpfs*|"")
+            note "  警告: /var/log/journal が $src 上。再起動で消える"
+            note "        /etc/fstab に /data/log/journal からの bind を足すこと" ;;
+        *)
+            note "  保存先: $src ($(df -h --output=avail /var/log/journal 2>/dev/null | tail -1 | tr -d ' ') 空き)" ;;
+    esac
 fi
 
 # 後から読まれる設定に負けていないか確認する。conf.d はファイル名順で、
