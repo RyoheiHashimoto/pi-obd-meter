@@ -17,6 +17,22 @@
 # それを起こすのは筋が悪い。段階を分けて、危険な方は最後に1回だけ、
 # しかも前段が通ってからにする。
 #
+# 【emergency に落ちる経路は systemd 250 で移動している】
+# 249 以前: src/fsck/fsck.c が自分で start_target(SPECIAL_EMERGENCY_TARGET)
+#           を呼んでいた。ユニットの成否とは無関係なので SuccessExitStatus
+#           では止められない。
+# 250 以降: その呼び出しは C から消え、systemd-fsck-root.service の
+#           OnFailure=emergency.target に移った。OnFailure はユニットが
+#           failed に入ったときだけ発火するので、SuccessExitStatus で止まる。
+#
+# つまり対策が効くかどうかは systemd のバージョンに依存する。web 上の
+# 「SuccessExitStatus では止められない」という記述は 249 以前が前提であり、
+# man page も今なお「fsck が emergency.target を起動する」と書いたまま。
+# よって段階1では機構そのものを先に確認し、そのうえで
+#   (a) ユニットが failed になるか
+#   (b) OnFailure が発火するか
+# の両方を測る。(a) だけでは 1 段手前しか見ていないことになる。
+#
 #   段階1  fsck を偽装して 4 を返させる      破損リスク ゼロ
 #   段階2  fsck を強制した上で正常に再起動    破損リスク ゼロ
 #   段階3  同期せずに即再起動 (電源断と同じ)  エンジン停止1回分
@@ -83,6 +99,34 @@ $SSH "$USER@$HOST" '
 '
 note ""
 
+# --------------------------------------------- emergency への経路がどちらか確認
+# 250 以降なら OnFailure= 経由なので SuccessExitStatus で止められる。
+# 249 以前なら fsck 本体が直接 emergency を起こすので止められない。
+# "systemd 252 (252.36-1~deb12u1)" → 252。"257~rc1" のような形も先頭の数字だけ取る
+sysver=$($SSH "$USER@$HOST" 'systemctl --version' 2>/dev/null | head -1 | awk '{print $2}' | sed 's/[^0-9].*//')
+onfail=$($SSH "$USER@$HOST" 'systemctl show systemd-fsck-root -p OnFailure --value' 2>/dev/null)
+[ -n "$sysver" ] || fail "systemd のバージョンを取得できない"
+
+note "emergency へ落ちる経路"
+note "  systemd   : $sysver"
+note "  OnFailure : ${onfail:-(なし)}"
+
+if [ "$sysver" -lt 250 ]; then
+    fail "systemd $sysver は fsck 本体が直接 emergency を起こす (250 で OnFailure= に移動)。
+       SuccessExitStatus では止められないため、この対策は成立しない。
+       fsck.mode / fsck.repair 側での回避に切り替えること"
+fi
+
+case "$onfail" in
+    *emergency.target*)
+        note "  → OnFailure 経由。SuccessExitStatus で止められる機構" ;;
+    "")
+        note "  → OnFailure 自体が無い。そもそも emergency に落ちない設定" ;;
+    *)
+        note "  → OnFailure が emergency.target ではない。以下の判定は参考値" ;;
+esac
+note ""
+
 # ================================================================= 段階 1
 note "===== 段階1: systemd が終了コード4 を成功として扱うか (破損リスク ゼロ) ====="
 note "8月に起動を止めた直接の原因は fsck の終了コード4 だった"
@@ -95,35 +139,54 @@ note ""
 note "代わりに、同じ SuccessExitStatus を持つ試験ユニットを作って"
 note "終了コード4 で終わらせ、systemd がそれを成功と扱うか直接確かめる。"
 note "SuccessExitStatus の解釈は systemd 共通なので、これで判定できる。"
+note ""
+note "さらに、試験ユニットには本物と同じ形の OnFailure= を付ける。"
+note "実際に守りたいのは「failed にならないこと」ではなく「OnFailure が"
+note "発火しないこと」なので、そこまで測らないと 1 段手前で止まる。"
+note "本物の emergency.target ではなく、印を置くだけのユニットを指す。"
 
 want=$($SSH "$USER@$HOST" 'systemctl show systemd-fsck-root -p SuccessExitStatus --value' 2>/dev/null)
 note "systemd-fsck-root の設定値: [$want]"
 echo "$want" | grep -q 4 || fail "終了コード4 が成功扱いになっていない。harden-boot.sh を先に実行すること"
 
-# A/B で比べる。SuccessExitStatus 無しなら failed、有りなら success に
-# なることを両方見せる。ExecMainStatus は Type=oneshot では当てにならない
-# ので (終了コード4 でも 0 と報告される)、is-failed と Result で判定する。
+# A/B で比べる。SuccessExitStatus 無しなら failed かつ OnFailure 発火、
+# 有りなら success かつ未発火 になることを両方見せる。
+# ExecMainStatus は Type=oneshot では当てにならない (終了コード4 でも 0 と
+# 報告される) ので、is-failed と OnFailure の実発火で判定する。
 $SSH "$USER@$HOST" "sudo sh -c '
   printf \"#!/bin/sh\\nexit 4\\n\" > /usr/local/bin/exit4-probe
   chmod +x /usr/local/bin/exit4-probe
+  rm -f /run/exit4-onfailure-without /run/exit4-onfailure-with
   for v in without with; do
     if [ \$v = with ]; then extra=\"SuccessExitStatus=$want\"; else extra=\"\"; fi
-    printf \"[Unit]\\nDescription=exit4 %s\\n[Service]\\nType=oneshot\\nExecStart=/usr/local/bin/exit4-probe\\n%s\\n\" \$v \"\$extra\" > /etc/systemd/system/exit4-\$v.service
+    printf \"[Unit]\\nDescription=exit4 marker %s\\n[Service]\\nType=oneshot\\nExecStart=/bin/touch /run/exit4-onfailure-%s\\n\" \$v \$v > /etc/systemd/system/exit4-marker-\$v.service
+    printf \"[Unit]\\nDescription=exit4 %s\\nOnFailure=exit4-marker-%s.service\\n[Service]\\nType=oneshot\\nExecStart=/usr/local/bin/exit4-probe\\n%s\\n\" \$v \$v \"\$extra\" > /etc/systemd/system/exit4-\$v.service
   done
   systemctl daemon-reload
   for v in without with; do systemctl start exit4-\$v.service >/dev/null 2>&1; done
+  sleep 3
 '" 2>/dev/null
 
 res_without=$($SSH "$USER@$HOST" 'systemctl is-failed exit4-without.service 2>/dev/null')
 res_with=$($SSH "$USER@$HOST" 'systemctl is-failed exit4-with.service 2>/dev/null')
-note "  SuccessExitStatus なし → $res_without   (8月に起きたこと)"
-note "  SuccessExitStatus あり → $res_with   (対策後)"
+fired_without=$($SSH "$USER@$HOST" 'test -e /run/exit4-onfailure-without && echo 発火 || echo 未発火' 2>/dev/null)
+fired_with=$($SSH "$USER@$HOST" 'test -e /run/exit4-onfailure-with && echo 発火 || echo 未発火' 2>/dev/null)
+note "  SuccessExitStatus なし → $res_without / OnFailure $fired_without   (8月に起きたこと)"
+note "  SuccessExitStatus あり → $res_with / OnFailure $fired_with   (対策後)"
 
-$SSH "$USER@$HOST" 'sudo sh -c "systemctl reset-failed exit4-without.service exit4-with.service 2>/dev/null; rm -f /etc/systemd/system/exit4-*.service /usr/local/bin/exit4-probe; systemctl daemon-reload"' 2>/dev/null
+$SSH "$USER@$HOST" 'sudo sh -c "systemctl reset-failed exit4-without.service exit4-with.service exit4-marker-without.service exit4-marker-with.service 2>/dev/null; rm -f /etc/systemd/system/exit4-*.service /usr/local/bin/exit4-probe /run/exit4-onfailure-without /run/exit4-onfailure-with; systemctl daemon-reload"' 2>/dev/null
 
+# 対照群が成立しているか (試験そのものが機能しているかの検査)
 [ "$res_without" = "failed" ] || fail "対照実験が成立していない (SuccessExitStatus 無しでも failed にならない)"
+[ "$fired_without" = "発火" ] || fail "対照実験が成立していない (SuccessExitStatus 無しでも OnFailure が発火しない)。
+       OnFailure を観測できていないので、この試験は何も確認していない"
+
+# 対策側
 [ "$res_with" = "failed" ] && fail "終了コード4 が失敗扱いのまま。8月と同じ状況で起動が止まる"
-note "→ 終了コード4 は成功として扱われる。8月の停止条件は解消している"
+[ "$fired_with" = "発火" ] && fail "failed にはならないが OnFailure が発火している。
+       実機では emergency.target が起動するので、起動は止まる"
+note "→ 終了コード4 は成功として扱われ、OnFailure も発火しない"
+note "   本物では OnFailure=emergency.target なので、emergency に落ちない"
 note ""
 note "なお cmdline.txt 側も fsck.repair=preen に変えてあるため、"
 note "そもそも fsck が4を返す状況自体が起きにくくなっている (二重の対策)"
