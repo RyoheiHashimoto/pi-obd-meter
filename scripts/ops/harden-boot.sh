@@ -73,6 +73,19 @@ note "cmdline.txt を更新: fsck.mode=auto fsck.repair=preen"
 # ------------------------------- 2. fsck が失敗しても emergency に落ちない
 # systemd-fsck-root は cmdline だけでは制御しきれないので、
 # 失敗を無視する drop-in を置く。
+#
+# なぜ SuccessExitStatus で止まるのか (systemd 250 以降に限る):
+#   249 以前は src/fsck/fsck.c が自分で start_target(SPECIAL_EMERGENCY_TARGET)
+#   を呼んでいた。ユニットの成否と無関係に走るので、この drop-in では止まらない。
+#   250 でその呼び出しは C から削除され、systemd-fsck-root.service の
+#   OnFailure=emergency.target に移った。OnFailure はユニットが failed に
+#   入ったときだけ発火するので、SuccessExitStatus で failed を防げば落ちない。
+#
+#   web 上の「SuccessExitStatus では止められない」という記述と、
+#   systemd-fsck@.service(8) の「fsck が emergency.target を起動する」は
+#   いずれも 249 以前が前提。RPi OS bookworm は 252、trixie は 257 なので
+#   この drop-in は有効。実際に効いているかは verify-boot-resilience.sh が
+#   OnFailure の発火まで含めて測る。
 mkdir -p /etc/systemd/system/systemd-fsck-root.service.d
 cat > /etc/systemd/system/systemd-fsck-root.service.d/keep-booting.conf <<'CONF'
 # fsck が直しきれなくても起動を続ける。
