@@ -1,8 +1,9 @@
 #!/bin/bash
 # Pi OBD Meter 自動更新スクリプト
-# systemd timer (auto-update.timer) から2分間隔で実行される
-# 1. Stable release (GitHub Releases latest) をチェック
-# 2. Dev build (dev-latest pre-release) をチェック
+# systemd timer (auto-update.timer) から起動時に1回だけ実行される
+# 1. 永続層から ops スクリプトと systemd ユニットを配り直す (ネットワーク不要)
+# 2. Stable release (GitHub Releases latest) をチェック
+# 3. Dev build (dev-latest pre-release) をチェック
 
 set -euo pipefail
 
@@ -23,26 +24,41 @@ REPO="RyoheiHashimoto/pi-obd-meter"
 # ため。リンクにすると SSD が落ちた瞬間にメーターごと止まる。
 #
 # よって「SSD に置き、無ければ SD のものを使う」。切り替えは run.sh が行う。
-DEST="/opt/pi-obd-meter"        # SD 側の基準 (make deploy が overlayroot-chroot 経由で書く)
-APP_DIR="/data/pi-obd-meter/app"  # OTA の設置先 (永続)
+DEST="${DEST:-/opt/pi-obd-meter}"          # SD 側の基準 (make deploy が overlayroot-chroot 経由で書く)
+APP_DIR="${APP_DIR:-/data/pi-obd-meter/app}" # OTA の設置先 (永続)
 # バージョン記録はバイナリと同じ層に置く。
 #
 # 別の層に置くと「記録はあるがバイナリは無い」状態が作れてしまい、
 # 再取得もされなくなる。実際それが起きていた。APP_DIR と一緒に消え、
 # 一緒に残る場所に置くこと。
-STATE_DIR="/data/pi-obd-meter/app"
-LOCKFILE="/tmp/pi-obd-meter-update.lock"
-SERVICE="pi-obd-meter"
+STATE_DIR="${STATE_DIR:-$APP_DIR}"
+# 展開した scripts/ の保管先。ここも永続層に置く (#191)。
+#
+# 【なぜ /opt に置いてはいけないか】
+# 2026-09-09 にバイナリだけ APP_DIR へ移した (3676a6f) が、scripts の
+# 保管先は /opt のままだった。/opt は overlayfs の上層 (tmpfs) なので
+# 再起動で消える。一方 dev-version はバイナリと一緒に /data に残るため、
+# 次の起動では「同じバージョン」と判定されて install_scripts が呼ばれず、
+#   配る → 再起動で消える → 記録が残っているので二度と配らない
+# となって ops スクリプトが SD 側の版で永久に固定される。
+# 実測 (2026-09-16): /usr/local/bin/drive-verify.py と imu-log.py が
+# 9/6 の版のまま、upperdir は空。9/6 以降の修正が1つも届いていなかった。
+SCRIPTS_DIR="${SCRIPTS_DIR:-$APP_DIR/scripts}"
+# 配布先の接頭辞。テストでのみ使う。本番は空 (= 実体の / へ配る)。
+INSTALL_ROOT="${INSTALL_ROOT:-}"
+SYSTEMD_DIR="${SYSTEMD_DIR:-${INSTALL_ROOT}/etc/systemd/system}"
+LOCKFILE="${LOCKFILE:-/tmp/pi-obd-meter-update.lock}"
+SERVICE="${SERVICE:-pi-obd-meter}"
 
 LOG_TAG="auto-update"
 
-log() { echo "[$LOG_TAG] $*" | systemd-cat -t "$LOG_TAG" -p info; }
-log_warn() { echo "[$LOG_TAG] $*" | systemd-cat -t "$LOG_TAG" -p warning; }
-
-# --- ロック（多重実行防止） ---
-exec 9>"$LOCKFILE"
-if ! flock -n 9; then
-    exit 0
+# journal が使えない環境 (テスト・コンテナ) では素の出力に落とす。
+if command -v systemd-cat > /dev/null 2>&1; then
+    log() { echo "[$LOG_TAG] $*" | systemd-cat -t "$LOG_TAG" -p info; }
+    log_warn() { echo "[$LOG_TAG] $*" | systemd-cat -t "$LOG_TAG" -p warning; }
+else
+    log() { echo "[$LOG_TAG] $*"; }
+    log_warn() { echo "[$LOG_TAG] $*" >&2; }
 fi
 
 # --- ネットワーク確認 ---
@@ -67,71 +83,87 @@ fi
 NET_WAIT_TRIES="${NET_WAIT_TRIES:-24}"
 NET_WAIT_SLEEP="${NET_WAIT_SLEEP:-5}"
 
-net_ready=0
-for i in $(seq 1 "$NET_WAIT_TRIES"); do
-    if curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
-        net_ready=1
-        if [ "$i" -gt 1 ]; then
-            log "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
+wait_for_network() {
+    local i
+    for i in $(seq 1 "$NET_WAIT_TRIES"); do
+        if curl -sf --max-time 5 "https://api.github.com/zen" > /dev/null 2>&1; then
+            if [ "$i" -gt 1 ]; then
+                log "ネットワーク到達まで $(( (i - 1) * NET_WAIT_SLEEP ))秒待機した"
+            fi
+            return 0
         fi
-        break
-    fi
-    # 最後の試行のあとは待たない。待っても次が無い。
-    #
-    # set -e 下で `[ cond ] && cmd` を文末に置くと、条件が偽のときの
-    # 終了コードが 1 になる。errexit の例外規則に救われる書き方だが、
-    # 無人で起動するスクリプトで微妙な規則に頼らない。
-    if [ "$i" -lt "$NET_WAIT_TRIES" ]; then
-        sleep "$NET_WAIT_SLEEP"
-    fi
-done
-
-if [ "$net_ready" -ne 1 ]; then
+        # 最後の試行のあとは待たない。待っても次が無い。
+        #
+        # set -e 下で `[ cond ] && cmd` を文末に置くと、条件が偽のときの
+        # 終了コードが 1 になる。errexit の例外規則に救われる書き方だが、
+        # 無人で起動するスクリプトで微妙な規則に頼らない。
+        if [ "$i" -lt "$NET_WAIT_TRIES" ]; then
+            sleep "$NET_WAIT_SLEEP"
+        fi
+    done
     log_warn "ネットワークに到達できないため更新を見送る ($(( NET_WAIT_TRIES * NET_WAIT_SLEEP ))秒待機)"
-    exit 0
-fi
+    return 1
+}
 
-mkdir -p "$STATE_DIR"
-
-# --- scripts/ の更新 ---
+# --- scripts/ の保管 ---
 #
 # 実行中のシェルスクリプト自身を上書きすると、bash が続きを読み込む際に
 # 壊れた内容を読む恐れがある。同一ファイルシステム上の一時ファイルへ書いて
 # mv で差し替えれば、ディレクトリエントリだけが入れ替わり、実行中のプロセス
 # は元の inode を読み続けるので安全。
-install_scripts() {
+#
+# 保管先は SCRIPTS_DIR (永続層)。ここに残しておくことで、次の起動で
+# ネットワークが無くても deploy_scripts が配り直せる。
+stage_scripts() {
     local src="$1/scripts"
     [ -d "$src" ] || return 0
 
-    mkdir -p "${DEST}/scripts"
+    mkdir -p "$SCRIPTS_DIR"
     local f rel dst
     while IFS= read -r f; do
         rel="${f#"$src"/}"
-        dst="${DEST}/scripts/${rel}"
+        dst="${SCRIPTS_DIR}/${rel}"
         mkdir -p "$(dirname "$dst")"
         if ! cmp -s "$f" "$dst"; then
             if cp "$f" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
-                log "scripts 更新: $rel"
+                log "scripts 保管: $rel"
             else
                 rm -f "${dst}.new"
-                log_warn "scripts 更新失敗: $rel"
+                log_warn "scripts 保管失敗: $rel"
             fi
         fi
     done < <(find "$src" -type f)
+}
+
+# --- scripts/ の配布 ---
+#
+# 保管先 (永続) から実行位置 (/etc/systemd/system と /usr/local/*) へ配る。
+# ネットワークもダウンロードも要らないローカルコピーなので、毎起動で呼ぶ。
+#
+# 【毎回呼ぶ理由】
+# 配布先はどちらも overlayfs の上層で、再起動のたびに消えて SD 側の版が
+# 露出する。更新のたびに1度だけ配る作りだと、次の起動で消えたきり戻らない。
+# バージョン記録は永続層にあるので再取得もされない (#191)。
+deploy_scripts() {
+    local base="$SCRIPTS_DIR"
+    # 移行前の Pi では保管先がまだ空なので、SD 側の scripts を使う。
+    [ -d "${base}/ops" ] || base="${DEST}/scripts"
+    [ -d "${base}/ops" ] || return 0
 
     # systemd ユニットを配る。scripts/ops/systemd/ に置いたものを入れる。
-    # 新しいタイマーを足しても、次の更新で勝手に有効になる。
+    # 新しいタイマーを足しても、次の起動で勝手に有効になる。
     local u name
-    for u in "${DEST}/scripts/ops/systemd/"*.service "${DEST}/scripts/ops/systemd/"*.timer; do
+    mkdir -p "$SYSTEMD_DIR"
+    for u in "${base}/ops/systemd/"*.service "${base}/ops/systemd/"*.timer; do
         [ -f "$u" ] || continue
         name=$(basename "$u")
-        if ! cmp -s "$u" "/etc/systemd/system/$name"; then
-            if cp "$u" "/etc/systemd/system/${name}.new" && mv -f "/etc/systemd/system/${name}.new" "/etc/systemd/system/$name"; then
+        if ! cmp -s "$u" "${SYSTEMD_DIR}/$name"; then
+            if cp "$u" "${SYSTEMD_DIR}/${name}.new" && mv -f "${SYSTEMD_DIR}/${name}.new" "${SYSTEMD_DIR}/$name"; then
                 log "ユニット更新: $name"
-                systemctl daemon-reload
+                systemctl daemon-reload 2>/dev/null || true
                 case "$name" in *.timer) systemctl enable --now "$name" 2>/dev/null || true;; esac
             else
-                rm -f "/etc/systemd/system/${name}.new"
+                rm -f "${SYSTEMD_DIR}/${name}.new"
                 log_warn "ユニット更新失敗: $name"
             fi
         fi
@@ -147,8 +179,8 @@ install_scripts() {
     #
     # ExecStart を読めば「そのユニットがどこの何を起動するか」が分かる。
     # 表を二重に持たない。
-    local unit_file uname_ execpath dst src
-    for unit_file in "${DEST}/scripts/ops/systemd/"*.service; do
+    local unit_file uname_ execpath dstpath src dst
+    for unit_file in "${base}/ops/systemd/"*.service; do
         [ -f "$unit_file" ] || continue
         uname_=$(basename "$unit_file" .service)
         # ExecStart=/usr/bin/python3 /usr/local/bin/foo.py のように
@@ -156,13 +188,14 @@ install_scripts() {
         execpath=$(awk -F= '/^ExecStart=/{print $2}' "$unit_file" \
                    | tr ' ' '\n' | grep '^/usr/local/' | head -1)
         [ -n "$execpath" ] || continue
-        src="${DEST}/scripts/ops/$(basename "$execpath")"
+        src="${base}/ops/$(basename "$execpath")"
         [ -f "$src" ] || continue
-        cmp -s "$src" "$execpath" && continue
-        mkdir -p "$(dirname "$execpath")"
-        if cp "$src" "${execpath}.new" && chmod +x "${execpath}.new" \
-           && mv -f "${execpath}.new" "$execpath"; then
-            log "スクリプト更新: $execpath ($uname_)"
+        dstpath="${INSTALL_ROOT}${execpath}"
+        cmp -s "$src" "$dstpath" && continue
+        mkdir -p "$(dirname "$dstpath")"
+        if cp "$src" "${dstpath}.new" && chmod +x "${dstpath}.new" \
+           && mv -f "${dstpath}.new" "$dstpath"; then
+            log "スクリプト更新: $dstpath ($uname_)"
             # 失敗したまま再起動すると古いコードで止まるだけ損をするので、
             # 入れ替えが成功したときだけ再起動する。
             if systemctl is-enabled --quiet "$uname_" 2>/dev/null \
@@ -170,16 +203,17 @@ install_scripts() {
                 systemctl restart "$uname_" 2>/dev/null || log_warn "$uname_ の再起動に失敗"
             fi
         else
-            rm -f "${execpath}.new"
-            log_warn "スクリプト更新失敗: $execpath"
+            rm -f "${dstpath}.new"
+            log_warn "スクリプト更新失敗: $dstpath"
         fi
     done
 
     # poll22 だけはユニットがリポジトリに無く Pi 側にしかないので個別に扱う。
     # ユニットを scripts/ops/systemd/ に移せばこの分岐は不要になる。
-    src="${DEST}/scripts/ops/poll22-lean.py"
-    dst=/usr/local/bin/poll22-lean.py
+    src="${base}/ops/poll22-lean.py"
+    dst="${INSTALL_ROOT}/usr/local/bin/poll22-lean.py"
     if [ -f "$src" ] && ! cmp -s "$src" "$dst"; then
+        mkdir -p "$(dirname "$dst")"
         if cp "$src" "${dst}.new" && chmod +x "${dst}.new" && mv -f "${dst}.new" "$dst"; then
             log "スクリプト更新: $dst (poll22)"
             systemctl is-active --quiet poll22 2>/dev/null && { systemctl restart poll22 2>/dev/null || true; }
@@ -187,6 +221,12 @@ install_scripts() {
             rm -f "${dst}.new"
         fi
     fi
+}
+
+# install_scripts は「取ってきたものを保管して配る」。呼び出し側はこれだけ見る。
+install_scripts() {
+    stage_scripts "$1"
+    deploy_scripts
 }
 
 # --- Stable release チェック ---
@@ -354,7 +394,35 @@ check_dev() {
     return 0
 }
 
+# テストから関数だけ読み込むための入口。
+#
+# `[ cond ] && return 0` と書いてはいけない。set -e 下では条件が偽のとき
+# この文自体の終了コードが 1 になり、本番実行がここで止まる。
+# 同じ罠を wait_for_network のコメントにも書いてある。
+if [ "${AUTO_UPDATE_LIB:-0}" = "1" ]; then
+    return 0
+fi
+
 # --- メイン ---
+
+# ロック（多重実行防止）
+exec 9>"$LOCKFILE"
+if ! flock -n 9; then
+    exit 0
+fi
+
+mkdir -p "$STATE_DIR"
+
+# 【ネットワークより先に配り直す】
+# 配布先は再起動のたびに消えるので、圏外でも必ず元に戻す。ここを
+# ネットワーク待ちの後ろに置くと、電波の無い場所では ops スクリプトが
+# SD 側の古い版のまま走り続ける。
+deploy_scripts || log_warn "scripts の再配布に失敗した"
+
+if ! wait_for_network; then
+    exit 0
+fi
+
 # Stable release が優先（新しいリリースがあればそちらをインストール）
 if check_stable; then
     exit 0
