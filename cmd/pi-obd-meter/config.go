@@ -109,32 +109,42 @@ type RealtimeData struct {
 	IntakeAirTemp  float64 `json:"intake_air_temp"`
 	O2Voltage      float64 `json:"o2_voltage"`
 	RuntimeSec     int     `json:"runtime_sec"`
-	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (推定残量 × ECO)
-	FuelEstimateL  float64 `json:"fuel_estimate_l"`   // 航続距離に使う燃料残量の推定値 (L)。0 = 未推定
-	Gear           int     `json:"gear"`
-	GearRatio      float64 `json:"gear_ratio"`
-	ATRange        int     `json:"at_range"`
-	ATRangeStr     string  `json:"at_range_str"`
-	Hold           bool    `json:"hold"`
-	TCLocked       bool    `json:"tc_locked"`
-	TCCLockPct     float64 `json:"tcc_lock_pct"`
-	SlipRatio      float64 `json:"slip_ratio"`    // トルコンの滑り比。1.0=直結、1.05=5%滑り
-	BrakePedal     bool    `json:"brake_pedal"`   // ブレーキペダル
-	RadiatorFan    bool    `json:"radiator_fan"`  // ラジエータファン
-	ACCompressor   bool    `json:"ac_compressor"` // エアコンコンプレッサー
-	GradeRaw       int     `json:"grade_raw"`     // 勾配の生値。負が登り。単位未確定
-	Shifting       bool    `json:"shifting"`
-	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
-	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
-	ElecB1Raw      float64 `json:"elec_b1_raw"`     // 0x430 B1 生値（未確定）
-	OilAlert       string  `json:"oil_alert"`
-	OilCurrentKm   float64 `json:"oil_current_km"`
-	OilRemainingKm float64 `json:"oil_remaining_km"`
-	Notification   string  `json:"notification,omitempty"`
-	OBDConnected   bool    `json:"obd_connected"`
-	WiFiConnected  bool    `json:"wifi_connected"`
-	PendingCount   int     `json:"pending_count"`
-	SendSending    bool    `json:"send_sending"`
+	// 機関系の診断値 (2026-09-16 追加)。
+	// 燃料トリムは fuel_system_str が「クローズドループ」のときだけ意味を持つ。
+	LongFuelTrim     float64           `json:"long_fuel_trim"`
+	FuelSystemStatus int               `json:"fuel_system_status"`
+	FuelSystemStr    string            `json:"fuel_system_str,omitempty"`
+	CatalystTempC    float64           `json:"catalyst_temp_c"`
+	AbsoluteLoad     float64           `json:"absolute_load"`
+	MIL              bool              `json:"mil"`       // チェックランプ点灯中
+	DTCCount         int               `json:"dtc_count"` // 記録されている故障コード数
+	Aux22            map[string]uint32 `json:"aux22,omitempty"`
+	RangeToEmptyKm   float64           `json:"range_to_empty_km"` // 給油までの推定残距離 (推定残量 × ECO)
+	FuelEstimateL    float64           `json:"fuel_estimate_l"`   // 航続距離に使う燃料残量の推定値 (L)。0 = 未推定
+	Gear             int               `json:"gear"`
+	GearRatio        float64           `json:"gear_ratio"`
+	ATRange          int               `json:"at_range"`
+	ATRangeStr       string            `json:"at_range_str"`
+	Hold             bool              `json:"hold"`
+	TCLocked         bool              `json:"tc_locked"`
+	TCCLockPct       float64           `json:"tcc_lock_pct"`
+	SlipRatio        float64           `json:"slip_ratio"`    // トルコンの滑り比。1.0=直結、1.05=5%滑り
+	BrakePedal       bool              `json:"brake_pedal"`   // ブレーキペダル
+	RadiatorFan      bool              `json:"radiator_fan"`  // ラジエータファン
+	ACCompressor     bool              `json:"ac_compressor"` // エアコンコンプレッサー
+	GradeRaw         int               `json:"grade_raw"`     // 勾配の生値。負が登り。単位未確定
+	Shifting         bool              `json:"shifting"`
+	OdometerCANKm    float64           `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
+	ElecB0Pct        float64           `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）
+	ElecB1Raw        float64           `json:"elec_b1_raw"`     // 0x430 B1 生値（未確定）
+	OilAlert         string            `json:"oil_alert"`
+	OilCurrentKm     float64           `json:"oil_current_km"`
+	OilRemainingKm   float64           `json:"oil_remaining_km"`
+	Notification     string            `json:"notification,omitempty"`
+	OBDConnected     bool              `json:"obd_connected"`
+	WiFiConnected    bool              `json:"wifi_connected"`
+	PendingCount     int               `json:"pending_count"`
+	SendSending      bool              `json:"send_sending"`
 }
 
 // loadConfig はJSONファイルから設定を読み込む。ファイルがなければデフォルト値を返す。

@@ -199,6 +199,15 @@ func (app *App) buildMux() *http.ServeMux {
 		writeJSON(w, app.maintMgr.OilStatus())
 	})
 
+	// --- 故障コードAPI ---
+	//
+	// 始動時に1回読んだ結果を返す。read が false なら未読で、
+	// stored が空でも「異常なし」ではない。
+	mux.HandleFunc("GET /api/dtc", func(w http.ResponseWriter, r *http.Request) {
+		d := app.getRealtimeData()
+		writeJSON(w, app.dtc.Snapshot(d.MIL, d.DTCCount))
+	})
+
 	// --- クライアントエラーログ: フロントから JS エラー/ watchdog 検知を受け取り journal に記録 ---
 	mux.HandleFunc("POST /api/client-error", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any

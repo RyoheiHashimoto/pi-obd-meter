@@ -137,6 +137,12 @@ func decodeDTC(hex4 string) string {
 	if err != nil {
 		return ""
 	}
+	return decodeDTCWord(uint16(val))
+}
+
+// decodeDTCWord は2バイトの生値をDTCコード文字列に変換する。
+// CAN 直結では応答がバイト列で来るため、文字列を経由せずにここへ入る。
+func decodeDTCWord(val uint16) string {
 	if val == 0 {
 		return ""
 	}
