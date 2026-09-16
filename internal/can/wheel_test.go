@@ -27,14 +27,32 @@ func TestDecodeWheelSpeed4Positions(t *testing.T) {
 }
 
 // 2026-09-16 の走行ログで実際に出た値をそのまま通す。
+//
+// この 0.5〜1.0 という幅は 120km/h での値であって、どの速度でも成り立つ
+// しきい値ではない。実測では 55km/h で +0.14、低速で +0.1〜0.3 しかない。
+// ここで確かめているのは「前輪の方が速い側に出ること」と桁で、
+// 判定のしきい値として持ち出さないこと。
 func TestDecodeWheelSpeed4RealSample(t *testing.T) {
-	// 高速巡航中の定常状態。前輪がわずかに速い。
+	// 120km/h 巡航中の定常状態。前輪がわずかに速い。
 	fl, fr, rl, rr := DecodeWheelSpeed4(wheelFrame(120.94, 120.88, 119.82, 119.76))
 	front := (fl + fr) / 2
 	rear := (rl + rr) / 2
 	d := front - rear
 	if d < 0.5 || d > 1.5 {
-		t.Errorf("前後差 = %.2f km/h, 実測の定常状態 0.5〜1.0 から外れている", d)
+		t.Errorf("前後差 = %.2f km/h, 120km/h での実測 0.5〜1.0 から外れている", d)
+	}
+}
+
+// 低速では幅が小さい。固定しきい値で判定すると、ここで破綻する。
+func TestDecodeWheelSpeed4LowSpeedSample(t *testing.T) {
+	// 2026-09-17 に実車から取った 55.6km/h のサンプル。
+	fl, fr, rl, rr := DecodeWheelSpeed4(wheelFrame(55.65, 55.71, 55.51, 55.57))
+	d := (fl+fr)/2 - (rl+rr)/2
+	if d <= 0 {
+		t.Errorf("前後差 = %.2f km/h, 前輪の方が速いはず", d)
+	}
+	if d > 0.5 {
+		t.Errorf("前後差 = %.2f km/h, 55km/h では 0.2 前後のはず", d)
 	}
 }
 

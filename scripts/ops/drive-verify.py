@@ -44,8 +44,9 @@ f.write("t,speed,rpm,gear,engaged,ratio,mech,slip,tcc,locked,hold,range,shifting
         "strim,ltrim,timing,iat,o2,fsys,cat,aload,mil,ndtc,"
         # 未同定 Mode 22 PID の生値。空欄は未応答。
         "p1678,p17b1,p17c1,p17bb,p17bc,p1104,"
-        # 4輪の車速 (2026-09-16 追加)。前輪が 0.5〜1.0km/h 速いのが定常状態で、
-        # その幅を超える前後差が続いたらホイールスピン。単発の跳ねはノイズ。
+        # 4輪の車速 (2026-09-16 追加)。前輪がわずかに速いのが定常状態で、
+        # 幅は速度で変わる (120km/h で +0.5〜1.0、低速で +0.1〜0.3)。
+        # その速度での幅を超える前後差が続いたらホイールスピン。単発はノイズ。
         "wfl,wfr,wrl,wrr\n")
 print("記録先: %s" % path, flush=True)
 
@@ -111,8 +112,8 @@ while True:
         d.get("mil"), d.get("dtc_count") or 0,
         aux(a22, "1678"), aux(a22, "17B1"), aux(a22, "17C1"),
         aux(a22, "17BB"), aux(a22, "17BC"), aux(a22, "1104"),
-        # 4輪の車速。前輪が 0.5〜1.0km/h 速いのが定常状態で、その幅を超える
-        # 前後差が続いたらホイールスピン。1サンプルだけの跳ねはノイズ。
+        # 4輪の車速。前輪がわずかに速いのが定常状態で、幅は速度で変わる。
+        # その速度での幅を超える前後差が続いたらホイールスピン。単発はノイズ。
         d.get("wheel_fl") or 0, d.get("wheel_fr") or 0,
         d.get("wheel_rl") or 0, d.get("wheel_rr") or 0,
     ))
