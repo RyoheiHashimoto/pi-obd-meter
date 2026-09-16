@@ -198,6 +198,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		speedKmh      float64
 		engineLoad    float64
 		wheelSpeedKmh float64
+		wheelFL       float64
+		wheelFR       float64
+		wheelRL       float64
+		wheelRR       float64
 		coolantTemp   float64
 		intakeMAP     float64
 		odometerCANKm float64
@@ -308,7 +312,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDElectric:
 					elecB0Pct, elecB1Raw, odometerCANKm = can.DecodeElectric(frame.Data)
 				case can.IDWheels:
-					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
+					// 4輪を個別に持つ。前後差が続けばホイールスピン。
+					// 平均は車速として使うので今までどおり残す。
+					wheelFL, wheelFR, wheelRL, wheelRR = can.DecodeWheelSpeed4(frame.Data)
+					wheelSpeedKmh = (wheelFL + wheelFR + wheelRL + wheelRR) / 4.0
 				case can.IDOBDResponse:
 					// ISO-TP の組み立て。故障コード (Mode 03/07) は 3 件以上で
 					// 複数フレームに分かれ、Flow Control を返さないと続きが来ない。
@@ -717,6 +724,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				DTCCodes:         dtcCodes,
 				PendingDTCs:      pendingDTCs,
 				Aux22:            aux22Copy,
+				WheelFL:          wheelFL,
+				WheelFR:          wheelFR,
+				WheelRL:          wheelRL,
+				WheelRR:          wheelRR,
 			}
 			currentHasMAP := hasMAP
 			mu.Unlock()
