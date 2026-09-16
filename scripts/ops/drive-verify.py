@@ -43,7 +43,10 @@ f.write("t,speed,rpm,gear,engaged,ratio,mech,slip,tcc,locked,hold,range,shifting
         # 位置で読んでいる解析スクリプトがある。
         "strim,ltrim,timing,iat,o2,fsys,cat,aload,mil,ndtc,"
         # 未同定 Mode 22 PID の生値。空欄は未応答。
-        "p1678,p17b1,p17c1,p17bb,p17bc,p1104\n")
+        "p1678,p17b1,p17c1,p17bb,p17bc,p1104,"
+        # 4輪の車速 (2026-09-16 追加)。前輪が 0.5〜1.0km/h 速いのが定常状態で、
+        # その幅を超える前後差が続いたらホイールスピン。単発の跳ねはノイズ。
+        "wfl,wfr,wrl,wrr\n")
 print("記録先: %s" % path, flush=True)
 
 
@@ -76,7 +79,8 @@ while True:
     slip = d.get("slip_ratio") or 0
     a22 = d.get("aux22") or {}
     f.write("%.1f,%.2f,%.1f,%d,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f,%s,%s,%s,%d,%.3f,"
-            "%.2f,%.2f,%.1f,%.1f,%.3f,%d,%.1f,%.1f,%s,%d,%s,%s,%s,%s,%s,%s\n" % (
+            "%.2f,%.2f,%.1f,%.1f,%.3f,%d,%.1f,%.1f,%s,%d,%s,%s,%s,%s,%s,%s,"
+            "%.2f,%.2f,%.2f,%.2f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, eng, r, mech, slip,
         d.get("tcc_lock_pct") or 0, d.get("tc_locked"),
@@ -107,6 +111,10 @@ while True:
         d.get("mil"), d.get("dtc_count") or 0,
         aux(a22, "1678"), aux(a22, "17B1"), aux(a22, "17C1"),
         aux(a22, "17BB"), aux(a22, "17BC"), aux(a22, "1104"),
+        # 4輪の車速。前輪が 0.5〜1.0km/h 速いのが定常状態で、その幅を超える
+        # 前後差が続いたらホイールスピン。1サンプルだけの跳ねはノイズ。
+        d.get("wheel_fl") or 0, d.get("wheel_fr") or 0,
+        d.get("wheel_rl") or 0, d.get("wheel_rr") or 0,
     ))
     # 0.2秒周期。加速度を差分から求めるため、0.5秒では全開加速のサンプルが
     # 数点しか取れずトルク推定の分解能が足りなかった。書き込み量は

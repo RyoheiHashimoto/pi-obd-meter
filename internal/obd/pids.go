@@ -139,6 +139,14 @@ type OBDData struct {
 	// 同定前の Mode 22 PID の生値。キーは PID、値は応答バイトを
 	// ビッグエンディアンで詰めたもの。単位も意味も未確定 (issue #150 の続き)。
 	Aux22 map[uint16]uint32
+
+	// 4輪それぞれの車速 (km/h) — CAN 0x4B0。
+	// 前輪が後輪より 0.5〜1.0km/h 速いのが定常状態。ホイールスピンは
+	// その幅を超える前後差が続くことで見る。単発の跳ねはノイズ。
+	WheelFL float64
+	WheelFR float64
+	WheelRL float64
+	WheelRR float64
 }
 
 // Reader はOBD-2データを読み取る
