@@ -120,8 +120,9 @@ type RealtimeData struct {
 	DTCCount         int               `json:"dtc_count"` // 記録されている故障コード数
 	Aux22            map[string]uint32 `json:"aux22,omitempty"`
 	// 4輪それぞれの車速 (km/h) — CAN 0x4B0。
-	// 前輪が 0.5〜1.0km/h 速いのが定常状態。ホイールスピンはその幅を
-	// 超える前後差が「続く」ことで見る。単発の跳ねはノイズ。
+	// 前輪がわずかに速いのが定常状態で、幅は速度で変わる
+	// (120km/h で +0.5〜1.0、低速で +0.1〜0.3)。ホイールスピンは
+	// その速度での幅を超える前後差が「続く」ことで見る。
 	WheelFL        float64 `json:"wheel_fl"`
 	WheelFR        float64 `json:"wheel_fr"`
 	WheelRL        float64 `json:"wheel_rl"`
