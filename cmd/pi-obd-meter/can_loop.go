@@ -44,6 +44,32 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		obd.PIDIntakeMAP,  // 0x0B — MAP (バキューム計、燃費計算)
 	}
 
+	// 機関系の診断値。表示には使わず、記録して不調の兆候を見るためのもの。
+	//
+	// 【要求しないと取れない】
+	// 受信側のデコードは以前から 0x06/0x07/0x0E/0x0F/0x14 に対応していたが、
+	// メーターはこれらを要求していなかった。2026-09-02 まで値が入っていたのは、
+	// 同定用の巡回ポーリング (poll22) が同じバスに投げていた応答を拾っていた
+	// だけで、それを止めた 9/7 以降は全点 0 になった。2026-09-16 の走行で
+	// 「トリムも点火時期も 0、つまり狂いがない」と読みかけたが、実際は
+	// 取れていなかった。0 は健全性の根拠にならない。
+	//
+	// 100ms に1つずつ巡回するので 1 周 1 秒。MAF/MAP の 100ms 周期には
+	// 触らない。追加の送信は 10Hz で、0x201 が 100Hz で流れるバスに対して
+	// 十分小さい。
+	auxPIDs := []byte{
+		obd.PIDMonitorStatus,    // 0x01 — MIL と記録されている DTC の数
+		obd.PIDShortFuelTrim,    // 0x06 — 短期燃料トリム
+		obd.PIDLongFuelTrim,     // 0x07 — 長期燃料トリム
+		obd.PIDTimingAdvance,    // 0x0E — 点火時期。ノッキングで遅角する
+		obd.PIDIntakeAirTemp,    // 0x0F — 吸気温
+		obd.PIDFuelSystemStatus, // 0x03 — トリムが効いている状態かの判定に要る
+		obd.PIDO2SensorB1S1,     // 0x14 — O2 センサー電圧
+		obd.PIDAbsoluteLoad,     // 0x43 — 絶対負荷
+		obd.PIDCatalystTempB1S1, // 0x3C — 触媒温度
+		obd.PIDRuntime,          // 0x1F — エンジン稼働時間
+	}
+
 	// 距離パルスの累積カウンタ。CAN再接続のたびに基準値を捨てる。
 	var pulseCounter can.PulseCounter
 	// トルコン滑りの校正器。ロックアップ中のサンプルから k を学習する。
@@ -115,6 +141,27 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 		hasMAP        bool
 		hasData       bool
 		lastFrameTime time.Time
+
+		// 機関系の診断値
+		fuelSysStatus int
+		catalystTempC float64
+		hasCatalyst   bool
+		absoluteLoad  float64
+		mil           bool
+		milDTCCount   int
+		hasMonitor    bool
+
+		// 故障コード。dtcStage は 0=Mode 03 未送信, 1=Mode 07 未送信, 2=読了。
+		// lastDTCCount と記録数が食い違ったら 0 に戻して読み直す。
+		lastDTCCount = -1
+		dtcStage     int
+		dtcCodes     []obd.DTC
+		pendingDTCs  []obd.DTC
+
+		// ISO-TP の組み立てと、未同定 Mode 22 PID の生値
+		isotp      can.Reassembler
+		probe22Idx int
+		aux22      map[uint16]uint32
 	)
 
 	// CANフレーム読み取りgoroutine
@@ -170,6 +217,22 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				case can.IDWheels:
 					wheelSpeedKmh = can.DecodeWheelSpeed(frame.Data)
 				case can.IDOBDResponse:
+					// ISO-TP の組み立て。故障コード (Mode 03/07) は 3 件以上で
+					// 複数フレームに分かれ、Flow Control を返さないと続きが来ない。
+					// Mode 01/22 の応答も単一フレームとしてここを通るが、
+					// 先頭バイトで弾く。
+					if payload, needFC := isotp.Push(frame); needFC {
+						_ = s.WriteFrame(can.FlowControlFrame())
+					} else if len(payload) > 0 && (payload[0] == 0x43 || payload[0] == 0x47) {
+						if codes, ok := obd.ParseDTCPayload(payload); ok {
+							if payload[0] == 0x43 {
+								dtcCodes = codes
+							} else {
+								pendingDTCs = codes
+							}
+						}
+					}
+
 					// Mode 22 (拡張診断データ) の応答。ATF油温はここから来る。
 					if pid22, data, ok := can.ParseOBDResponse22(frame); ok {
 						switch pid22 {
@@ -190,6 +253,18 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 							if g, ok := can.DecodeGrade(data); ok {
 								gradeRaw = g
 								hasGrade = true
+							}
+						default:
+							// 未同定の PID は生値のまま残す。意味が決まって
+							// いないうちに単位を付けると、後から見た人が
+							// 確定値だと思い込む。
+							if can.IsProbe22(pid22) {
+								if v, ok := can.DecodeRaw22(data); ok {
+									if aux22 == nil {
+										aux22 = make(map[uint16]uint32, len(can.PID22Probe))
+									}
+									aux22[pid22] = v
+								}
 							}
 						}
 					}
@@ -247,6 +322,28 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 							if len(data) >= 2 {
 								voltage = float64(uint16(data[0])<<8|uint16(data[1])) / 1000.0
 							}
+						case obd.PIDMonitorStatus:
+							// A: bit7 = MIL 点灯, bit0-6 = 記録されている DTC 数
+							if len(data) >= 1 {
+								mil = data[0]&0x80 != 0
+								milDTCCount = int(data[0] & 0x7F)
+								hasMonitor = true
+							}
+						case obd.PIDFuelSystemStatus:
+							if len(data) >= 1 {
+								fuelSysStatus = int(data[0])
+							}
+						case obd.PIDCatalystTempB1S1:
+							// ((A*256)+B)/10 − 40 ℃
+							if len(data) >= 2 {
+								catalystTempC = float64(uint16(data[0])<<8|uint16(data[1]))/10.0 - 40.0
+								hasCatalyst = true
+							}
+						case obd.PIDAbsoluteLoad:
+							// ((A*256)+B)×100/255 %
+							if len(data) >= 2 {
+								absoluteLoad = float64(uint16(data[0])<<8|uint16(data[1])) * 100.0 / 255.0
+							}
 						}
 					}
 				}
@@ -301,6 +398,35 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				_ = sock.WriteFrame(can.OBDRequestFrame(obd.PIDControlModuleV))
 			}
 
+			// 機関系の診断値。100ms に1つずつ巡回する (1周 1秒)。
+			if n := max(1, 100/intervalMs); tickCount%n == 0 {
+				_ = sock.WriteFrame(can.OBDRequestFrame(auxPIDs[(tickCount/n)%len(auxPIDs)]))
+			}
+
+			// 故障コードは始動時に1回だけ読む。Mode 03 と Mode 07 は 1秒
+			// あけて送る。複数フレームの応答が途中のうちに次を投げると、
+			// 組み立てが混ざって存在しないコードを作りかねない。
+			if tickCount%max(1, 1000/intervalMs) == 0 {
+				mu.Lock()
+				// 走行中に記録数が変わったら読み直す。
+				if hasMonitor && milDTCCount != lastDTCCount {
+					lastDTCCount = milDTCCount
+					dtcStage = 0
+				}
+				stage := -1
+				if hasData && dtcStage < 2 {
+					stage = dtcStage
+					dtcStage++
+				}
+				mu.Unlock()
+				switch stage {
+				case 0:
+					_ = sock.WriteFrame(can.OBDRequestFrameMode(can.ModeStoredDTC))
+				case 1:
+					_ = sock.WriteFrame(can.OBDRequestFrameMode(can.ModePendingDTC))
+				}
+			}
+
 			// ATF油温 (Mode 22)。油は熱容量が大きく分解能も1℃しかないため、
 			// 2秒に1回で十分。実測では停車4分間まったく動かなかった。
 			if tickCount%max(1, 2000/intervalMs) == 0 {
@@ -320,6 +446,11 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22Grade))
 			case 2:
 				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22ACCompressor))
+			case 3:
+				// 未同定 PID の生値集め。6個を順に巡って 1.2秒周期。
+				// 表示には使わないので、これ以上速くする理由がない。
+				_ = sock.WriteFrame(can.OBDRequestFrame22(can.PID22Probe[probe22Idx%len(can.PID22Probe)]))
+				probe22Idx++
 			}
 
 			mu.Lock()
@@ -392,6 +523,16 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			tccLockPct := lastLockPct
 			slipRatio := lastSlip
 
+			// 未同定 PID の生値は毎回コピーして渡す。map をそのまま
+			// 渡すと、受け取った側が読んでいる最中に受信側が書き換える。
+			var aux22Copy map[uint16]uint32
+			if len(aux22) > 0 {
+				aux22Copy = make(map[uint16]uint32, len(aux22))
+				for k, v := range aux22 {
+					aux22Copy[k] = v
+				}
+			}
+
 			// CAN直結では全データが常時取得可能なため常にIsFull
 			isFull := true
 			data := &obd.OBDData{
@@ -433,6 +574,17 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 				OdometerCANKm:   odometerCANKm,
 				ElecB0Pct:       elecB0Pct,
 				ElecB1Raw:       elecB1Raw,
+
+				FuelSystemStatus: fuelSysStatus,
+				CatalystTempC:    catalystTempC,
+				HasCatalyst:      hasCatalyst,
+				AbsoluteLoad:     absoluteLoad,
+				MIL:              mil,
+				DTCCount:         milDTCCount,
+				HasMonitor:       hasMonitor,
+				DTCCodes:         dtcCodes,
+				PendingDTCs:      pendingDTCs,
+				Aux22:            aux22Copy,
 			}
 			currentHasMAP := hasMAP
 			mu.Unlock()
@@ -462,6 +614,10 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			}
 			mu.Lock()
 			hasData = false
+			// 組み立て途中の応答は捨てる。再接続後の続きと繋がると
+			// 前後が混ざったコードになる。故障コードも読み直す。
+			isotp.Reset()
+			dtcStage = 0
 			mu.Unlock()
 
 		case <-reconnectTicker.C:

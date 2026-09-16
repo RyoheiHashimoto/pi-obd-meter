@@ -92,6 +92,9 @@ type App struct {
 	atfMaxMu sync.Mutex
 	atfMax   float64
 
+	// 故障コード。始動時に1回読み、変化したときだけ journal に残す。
+	dtc dtcStore
+
 	startedAt time.Time
 }
 

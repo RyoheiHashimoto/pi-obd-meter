@@ -4,6 +4,8 @@ import "fmt"
 
 // PID定義
 const (
+	PIDMonitorStatus    byte = 0x01 // MIL・DTC数・レディネスモニタ
+	PIDFuelSystemStatus byte = 0x03 // 燃料システム状態 (オープン/クローズドループ)
 	PIDEngineRPM        byte = 0x0C // エンジン回転数
 	PIDVehicleSpeed     byte = 0x0D // 車速 (km/h)
 	PIDEngineLoad       byte = 0x04 // エンジン負荷 (%)
@@ -18,9 +20,43 @@ const (
 	PIDO2SensorB1S1     byte = 0x14 // O2センサー B1S1
 	PIDRuntime          byte = 0x1F // エンジン稼働時間 (秒)
 	PIDFuelLevel        byte = 0x2F // 燃料レベル (%)
-	PIDAmbientTemp      byte = 0x46 // 外気温 (°C)
+	PIDCatalystTempB1S1 byte = 0x3C // 触媒温度 Bank1 Sensor1 (°C)
 	PIDControlModuleV   byte = 0x42 // ECU 電源電圧 (V)。実機で対応確認済み
+	PIDAbsoluteLoad     byte = 0x43 // 絶対負荷 (%)。過給なしなら 0〜95%
+	PIDAmbientTemp      byte = 0x46 // 外気温 (°C)
 )
+
+// 燃料システム状態 (PID 0x03 の A バイト) のビット。
+//
+// クローズドループ = O2 センサーの信号で噴射量を補正している状態で、
+// このときだけ燃料トリム (0x06/0x07) に意味がある。オープンループ中の
+// トリムは制御に使われていないため、0 付近でもズレていても判断材料に
+// ならない。トリムを読むときは必ずこの値と対にすること。
+const (
+	FuelSysOpenLoopCold  = 1 << 0 // 冷間でまだ O2 が使えない
+	FuelSysClosedLoop    = 1 << 1 // 通常。O2 で補正中
+	FuelSysOpenLoopLoad  = 1 << 2 // 高負荷または減速時の燃料カット
+	FuelSysOpenLoopFault = 1 << 3 // 系の故障でオープンループに落ちている
+	FuelSysClosedLoopBad = 1 << 4 // クローズドループだが一部の O2 が故障
+)
+
+// FuelSystemStatusString は燃料システム状態を日本語にする。
+// 未取得 (0) は空文字列を返す。
+func FuelSystemStatusString(v int) string {
+	switch {
+	case v&FuelSysClosedLoop != 0:
+		return "クローズドループ"
+	case v&FuelSysOpenLoopCold != 0:
+		return "オープンループ (冷間)"
+	case v&FuelSysOpenLoopLoad != 0:
+		return "オープンループ (高負荷・減速)"
+	case v&FuelSysOpenLoopFault != 0:
+		return "オープンループ (故障)"
+	case v&FuelSysClosedLoopBad != 0:
+		return "クローズドループ (O2 故障)"
+	}
+	return ""
+}
 
 // Device はOBD-2アダプタの通信インタフェース。
 // テスト時にモック実装に差し替えることでハードウェアなしでのテストを可能にする。
@@ -81,6 +117,28 @@ type OBDData struct {
 	OdometerCANKm float64 // 累計走行距離 (km) — CAN 0x430 B4-5 (10km単位)。実機検証済み
 	ElecB0Pct     float64 // 0x430 B0 の生値/2.55。燃料残量の可能性・未確定 (issue #119)
 	ElecB1Raw     float64 // 0x430 B1 の生値。電圧に連動するが電圧ではない (issue #119)
+
+	// 燃料システム状態 (PID 0x03 の A バイト)。0 = 未取得。
+	// 燃料トリムはこれがクローズドループのときだけ意味を持つ。
+	FuelSystemStatus int
+	CatalystTempC    float64 // 触媒温度 (°C) — PID 0x3C
+	HasCatalyst      bool    // 触媒温度を受信できたか
+	AbsoluteLoad     float64 // 絶対負荷 (%) — PID 0x43
+
+	// MIL (チェックランプ) と記録されている DTC の数 — PID 0x01。
+	// 保留コード (Mode 07) はこの数に含まれない。
+	MIL        bool
+	DTCCount   int
+	HasMonitor bool // PID 0x01 を受信できたか
+
+	// 故障コード。始動時に Mode 03 / 07 を1回読む。
+	// nil は「まだ読んでいない」で、空スライスが「読んで0件」。
+	DTCCodes    []DTC
+	PendingDTCs []DTC
+
+	// 同定前の Mode 22 PID の生値。キーは PID、値は応答バイトを
+	// ビッグエンディアンで詰めたもの。単位も意味も未確定 (issue #150 の続き)。
+	Aux22 map[uint16]uint32
 }
 
 // Reader はOBD-2データを読み取る

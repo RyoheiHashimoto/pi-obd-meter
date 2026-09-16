@@ -92,6 +92,60 @@ const PID22ACCompressor uint16 = 0x1103
 // GPS の標高が取れれば換算式を決められる。
 const PID22Grade uint16 = 0x3201
 
+// 同定できていない Mode 22 の PID。
+//
+// 2026-08-31 の全 PID 巡回 (poll22) で応答が返ることまでは分かっているが、
+// 何を指しているかは未確定。名前は「この辺りだろう」という当たりであって、
+// 確定した意味ではない。生値のまま記録して、走行データと突き合わせて
+// 後から同定する。確定したら専用の定数とデコーダに移すこと。
+//
+// 巡回ポーリング (poll22) は 2026-09-07 に止めた。同定が済んだと判断した
+// ことと、1時間あたり 3MB の書き込みが SD の寿命と不正電断のリスクに
+// 見合わないことが理由で、危険だからではない。メーター本体から低頻度で
+// 読む分にはどちらの問題も起きない。
+const (
+	PID22FuelSysOpenLoop uint16 = 0x1678 // オープンループ状態の候補
+	PID22ShiftRangeA     uint16 = 0x17B1 // シフトレンジの候補
+	PID22ShiftRangeB     uint16 = 0x17C1 // シフトレンジの候補 (別表現？)
+	PID22SolenoidA       uint16 = 0x17BB // 変速ソレノイドの候補
+	PID22SolenoidB       uint16 = 0x17BC // 変速ソレノイドの候補
+	PID22ACStatus2       uint16 = 0x1104 // 0x1103 と連動するもう一方のエアコン状態
+)
+
+// PID22Probe は生値のまま記録する未同定 PID の一覧。
+// 巡回の順序はこの並び。増やすと1周の時間が延びる。
+var PID22Probe = []uint16{
+	PID22FuelSysOpenLoop,
+	PID22ShiftRangeA,
+	PID22ShiftRangeB,
+	PID22SolenoidA,
+	PID22SolenoidB,
+	PID22ACStatus2,
+}
+
+// IsProbe22 は PID が未同定の記録対象かどうかを返す。
+func IsProbe22(pid uint16) bool {
+	for _, p := range PID22Probe {
+		if p == pid {
+			return true
+		}
+	}
+	return false
+}
+
+// DecodeRaw22 は Mode 22 の応答をビッグエンディアンの整数にする。
+// 意味が分からないうちは、桁を崩さずそのまま残すのが唯一の正解。
+func DecodeRaw22(data []byte) (uint32, bool) {
+	if len(data) == 0 || len(data) > 4 {
+		return 0, false
+	}
+	var v uint32
+	for _, b := range data {
+		v = v<<8 | uint32(b)
+	}
+	return v, true
+}
+
 const (
 	statusBitFan    = 1 << 0 // ラジエータファン
 	statusBitBrake  = 1 << 1 // ブレーキペダル
