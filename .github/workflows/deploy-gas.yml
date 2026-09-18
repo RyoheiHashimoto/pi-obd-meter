@@ -19,8 +19,18 @@ jobs:
       - name: Lint GAS code
         run: npx eslint gas/*.gs
 
+      # バージョンを固定する。
+      #
+      # 無指定だと npm がその時の最新を入れるので、clasp 側の破壊的変更で
+      # ある日いきなり GAS デプロイが落ちる。しかも gas/ を変更したときしか
+      # 動かないワークフローなので、壊れていることに気づくのは「直したい
+      # ときに直せない」瞬間になる。
+      #
+      # 3.4.1 は 2026-08-28 公開で、最後に成功した 2026-08-30 のデプロイで
+      # 実際に使われた版 (当時これが最新だった)。上げるときは gas/ に変更を
+      # 含む PR で1回通してから固定値を書き換えること。
       - name: Install clasp
-        run: npm install -g @google/clasp
+        run: npm install -g @google/clasp@3.4.1
 
       - name: Setup clasp credentials
         run: |
