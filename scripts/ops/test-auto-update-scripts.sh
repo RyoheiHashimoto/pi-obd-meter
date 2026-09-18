@@ -89,6 +89,35 @@ rm -rf "$T/root"
 install_scripts "$T/pkg" > /dev/null
 check_file "$T/root/usr/local/bin/drive-verify.py" "NEW-drive-verify" "保管先が優先された"
 
+echo "6) ユニットが叩くパスと scripts/ops の対応 (#191 案3)"
+# 配布は ExecStart から導くので、ユニットが指すファイルが scripts/ops に無いと
+# そのサービスだけ永久に古いまま動く。2026-09-09 に can-verify.sh / imu-log.py /
+# wifi-watchdog.sh / log-retention.sh の4本が実際にその状態だった。
+# 対応表を廃止した今もファイル名の変更や移動でズレうるので、ここで検査する。
+found=0
+for u in "$HERE"/scripts/ops/systemd/*.service; do
+    [ -f "$u" ] || continue
+    uname_=$(basename "$u" .service)
+    # `|| true` が要る。grep が何も見つけないと終了コード 1 を返し、
+    # set -euo pipefail の下では代入ごと失敗してスクリプトがそこで止まる。
+    # log-retention と nm-delayed は ExecStart に /usr/local を持たないので、
+    # これが無いと検査は途中で黙って死ぬ (実際そうなった)。
+    execpath=$(awk -F= '/^ExecStart=/{print $2}' "$u" | tr ' ' '\n' | grep '^/usr/local/' | head -1 || true)
+    # ExecStart が /usr/local を使わないユニット (systemd 標準のコマンドを叩く
+    # だけのもの) は配布の対象外。検査もしない。
+    [ -n "$execpath" ] || continue
+    found=$((found + 1))
+    src="$HERE/scripts/ops/$(basename "$execpath")"
+    if [ -f "$src" ]; then
+        ok "$uname_ → $(basename "$execpath")"
+    else
+        ng "$uname_: ExecStart が $execpath を指すが scripts/ops/$(basename "$execpath") が無い"
+    fi
+done
+if [ "$found" -eq 0 ]; then
+    ng "ExecStart から配布先を導けるユニットが1つも無い。検査が空振りしている"
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "FAIL"
     exit 1

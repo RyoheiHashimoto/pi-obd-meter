@@ -185,8 +185,18 @@ deploy_scripts() {
         uname_=$(basename "$unit_file" .service)
         # ExecStart=/usr/bin/python3 /usr/local/bin/foo.py のように
         # インタプリタが前置される形もあるので、/usr/local 配下の引数を拾う。
+        # 末尾の `|| true` を外してはいけない。
+        #
+        # grep が何も見つけないと終了コードが 1 になり、set -euo pipefail の
+        # 下では代入ごと失敗する。log-retention と nm-delayed は ExecStart に
+        # /usr/local を持たないので、これは毎回必ず起きる。
+        #
+        # 今これで止まっていないのは、deploy_scripts を `deploy_scripts || ...`
+        # の左辺で呼んでいて errexit が抑止されているからにすぎない。呼び方を
+        # 変えた瞬間に、glob 順で log-retention より後ろの wifi-watchdog が
+        # 黙って配られなくなる。呼び方に依存させない。
         execpath=$(awk -F= '/^ExecStart=/{print $2}' "$unit_file" \
-                   | tr ' ' '\n' | grep '^/usr/local/' | head -1)
+                   | tr ' ' '\n' | grep '^/usr/local/' | head -1 || true)
         [ -n "$execpath" ] || continue
         src="${base}/ops/$(basename "$execpath")"
         [ -f "$src" ] || continue
