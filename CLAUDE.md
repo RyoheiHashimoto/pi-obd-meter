@@ -29,6 +29,19 @@ Raspberry Pi 4 + CAN HAT 直結で速度・RPM・スロットル・インマニ�
 3. GitHub Actions が ARM64 バイナリをビルド・リリース
 4. Pi が**次回のエンジン始動時**に検出して自動更新（走行中には更新されない）
 
+### コミットは必ずパスを明示する
+
+**この作業ツリーは複数のセッションが同時に使う。** `git add -A` / `git add .` /
+`git commit -a` は禁止。`git add <path>` で自分が触ったファイルだけを staging する。
+
+2026-09-09、ops 修正のコミットが別セッションの作業中だった
+`internal/trip/tracker.go` を巻き込んで push した（`07299a6`）。今回は完成品
+だったので無害だったが、書きかけを拾えばそのまま CI を通り、dev-latest として
+**走行中の車のメーターに OTA で配られる。**
+
+コミット前に `git status` を見て、身に覚えのない差分があれば残す。
+並行作業するなら `git worktree` で分けること。
+
 ### GitHub Actions ワークフロー
 
 | ワークフロー | ファイル | トリガー |
@@ -204,7 +217,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 状態ファイル（maintenance.json, trip_state.json）: アトミック書き込み（tmp+rename+fsync）で電源断保護
 - トリップ状態: 0.1km（100m）走行ごとに保存（距離ベース）
 - 送信失敗データ: メモリ内キュー（最大100件、指数バックオフ 5m→30m）
-- ログ: journald（RAM上）
+- ログ: journald（SSD `/data/log/journal` に永続化。2026-09-09 に RAM 運用から変更）
 - 起動時にGASからODO復元（`type: "restore"`）。電源断でリセットされた場合のフォールバック
 
 ### CAN データの注意事項

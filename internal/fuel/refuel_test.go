@@ -364,3 +364,62 @@ func TestDetector_ObservedFullTankReadings(t *testing.T) {
 		}
 	}
 }
+
+// --- SettledLiters (#188 で RNG の計算に使う) ---
+
+// 落ち着く前は 0 を返す。RNG 側はこれを見て従来式に落ちるので、
+// ここで中途半端な値を返すと走行開始直後に嘘の航続距離が出る。
+func TestSettledLiters_落ち着く前は0(t *testing.T) {
+	d := NewDetector(filepath.Join(t.TempDir(), "fuel.json"))
+	if got := d.SettledLiters(); got != 0 {
+		t.Errorf("窓が空: %.2f, want 0", got)
+	}
+	feed(d, 50.0, settleSamples-1) // 1個足りない
+	if got := d.SettledLiters(); got != 0 {
+		t.Errorf("窓が埋まる前: %.2f, want 0", got)
+	}
+}
+
+func TestSettledLiters_窓が埋まれば残量を返す(t *testing.T) {
+	d := NewDetector(filepath.Join(t.TempDir(), "fuel.json"))
+	feed(d, 50.0, settleSamples)
+	want := 50.0 * LitersPerPoint
+	if got := d.SettledLiters(); math.Abs(got-want) > 0.01 {
+		t.Errorf("SettledLiters() = %.3f, want %.3f", got, want)
+	}
+}
+
+// 走行中のサンプルは窓に入らない。スロッシングで値が振れるため。
+// これが効いていないと RNG が走行中に暴れる。
+func TestSettledLiters_走行中のサンプルは無視(t *testing.T) {
+	d := NewDetector(filepath.Join(t.TempDir(), "fuel.json"))
+	feed(d, 50.0, settleSamples) // 停車中に確定
+	base := d.SettledLiters()
+	for i := 0; i < settleSamples*2; i++ {
+		d.Update(20.0, false) // 走行中に大きく振れた値
+	}
+	if got := d.SettledLiters(); math.Abs(got-base) > 0.001 {
+		t.Errorf("走行中の値に引きずられた: %.3f → %.3f", base, got)
+	}
+}
+
+// 2026-09-06 04:34 の実測。純正の給油警告灯が点灯した時点の 14.9pt。
+// DY デミオの警告灯は残り 6〜7L で点くとされる。この範囲を外れたら
+// LitersPerPoint の換算が疑わしい。
+func TestSettledLiters_警告灯点灯時の実測(t *testing.T) {
+	d := NewDetector(filepath.Join(t.TempDir(), "fuel.json"))
+	feed(d, 14.9, settleSamples)
+	got := d.SettledLiters()
+	if got < 6.0 || got > 7.0 {
+		t.Errorf("14.9pt → %.2f L。警告灯点灯時の 6〜7L を外れている", got)
+	}
+}
+
+// nil でも落ちない。RNG は毎フレーム呼ぶので、初期化順序で nil が来ても
+// メーターごと落とすわけにはいかない。
+func TestSettledLiters_nilで落ちない(t *testing.T) {
+	var d *Detector
+	if got := d.SettledLiters(); got != 0 {
+		t.Errorf("nil: %.2f, want 0", got)
+	}
+}

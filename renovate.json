@@ -1,0 +1,62 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["* 0-6 * * 1"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "labels": ["dependencies"],
+  "commitMessagePrefix": "chore(deps):",
+
+  "packageRules": [
+    {
+      "description": "間接依存は個別に見ても判断できないので、1本のPRにまとめる",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "groupName": "Go の間接依存",
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "直接依存は1つずつ見る。車載機なので中身を確認してから入れる",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["require"],
+      "groupName": null
+    },
+    {
+      "description": "Actions はまとめる。壊れてもCIが落ちるだけで実機に影響しない",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Go 本体のバージョンは上げない。実機の Go と揃える必要がある",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "enabled": false
+    },
+    {
+      "description": "メジャー更新は自動で出さず、ダッシュボードから手で起こす",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    }
+  ],
+
+  "customManagers": [
+    {
+      "description": "deploy-gas.yml の clasp のバージョン。2026-08-30 にここが動いてデプロイが壊れた",
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["npm install -g @google/clasp@(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "@google/clasp",
+      "datasourceTemplate": "npm"
+    }
+  ],
+
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "schedule": [],
+    "prCreation": "immediate"
+  }
+}

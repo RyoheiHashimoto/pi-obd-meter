@@ -19,6 +19,22 @@ const (
 	// 復帰点はおよそ 1,200rpm 前後なので、余裕を見て 1,300rpm 以上でのみ
 	// 「燃料を使っていない」と判断する。
 	fuelCutMinRPM = 1300.0
+
+	// engineBrakeLoadPct は MAP が読めないときにスロットル閉とみなす負荷の上限。
+	engineBrakeLoadPct = 5.0
+
+	// O2 センサーで燃料カットの裏を取る案は採らなかった。
+	//
+	// 狙いとしては正しい。燃料を切れば排気に酸素が残り、狭帯域 O2 は 0V に
+	// 落ちる。MAP や負荷と違って結果の観測なので、推定の誤りが乗らない。
+	//
+	// しかし実測すると O2 の更新は 5.10 秒に1回だった (MAP・負荷・回転は
+	// 0.2 秒)。auxPIDs のローテーションに入っているためで、燃料カットは
+	// 数秒で終わる現象だから、5 秒前の値では判定できない。
+	//
+	// 同じ理由で「ゼロにした行の O2 が高いから燃料は出ていた」という検証も
+	// 成り立たない。エンブレに入る直前の古い値が残っているだけの可能性がある。
+	// O2 を使うなら、まず専用スロットへ移して更新周期を上げることが前提になる。
 )
 
 // calcFuelEconomy は瞬間燃費(km/L)を計算する
@@ -79,17 +95,24 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 	// エンストを避けるため ECU はアイドル付近で燃料を復帰させるので、
 	// fuelCutMinRPM 以上でのみ 0 とする。それ未満は従来どおり計算値を返す。
 	if speed >= minDisplaySpeedKm {
-		if hasMAP && intakeMAP > 0 && intakeMAP < engineBrakeMAPKPa {
+		// スロットルが閉じているか。MAP が読めるならそちらを使い、
+		// 読めないときだけ負荷で代用する。
+		//
+		// 以前は MAP の条件を満たさない場合にも負荷の判定へ落ちていた。
+		// 2つが独立に並んでいたため、MAP が高い (スロットルが開いている)
+		// のに負荷だけが低く読めた行まで燃料ゼロにしていた。
+		throttleClosed := false
+		if hasMAP && intakeMAP > 0 {
+			throttleClosed = intakeMAP < engineBrakeMAPKPa
+		} else {
+			throttleClosed = load < engineBrakeLoadPct
+		}
+
+		if throttleClosed {
 			if rpm >= fuelCutMinRPM {
-				return -1, 0 // MAP低い = スロットル閉 = 燃料カット
+				return -1, 0
 			}
 			return -1, fuelRateLH // 低回転では燃料が復帰している
-		}
-		if load < 5.0 {
-			if rpm >= fuelCutMinRPM {
-				return -1, 0 // 負荷ベースのフォールバック
-			}
-			return -1, fuelRateLH
 		}
 	}
 
@@ -105,8 +128,8 @@ func calcFuelEconomy(speed, rpm, load, maf float64, hasMAF bool, intakeMAP float
 
 // calcRangeToEmpty は給油までの推定残距離 (km) を計算する。
 //
-// remainingL (CAN 燃料残量から求めた実残量) があればそれを使う。無ければ
-// 「満タン − 走行距離」で代用する。
+// remainingL (燃料残量の推定値。internal/fuel/estimate.go) があればそれを使う。
+// 無ければ「満タン − 走行距離」で代用する。
 //
 // 代用式は前回給油で満タンにし、かつ trip_km がリセットされていることを前提に
 // するため、そうでない場面で必ずズレた (#188)。
