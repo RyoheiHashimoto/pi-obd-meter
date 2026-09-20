@@ -115,16 +115,21 @@ export function addOffsetShadow(textEl, dx = 2, dy = 3, color = 'rgba(0,0,0,0.6)
   return textEl;
 }
 
-// 速度→ゲージ色（ZJ-VE / DYデミオ実用域に合わせた8段階）
+// 速度→ゲージ色（8段階）
+// 境界はすべて意味を持たせている。30 は生活道路の法定速度（2026-09-01 改正）、
+// 60 は標識のない一般道の法定速度、100/120 は高速の法定速度。
+// 40 と 80 は「そこまでなら1速／2速に落とせる」線で、実測で噛んだ最高速
+// (1速 44.5km/h / 2速 88.7km/h) を切り下げた安全側の値。
+// 無彩色→有彩色の変化を 30 に置き、生活道路の超過がいちばん目立つようにした。
 export function speedColor(v) {
   if (v >= 130) return '#f44336'; // 赤
   if (v >= 120) return '#ff9800'; // 橙
-  if (v >= 100) return '#ffeb3b'; // 黄
-  if (v >= 80)  return '#76ff03'; // 黄緑（高速）
-  if (v >= 60)  return '#69f0ae'; // 緑（巡航）
-  if (v >= 30)  return '#26c6da'; // 水色（市街地）
-  if (v >= 10)  return '#42a5f5'; // 青（低速）
-  return '#78909c'; // 停車・非アクティブ
+  if (v >= 100) return '#ffeb3b'; // 黄（高速の法定速度帯）
+  if (v >= 80)  return '#76ff03'; // 黄緑（ここから先は3速までしか落とせない）
+  if (v >= 60)  return '#69f0ae'; // 緑（80 までなら2速に落とせる）
+  if (v >= 40)  return '#26c6da'; // 水色（一般道の法定速度まで）
+  if (v >= 30)  return '#42a5f5'; // 青（40 までなら1速に落とせる）
+  return '#78909c'; // グレー（停車〜生活道路の法定速度内）
 }
 
 // 立体トラック描画（SVG radialGradient で内暗→中明→外暗）
@@ -270,15 +275,16 @@ export function updateGear(gear, range, hold, tcLocked, tccLockPct, shifting) {
 }
 
 // --- RPM色: 回転数に応じた色 ---
-// RPM→色（ZJ-VE 91PS/6000rpm, 124Nm/3500rpm に合わせた8段階）
+// RPM→色（ZJ-VE 91PS/6000rpm, 124Nm/3500rpm。実測に合わせた8段階）
+// 寒色4段が巡航、黄緑が遷移帯、黄以上が加速。赤は6,000rpm（最大出力）から。
 export function rpmColor(rpm) {
-  if (rpm >= 5000) return '#f44336';  // 赤
-  if (rpm >= 4000) return '#ff9800';  // 橙
-  if (rpm >= 3500) return '#fdd835';  // 黄
-  if (rpm >= 3000) return '#76ff03';  // 黄緑（パワーバンド突入）
-  if (rpm >= 2500) return '#69f0ae';  // 緑（通常走行）
-  if (rpm >= 2000) return '#26c6da';  // 水色（街中走行）
-  if (rpm >= 1000) return '#42a5f5';  // 青（アイドル付近）
+  if (rpm >= 6000) return '#f44336';  // 赤: 最大出力超。もう変速が間に合っていない
+  if (rpm >= 5000) return '#ff9800';  // 橙: 上げる操作を始める点（0.93秒後に約6,000rpm）
+  if (rpm >= 4000) return '#fdd835';  // 黄: 加速。自動変速で超えるのは1割強
+  if (rpm >= 3500) return '#76ff03';  // 黄緑: 巡航と加速の遷移帯。トルクピーク
+  if (rpm >= 3000) return '#69f0ae';  // 緑: 巡航の上限（4速 100km/h = 3,010rpm）
+  if (rpm >= 2000) return '#26c6da';  // 水色: 高速の巡航（4速 70〜100km/h）
+  if (rpm >= 1000) return '#42a5f5';  // 青: 一般道の巡航（4速 〜70km/h）
   return '#78909c';                    // 非アクティブ
 }
 
@@ -382,9 +388,8 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // === 中央: RPM トラック + レッドゾーン ===
   createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
-  // Redzone background (6500-8000)
-  const redStart = ARC_START + (6500 / RPM_MAX) * ARC_SWEEP;
-  createGradientTrack(svg, cx, cy, r, 16, redStart, ARC_END, '#200000', '#7a0000', '#200000');
+  // レッドゾーンの背景帯は置かない。針とアークの色が 6,000rpm から赤になるので
+  // 6,500 の帯を残すと赤が二重になる。
 
   // RPM 目盛り (0〜8, ×1000)
   const rpmMj = 8, rpmMn = 5;
