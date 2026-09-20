@@ -211,18 +211,46 @@ func DecodeCoolant(data [8]byte) (tempC float64, distPulse uint8) {
 	return
 }
 
-// DecodeWheelSpeed は 0x4B0 フレームから4輪平均車速をデコードする
+// DecodeWheelSpeed4 は 0x4B0 フレームから4輪の車速を個別に取り出す。
 //
 //	B0-1: FL, B2-3: FR, B4-5: RL, B6-7: RR ((raw - 10000) / 100 km/h)
-func DecodeWheelSpeed(data [8]byte) float64 {
-	var sum float64
-	for i := 0; i < 4; i++ {
+//
+// 【単発のスパイクが混じる】
+// 2026-09-16 の走行ログ 28万行を4輪に展開したところ、1サンプル (14ms) だけ
+// 5km/h 跳ねてすぐ戻る値が 0.8% あった。FF 車なのに従動輪の右後だけが
+// 跳ねるなど物理的な説明がつかず、継続もしない。平均を取ると均されるので
+// これまで見えていなかった。個別の値で何かを判断するときは、続いているかを
+// 必ず見ること。1サンプルだけの跳ねは捨ててよい。
+//
+// 【前輪が常にわずかに速い。その幅は速度で変わる】
+// 実測 (2026-09-16〜17):
+//
+//	120km/h    +0.5〜1.0 km/h  (FL/FR 120.9 に対し RL/RR 119.8)
+//	 55km/h    +0.14 km/h
+//	  5〜35km/h +0.08〜0.32 km/h (負荷 36〜52% の加速中でもこの幅)
+//
+// 速度が上がるほど広がる。前輪荷重による有効転がり半径の差なのか駆動輪の
+// スリップなのかは、この値だけでは分けられない (低速では駆動力をかけても
+// 差が小さいので、スリップだけでは説明しにくい)。タイヤは4本とも同じ
+// 銘柄・同じサイズなので、径のばらつきではない。
+//
+// いずれにせよこれが定常状態なので、ホイールスピンは「**その速度での幅**を
+// 超える前後差が続く」ことで見る。固定のしきい値や絶対値で見てはいけない。
+func DecodeWheelSpeed4(data [8]byte) (fl, fr, rl, rr float64) {
+	var w [4]float64
+	for i := range w {
 		raw := int(uint16(data[i*2])<<8 | uint16(data[i*2+1]))
 		spd := float64(raw-10000) / 100.0
 		if spd < 0 {
 			spd = 0
 		}
-		sum += spd
+		w[i] = spd
 	}
-	return sum / 4.0
+	return w[0], w[1], w[2], w[3]
+}
+
+// DecodeWheelSpeed は 0x4B0 フレームから4輪平均車速をデコードする
+func DecodeWheelSpeed(data [8]byte) float64 {
+	fl, fr, rl, rr := DecodeWheelSpeed4(data)
+	return (fl + fr + rl + rr) / 4.0
 }

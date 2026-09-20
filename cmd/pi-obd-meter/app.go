@@ -66,6 +66,8 @@ type App struct {
 	wsHub    *WSHub
 	// 給油の自動検出。起動時の燃料残量の跳躍から給油を判定する (#120)
 	refuel *fuel.Detector
+	// 航続距離に使う燃料残量の推定。停車時に跳ねないよう、使った燃料で減らす
+	fuelEst *fuel.Estimator
 	// Pi 本体の健全性。電圧降下と不正終了を記録する (#124)
 	health *health.Monitor
 
@@ -83,7 +85,36 @@ type App struct {
 	maintSending atomic.Bool
 	retrySending atomic.Bool
 
+	// この走行（電源ON〜OFF）の ATF 油温の最高値 (#178)。
+	// 給油をまたいで持ち越す tracker ではなく App に置く。
+	// 「油温はどこまで上がってた？」に答えるためのもので、
+	// エンジンを切れば忘れてよい。
+	atfMaxMu sync.Mutex
+	atfMax   float64
+
+	// 故障コード。始動時に1回読み、変化したときだけ journal に残す。
+	dtc dtcStore
+
 	startedAt time.Time
+}
+
+// noteATF はこの走行の ATF 油温の最高値を更新する。
+func (app *App) noteATF(c float64) {
+	if c <= 0 {
+		return
+	}
+	app.atfMaxMu.Lock()
+	if c > app.atfMax {
+		app.atfMax = c
+	}
+	app.atfMaxMu.Unlock()
+}
+
+// ATFMaxC はこの走行の ATF 油温の最高値を返す。未取得なら 0。
+func (app *App) ATFMaxC() float64 {
+	app.atfMaxMu.Lock()
+	defer app.atfMaxMu.Unlock()
+	return app.atfMax
 }
 
 // newApp はアプリケーション状態を初期化する
@@ -102,6 +133,7 @@ func newApp(cfg Config) *App {
 	// 頼っていたため、maintenance_path を変えても付いてこなかった (#185)。
 	stateDir := filepath.Dir(cfg.MaintenancePath)
 	refuelStatePath := filepath.Join(stateDir, "fuel_state.json")
+	fuelEstimatePath := filepath.Join(stateDir, "fuel_estimate.json")
 	healthStatePath := filepath.Join(stateDir, "health_state.json")
 	tripStatePath := filepath.Join(stateDir, "trip_state.json")
 
@@ -111,6 +143,7 @@ func newApp(cfg Config) *App {
 		maintMgr:  maintenance.NewManager(cfg.MaintenancePath, oilCfg),
 		tracker:   trip.NewTracker(trip.TrackerConfig{StatePath: tripStatePath}),
 		refuel:    fuel.NewDetector(refuelStatePath),
+		fuelEst:   fuel.NewEstimator(fuelEstimatePath, cfg.FuelTankL),
 		health:    health.NewMonitor(healthStatePath),
 		startedAt: time.Now(),
 	}
@@ -153,6 +186,11 @@ func (app *App) addDistance(deltaKm float64) {
 
 // updateRealtimeData はリアルタイムデータをスレッドセーフに更新する
 func (app *App) updateRealtimeData(data RealtimeData) {
+	// ATF 最高油温はここで拾う。CAN 経路と ELM327 経路の両方が
+	// 最後にここへ合流するので、収集点を1箇所に閉じ込められる。
+	if data.ATFValid {
+		app.noteATF(data.ATFTempC)
+	}
 	app.dataMu.Lock()
 	app.latestData = data
 	app.dataMu.Unlock()

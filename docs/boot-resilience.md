@@ -32,21 +32,32 @@ Piは車のアクセサリ電源で動いているため、**エンジンを切�
 | `fsck.repair=preen` | 自動で直せるものだけ直して先へ進む。直しきれなくても止まらない |
 | `systemd-fsck-root` の `SuccessExitStatus=0 1 2 4` | fsck が直しきれなくても起動を続ける |
 | `emergency.service` に90秒後の自動再起動 | 落ちても誰も応答できないので、待つより再起動する |
-| journald を `Storage=volatile` | ログをRAMだけに置き、SDへ書かない。常時書き続けるため影響が大きい |
+| journald を `Storage=persistent` (SSD) | 2026-09-09 に volatile から変更。理由は下記 |
 | swap 無効化 | SD書き込みの最大要因 |
 | root に `noatime` | 読み込みのたびに発生する書き込みを止める |
 
 すべてべき等。`--rollback` で元に戻せる。
 
-### 効果の確認 — SDを壊さずに障害を再現する
+### 効果の確認 — SDを壊さずに確かめる
 
 設定を入れただけでは効果を確かめられない。かといって実際に電源を引き抜く
 試験は、それ自体が SD を壊しに行く行為であり、失敗すれば「SDを抜いて Mac で
 直す」に逆戻りする。避けるための作業でそれを起こすのは筋が悪い。
 
 8月に起動を止めた直接の原因は「fsck が終了コード4を返したこと」だった。
-破損そのものではなく終了コードへの反応が問題だったので、**fsck を偽物に
-差し替えて4を返させれば、ファイルシステムを一切壊さずに同じ状況を作れる。**
+破損そのものではなく終了コードへの反応が問題だったので、確かめるべきは
+**systemd が終了コード4 を成功として扱うか**である。
+
+当初は fsck を偽物に差し替えて4を返させる設計にしていたが、採らなかった。
+対策が効いていなかった場合、emergency に落ちて90秒後に再起動し、また偽物が
+4を返す無限ループになる。fsck の時点で root は読み取り専用なので、偽物が
+自分を元に戻すこともできず、SDを抜くしかなくなる。
+
+代わりに、`systemd-fsck-root` の `SuccessExitStatus` に 4 が入っていることを
+確かめたうえで、終了コード4 で終わる試験用のユニットを2つ作る。一方には
+同じ `SuccessExitStatus` を付け、もう一方には付けない。付けない方だけが
+failed になれば、終了コード4 は成功として扱われている。`SuccessExitStatus` の
+解釈は systemd 共通なので、fsck にもファイルシステムにも触らずに判定できる。
 
 ```
 ./scripts/ops/verify-boot-resilience.sh <PiのIP>
@@ -54,7 +65,7 @@ Piは車のアクセサリ電源で動いているため、**エンジンを切�
 
 | 段階 | 内容 | 破損リスク |
 |---|---|---|
-| 1 | fsck を偽装して終了コード4 を返させる | **ゼロ** |
+| 1 | 終了コード4 で終わる試験ユニットで、成功扱いになるかを対照と比べる | **ゼロ** |
 | 2 | fsck を強制した上で正常に再起動 | **ゼロ** |
 | 3 | 同期せずに即再起動 (電源断と同じ) | エンジン停止1回分 |
 
@@ -86,6 +97,44 @@ overlayfs で root を読み取り専用にし、書き込みをRAMへ逃がす�
 
 SDへの書き込みは実測で **60秒あたり 0 セクタ**。摩耗は止まった。
 
+### journald の設定が2つに割れていた (2026-09-09 に確認・統合)
+
+**最初「ジャーナルは volatile で再起動をまたぐログが残っていない」と判断したが、
+これは誤り。** `harden-boot.sh` のコードだけを読んで実機を見ていなかった。
+実際の状態はこうだった。
+
+```
+/etc/systemd/journald.conf.d/pi-obd-volatile.conf   Storage=volatile   RuntimeMaxUse=32M
+/etc/systemd/journald.conf.d/zz-debug-persist.conf  Storage=persistent SystemMaxUse=64M
+```
+
+`conf.d` は名前順で後勝ちなので `zz-` が勝ち、**ジャーナルは永続していた**
+(`/var/log/journal` は SSD 上、`journalctl --list-boots` に複数ブート)。
+
+ただし2つの問題があった。
+
+1. **意図が2箇所に割れている。** 片方だけ読むと逆の結論に至る。実際そうなった
+2. **上限が 64M しかなく、4ブート分しか残らない。** #184 は複数の起動を並べ
+   ないと傾向が見えないのに、履歴が足りていなかった。`/data` は 222GB 空いている
+
+`harden-boot.sh` で両方を消し、`zz-pi-obd-journal.conf` 1本に統合した
+(`Storage=persistent` / `SystemMaxUse=512M`)。名前を `zz-` で始めて後勝ちを確実にする。
+
+同時に、同スクリプトにあった `rm -rf /var/log/journal` を撤去した。
+「RAM運用にしたので SD の過去ジャーナルは不要」という趣旨だが、いまの
+構成で再実行すると保存先ごと消してしまう。
+
+### wifi-watchdog のログは本当に消えていた
+
+`/var/log/wifi-watchdog.log` は `/data` にリンクされておらず overlay の
+上層 (tmpfs)。**実機のファイルは 2026-09-06 02:49 で更新が止まっていた** ——
+overlayfs が効いた時点以降の書き込みは RAM に載り、毎回消えている。
+残っていたのは下層 (SD) に焼かれた、それ以前のコピーだった。
+
+`journal` へ出すように変更した。自前の日時も外した。RTC が無く、WiFi が
+繋がって NTP が効くまで壁時計が当てにならないため、
+`journalctl -u wifi-watchdog -o short-monotonic` で読む。
+
 設定は `/etc/overlayroot.conf`:
 
 ```
@@ -113,6 +162,37 @@ sudo overlayroot-chroot apt update      # コマンドを直接実行
 `mount -o remount,ro` は EBUSY で失敗する (サブマウントも書き込み中ファイルも
 無くても失敗する)。戻すには再起動が要る。overlayroot-chroot は終了時に
 自動で `ro` に戻すので、そちらを使うこと。
+
+### deploy が下層を rw のまま残すことがある (2026-09-08 実際に発生)
+
+`deploy.sh` の永続化は `mount -o remount,rw /media/root-ro` → rsync →
+`overlayroot-chroot true`（終了処理を借りて ro へ戻す）という流れ。
+**最後の `overlayroot-chroot` が失敗すると、下層が rw のまま残る。**
+
+```
+  ★ /media/root-ro が rw のままです。再起動して戻してください
+ERROR: Note that [/media/root-ro] is still mounted read/write
+mount: /media/root-ro: mount point is busy.
+```
+
+`fuser -vm` で見ると掴んでいるのは `kernel mount` ＝ overlayfs 本体
+（`lowerdir=/media/root-ro`）。これは常にそうなので、これ自体が原因ではない。
+**`sync` して間を置いて数回試しても戻らなかった。**
+
+**復旧は再起動のみ。** エンジンを切って入れ直せば ro に戻る。
+
+その間のリスク評価（rw のまま電断した場合）:
+
+```
+永続化は完了している    上層と下層のバイナリが一致することを cmp で確認
+書き込みは走っていない  sync 済み
+fsck.mode=auto          不正電断時は起動時に自動検査される
+```
+
+**壊れる確率は低いが、ゼロではない。** overlayfs を入れた目的そのものが
+「下層に書かない」ことなので、気づいたら早めに再起動する。
+
+デプロイ後は毎回 `mount | grep root-ro` で `(ro` を確認すること。
 
 ### デプロイも下層へ複製しないと消える
 
@@ -180,3 +260,44 @@ overlayroot は起動時に `/etc/fstab` を書き換えて `/` を overlay に�
 ```
 sudo findmnt --verify --tab-file /media/root-ro/etc/fstab
 ```
+
+## USB とストレージ — 挿す場所を間違えると全部が落ちる
+
+### SSD は USB2.0 側に挿す
+
+`ELECOM ESD-EXS 250GB` (`056e:6a20`)。**青い USB3.0 ポートに挿すと 1GB の連続書き込みで
+`xhci_hcd: Host System Error` → `HC died` となり、全バスの USB 機器が同時に消える。**
+電源ではない（`throttled=0x0`、ディスプレイを外部電源にしても不変）。
+黒い USB2.0 側（VIA ハブ `2109:3431` 経由）では完走する。2026-09-05 実証。
+
+### AIC8800 ドングルは同じハブ上の SSD を殺す
+
+起動時に3回再列挙し（`a69c:5723` → `a69c:8d80` → `368b:8d83`）、その 0.5 秒後に
+同じハブの SSD が `-71` で落ちる。`/data` ごと消えるため、TRIP・燃料積算・時刻の永続化・
+journal の永続化が同時に失われる。
+
+**対処済み:** `/etc/modprobe.d/blacklist-aic8800.conf` でドライバを無効化（下層へ永続化）+
+**物理撤去**。以後の起動で `-71` は 0 回。詳細は #183。
+
+```
+blacklist aic8800_fdrv
+blacklist aic8800_bsp
+blacklist aic_load_fw
+blacklist aic8800
+```
+
+### /data の電断耐性
+
+```
+/dev/sda1 → /data   ext4, noatime, commit=5, nofail, x-systemd.device-timeout=10
+```
+
+`commit=5` で 5 秒ごとに確定し、状態ファイルは一時ファイル→rename で書く。
+**エンジン停止で失われるのは各ログの末尾数秒だけ**（実測: IMU 0.4 秒、drive-verify 2.6 秒。
+NUL バイトの塊として現れる）。TRIP・燃料積算・メンテ状態は rename 方式なので壊れない。
+
+### 画面キャプチャは grim
+
+この機械は Wayland (labwc + cog)。**`scrot` は X11 専用なので `DISPLAY=:0` を渡しても
+真っ黒な画像しか出ない** (#89)。`grim` を使い、`WAYLAND_DISPLAY` と `XDG_RUNTIME_DIR` は
+`/run/user/$(id -u)/wayland-*` から取る。

@@ -315,6 +315,25 @@ func (t *Tracker) SetDistance(km float64) {
 		km = 0
 	}
 
+	// 0 は「新しいトリップを始めろ」という意味で、給油のときだけ来る。
+	//
+	// GAS は給油を記録すると trip_correction_km=0 を送る (recordManualRefuel)。
+	// 手動のトリップ補正 (correctTrip) は 0 以下を弾くので、ここに 0 が
+	// 来る経路は給油しかない。
+	//
+	// 距離と燃料だけ 0 にしていたため、最高速度・開始時刻・走行時間が
+	// 前のタンクのまま残っていた。2026-09-09 に
+	// max_speed_kmh=134 が「給油後の最高速度」として出たが、実体は 9/7 の
+	// 走行で、給油後の実測は 102 km/h だった。トリップごと作り直す。
+	if km == 0 {
+		slog.Info("給油によるトリップリセット",
+			"prev_distance_km", t.current.DistanceKm,
+			"prev_fuel_l", t.current.FuelConsumptionL,
+			"prev_max_speed_kmh", t.current.MaxSpeedKmh)
+		t.startNewTrip()
+		return
+	}
+
 	// 燃料消費量を距離の比率で補正
 	if t.current.DistanceKm > 0 {
 		ratio := km / t.current.DistanceKm
@@ -370,7 +389,14 @@ func (t *Tracker) finalize() *TripData {
 
 	completed := t.current
 
-	// 新しいトリップを開始
+	t.startNewTrip()
+
+	return &completed
+}
+
+// startNewTrip は集計をすべて捨てて新しいトリップを開始する。
+// 呼び出し側でロックを取っていること。
+func (t *Tracker) startNewTrip() {
 	t.current = TripData{
 		TripID:    fmt.Sprintf("trip_%d", time.Now().Unix()),
 		StartTime: time.Now(),
@@ -378,9 +404,12 @@ func (t *Tracker) finalize() *TripData {
 	t.speedSum = 0
 	t.lastTimestamp = time.Time{}
 
-	t.saveState()
+	// 保存判定の基準も戻す。前のトリップの積算値が残っていると
+	// 「前回保存時からの増分」が負になり、次の保存が saveInterval 頼みになる。
+	t.lastSavedKm = 0
+	t.lastSavedFuel = 0
 
-	return &completed
+	t.saveState()
 }
 
 // GetCurrent は現在のトリップデータのコピーを返す

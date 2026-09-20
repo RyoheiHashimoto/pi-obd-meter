@@ -16,7 +16,7 @@
 # 【このスクリプトがやること】
 #   1. fsck を preen (自動修復できるものだけ直して先へ進む) に変更
 #   2. fsck が失敗しても起動を続行させる
-#   3. journald をRAM運用にして SD への書き込みを激減させる
+#   3. journald を SSD へ永続化する (上限512M)
 #   4. swap を無効化 (SD書き込みの最大要因)
 #   5. noatime で読み込みのたびの書き込みを止める
 #
@@ -43,7 +43,9 @@ if [ "${1:-}" = "--rollback" ]; then
     note "cmdline.txt を $latest から復元した"
     latest=$(ls -t "$BACKUP_DIR"/fstab.* 2>/dev/null | head -1) || true
     [ -n "${latest:-}" ] && { cp "$latest" /etc/fstab; note "fstab を復元した"; }
-    rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf
+    rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
+           /etc/systemd/journald.conf.d/pi-obd-journal.conf \
+           /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf
     note "再起動すると元の設定に戻る"
     exit 0
 fi
@@ -51,9 +53,14 @@ fi
 mkdir -p "$BACKUP_DIR"
 
 # ---------------------------------------------- 1. fsck を止まらない設定に
-cp "$CMDLINE" "$BACKUP_DIR/cmdline.txt.$STAMP"
-note "cmdline.txt を退避: $BACKUP_DIR/cmdline.txt.$STAMP"
-
+#
+# 内容が変わるときだけ書く。
+#
+# 以前は無条件に書いていたため、既に目的の内容でも書き込みを試み、
+# overlayfs 有効化後に /boot/firmware が読み取り専用の環境では
+# 「Read-only file system」で1段目から先へ進めなかった (2026-09-10 実機)。
+# journald の設定はこの後ろにあるのに、そこへ到達できない。
+# べき等を謳うなら、変化が無いときは何もしないのが正しい。
 line=$(tr -d '\n' < "$CMDLINE")
 
 # 既存の fsck 指定をすべて外してから付け直す (べき等にするため)
@@ -67,8 +74,18 @@ line="$line fsck.mode=auto fsck.repair=preen"
 
 # 余分な空白を潰す
 line=$(echo "$line" | tr -s ' ' | sed 's/^ //; s/ $//')
-echo "$line" > "$CMDLINE"
-note "cmdline.txt を更新: fsck.mode=auto fsck.repair=preen"
+if [ "$line" = "$(tr -d '\n' < "$CMDLINE")" ]; then
+    note "cmdline.txt: 既に目的の内容。変更しない"
+else
+    cp "$CMDLINE" "$BACKUP_DIR/cmdline.txt.$STAMP"
+    note "cmdline.txt を退避: $BACKUP_DIR/cmdline.txt.$STAMP"
+    if echo "$line" > "$CMDLINE" 2>/dev/null; then
+        note "cmdline.txt を更新: fsck.mode=auto fsck.repair=preen"
+    else
+        note "警告: $CMDLINE が読み取り専用で更新できない。この段は飛ばす"
+        note "      必要なら: sudo mount -o remount,rw /boot/firmware"
+    fi
+fi
 
 # ------------------------------- 2. fsck が失敗しても emergency に落ちない
 # systemd-fsck-root は cmdline だけでは制御しきれないので、
@@ -94,37 +111,97 @@ ExecStartPost=/bin/sh -c 'sleep 90; systemctl reboot -f'
 CONF
 note "emergency: 90秒待って自動再起動するようにした"
 
-# ----------------------------------------- 3. journald を RAM 運用にする
+# ------------------------------ 3. journald を SSD へ永続化する
+#
+# 【2026-09-09 に volatile から変更】
+#
+# 元は Storage=volatile だった。SD カードの摩耗と不正電断による破損を
+# 避けるためで、当時は正しかった。その後 /data に外付け SSD を追加し、
+# /var/log/journal を /data/log/journal へリンクしたことで前提が消えた。
+# SSD は MAX ENDURANCE 品で 222GB 空いており、ジャーナルを書く余裕がある。
+#
+# volatile のままだと再起動をまたぐログが一切残らない。この機体で
+# 追いかけている内蔵WiFi の association 失敗 (#184) は起動時に起きる
+# 事象なので、記録が起動の境界で毎回消えるのは致命的だった。
+#
+# 上限を付けて /data を埋めないようにする。
+# 実機には設定が2つあり競合していた (2026-09-09 に確認):
+#   pi-obd-volatile.conf   Storage=volatile   RuntimeMaxUse=32M
+#   zz-debug-persist.conf  Storage=persistent SystemMaxUse=64M
+# conf.d は名前順で後勝ちなので zz- が勝ち、実際には永続化されていた。
+# ただし 64M しか保持できず、残っていたのは4ブート分だけだった。
+# 意図が2箇所に割れていると次に読む人が誤読するので1本に統合する。
+# 名前を zz- で始めて、確実に後勝ちさせる。
 mkdir -p /etc/systemd/journald.conf.d
-cat > /etc/systemd/journald.conf.d/pi-obd-volatile.conf <<'CONF'
-# ログをRAMだけに置き、SDへ一切書かない。
-# SDへの書き込みは不正電断で壊れる最大の要因であり、
-# journald は常時書き続けるため影響が大きい。
-# 走行ログは別途 /var/log/ に明示的に書いているものだけ残す。
+rm -f /etc/systemd/journald.conf.d/pi-obd-volatile.conf \
+      /etc/systemd/journald.conf.d/pi-obd-journal.conf \
+      /etc/systemd/journald.conf.d/zz-debug-persist.conf \
+      /etc/systemd/journald.conf.d/99-debug-persist.conf \
+      /etc/systemd/journald.conf.d/persistent.conf
+cat > /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf <<'CONF'
+# ジャーナルを /var/log/journal (SSD) に永続化する。SD には書かない。
+#
+# 上限を 64M から 512M へ上げる。起動時の WiFi association 失敗 (#184) は
+# 複数の起動を並べないと傾向が見えないが、64M では4ブート分しか残らなかった。
+# /data は 222GB 空いているので 512M は誤差。
 [Journal]
-Storage=volatile
-RuntimeMaxUse=32M
-CONF
-note "journald: RAM運用 (Storage=volatile, 上限32M)"
+Storage=persistent
+SystemMaxUse=512M
+SystemMaxFileSize=64M
+Compress=yes
 
-# 既存の設定と競合していないか確認する。conf.d はファイル名順に読まれ、
-# 後に読まれた方が勝つ。Raspberry Pi OS には persistent.conf が入って
-# いることがあり、名前次第では上書きされてしまう。
-conflict=$(grep -l "^Storage=persistent" /etc/systemd/journald.conf.d/*.conf 2>/dev/null | grep -v pi-obd-volatile || true)
-if [ -n "$conflict" ]; then
-    for c in $conflict; do
-        if [ "$(basename "$c")" \> "pi-obd-volatile.conf" ]; then
-            die "$c が後に読まれるため volatile が効かない。ファイル名を見直すこと"
-        fi
-        note "  $c があるが pi-obd-volatile.conf が後勝ちするので問題ない"
-    done
+# レート制限を切る。
+#
+# 99-debug-persist.conf にこの2行が入っていた。統合するとき読まずに消すと、
+# 既定のレート制限 (10秒に1000件) が復活する。追っている WiFi の
+# association 失敗はバーストで出る (2026-09-07 の記録では1回の起動で31回)
+# ので、間引かれると肝心なところが残らない。
+#
+# 車載機のログ量は限られており、上限 512M とローテーションで抑えられる。
+RateLimitIntervalSec=0
+RateLimitBurst=0
+CONF
+note "journald: 永続化を1本に統合 (Storage=persistent, 上限512M)"
+
+# 保存先が SSD を向いていることを確かめる。
+#
+# /var/log/journal が実ディレクトリのままだと SD に書いてしまう。
+# 以前ここで rm -rf /var/log/journal をしていたが、リンクになった後は
+# リンクごと消してしまうので撤去した。
+# 保存先が overlay(RAM) でないことを確かめる。
+#
+# 判定をシンボリックリンクの有無でやってはいけない。この機体は
+# /etc/fstab の bind マウントで /data/log/journal を結びつけている
+# (fstab のコメントに「journald はシンボリックリンクの /var/log/journal を
+# 使わない (実測)」と理由まで書いてある)。-L で見ると実ディレクトリに
+# 見えるため、正しく永続しているのに誤警告を出していた (2026-09-12)。
+#
+# 見るべきは「どのファイルシステム上にあるか」。
+if [ ! -d /var/log/journal ]; then
+    note "  警告: /var/log/journal が無い。journald は /run (RAM) に書く"
+    note "        /etc/fstab に /data/log/journal からの bind を足すこと"
+else
+    src=$(df --output=source /var/log/journal 2>/dev/null | tail -1)
+    case "$src" in
+        overlay*|tmpfs*|"")
+            note "  警告: /var/log/journal が $src 上。再起動で消える"
+            note "        /etc/fstab に /data/log/journal からの bind を足すこと" ;;
+        *)
+            note "  保存先: $src ($(df -h --output=avail /var/log/journal 2>/dev/null | tail -1 | tr -d ' ') 空き)" ;;
+    esac
 fi
 
-# RAM運用に切り替えたので、SDに残った過去のジャーナルは不要。
-if [ -d /var/log/journal ]; then
-    sz=$(du -sh /var/log/journal 2>/dev/null | cut -f1)
-    rm -rf /var/log/journal
-    note "  /var/log/journal を削除 ($sz 回収)"
+# 後から読まれる設定に負けていないか確認する。conf.d はファイル名順で、
+# 後に読まれた方が勝つ。volatile を書く設定が後ろにあると無効化される。
+conflict=$(grep -l "^Storage=volatile" /etc/systemd/journald.conf.d/*.conf 2>/dev/null \
+           | grep -v zz-pi-obd-journal || true)
+if [ -n "$conflict" ]; then
+    for c in $conflict; do
+        if [ "$(basename "$c")" \> "zz-pi-obd-journal.conf" ]; then
+            die "$c が後に読まれるため persistent が効かない。ファイル名を見直すこと"
+        fi
+        note "  $c があるが pi-obd-journal.conf が後勝ちするので問題ない"
+    done
 fi
 
 # ------------------------------------------------------- 4. swap を無効化

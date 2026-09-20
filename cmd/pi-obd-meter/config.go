@@ -53,6 +53,26 @@ type WebSocketConfig struct {
 //
 // この比較は走行距離を一切使っていないため、同時期に判明したトリップ距離の
 // 取りこぼし (ODO比 -17.6%) からは独立している。
+//
+// --- 2026-09-18: 逆方向のずれを観測した (定数は据え置き) ---
+//
+// 給油時に前タンクの実績が取れた。366.47km 走ってレシート 33.46L。
+//
+//	実燃費              366.47 / 33.46 = 10.95 km/L
+//	アプリの燃費表示    366.47 / 29.44 = 12.45 km/L  (+13.7% 楽観的)
+//	アプリ積算 ÷ レシート = 29.44 / 33.46 = 0.880    (4.02L 少ない)
+//	辻褄を合わせる係数   = 1.12 × 1.136 = 1.27
+//
+// 8月とは向きが逆で、今度は過少に出ている。1.12 は下げすぎだった可能性がある。
+// ただし 8月も3区間を貯めてから決めた。**1回では動かさない。** この走行は
+// 高速140km/h・峠・農道と負荷の幅が大きく、走り方の偏りである可能性も残る。
+//
+// 前タンクの実績はジャーナルの
+//
+//	給油によるトリップリセット prev_distance_km=... prev_fuel_l=...
+//
+// の行に出る。給油の検出行とは別で、検出の約10分後 (GAS 送信後) に出るので、
+// 給油直後に grep すると取り逃す。次の給油でこの2行を拾って向きを確かめること。
 const defaultFuelRateCorrection = 1.12
 
 type Config struct {
@@ -109,7 +129,26 @@ type RealtimeData struct {
 	IntakeAirTemp  float64 `json:"intake_air_temp"`
 	O2Voltage      float64 `json:"o2_voltage"`
 	RuntimeSec     int     `json:"runtime_sec"`
-	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (タンク満タン × ECO − TRIP)
+	// 機関系の診断値 (2026-09-16 追加)。
+	// 燃料トリムは fuel_system_str が「クローズドループ」のときだけ意味を持つ。
+	LongFuelTrim     float64           `json:"long_fuel_trim"`
+	FuelSystemStatus int               `json:"fuel_system_status"`
+	FuelSystemStr    string            `json:"fuel_system_str,omitempty"`
+	CatalystTempC    float64           `json:"catalyst_temp_c"`
+	AbsoluteLoad     float64           `json:"absolute_load"`
+	MIL              bool              `json:"mil"`       // チェックランプ点灯中
+	DTCCount         int               `json:"dtc_count"` // 記録されている故障コード数
+	Aux22            map[string]uint32 `json:"aux22,omitempty"`
+	// 4輪それぞれの車速 (km/h) — CAN 0x4B0。
+	// 前輪がわずかに速いのが定常状態で、幅は速度で変わる
+	// (120km/h で +0.5〜1.0、低速で +0.1〜0.3)。ホイールスピンは
+	// その速度での幅を超える前後差が「続く」ことで見る。
+	WheelFL        float64 `json:"wheel_fl"`
+	WheelFR        float64 `json:"wheel_fr"`
+	WheelRL        float64 `json:"wheel_rl"`
+	WheelRR        float64 `json:"wheel_rr"`
+	RangeToEmptyKm float64 `json:"range_to_empty_km"` // 給油までの推定残距離 (推定残量 × ECO)
+	FuelEstimateL  float64 `json:"fuel_estimate_l"`   // 航続距離に使う燃料残量の推定値 (L)。0 = 未推定
 	Gear           int     `json:"gear"`
 	GearRatio      float64 `json:"gear_ratio"`
 	ATRange        int     `json:"at_range"`

@@ -1,0 +1,211 @@
+# 上流への貢献
+
+このプロジェクトの調査から出た、他所へ出すもの。
+
+## 投稿済み
+
+**linux-wireless — brcmfmac のパッチ**
+2026-09-09 15:41 JST 送信。SMTP 受理 (250)。
+
+```
+Message-ID: <20260909064125.67844-1-laurel.medalist12@gmail.com>
+Subject:    [PATCH] wifi: brcmfmac: log the firmware status when a connect fails
+To:         linux-wireless@vger.kernel.org
+Cc:         Arend van Spriel, brcm80211@lists.linux.dev,
+            brcm80211-dev-list.pdl@broadcom.com, linux-kernel@vger.kernel.org
+lore:       https://lore.kernel.org/linux-wireless/20260909064125.67844-1-laurel.medalist12@gmail.com/
+patchwork:  https://patchwork.kernel.org/project/linux-wireless/list/?submitter=&q=brcmfmac+firmware+status
+```
+
+返信が来たら v2 で対応する。指摘されそうな点は本文で先回りしてある
+(なぜ `brcmf_dbg`/`brcmf_info` でないか、`@status` が有効なのはどちらの
+経路かの2点)。
+
+
+**RPi-Distro/firmware-nonfree#38 — `status_code=16` の正体**
+[コメント](https://github.com/RPi-Distro/firmware-nonfree/issues/38#issuecomment-5584166077)（2026-09-08）
+
+3年間・21コメント誰も答えていなかった「status 16 とは何か」に、
+ドライバのソースと実機のトレースで回答した。本文は
+[../docs/upstream-report-status16.md](../docs/upstream-report-status16.md)。
+
+## 未送付
+
+### `mazda_demio_dy.dbc` — opendbc へ
+
+DY デミオ (2002-2007 JDM / Mazda2 DY、ZJ-VE + FN4A-EL) のブロードキャスト CAN 定義。
+**[commaai/opendbc](https://github.com/commaai/opendbc) にこの世代のマツダは存在しない**
+（最古は `mazda_rx8.dbc`）。ADAS 非対応の車でも受け入れられている前例がある。
+
+収録した 6 メッセージ:
+
+```
+0x201 ENGINE        RPM / 車速 / エンジン負荷
+0x230 AT_CTRL       ギア / 機械ギア比（8bit ラップの注意つき）
+0x231 AT_STATUS     ギア / レンジ / HOLD / TCロックアップ / 変速中
+0x420 COOLANT       水温 / 距離パルス
+0x430 ELECTRIC      燃料残量 / 未同定B1 / オドメーター
+0x4B0 WHEEL_SPEEDS  4輪速
+```
+
+**検証済み:**
+
+- `cantools` でパースでき、実機のデコーダ (`internal/can/frame.go`) と数値が一致
+- 実車ログの DBC 対象 19,636 フレームをデコードしてエラー 0 件
+  (`scripts/ops/verify-dbc.py`)
+- 1速の `GEAR_RATIO` が 0.26 になる（8bit ラップ）ことを実ログで再現
+
+**2026-09-09 に DLC の誤りを修正した。** 全メッセージを 8 バイトと宣言していたが、
+実フレームは `AT_STATUS` が 4、`COOLANT` と `ELECTRIC` が 7 バイトだった。
+`cantools` の `decode_message()` は長さが厳密に一致しないと
+`DecodeError: Wrong data size` で落ちるため、19,636 フレーム中 4,884 件が
+デコードできない状態だった。信号のビット位置はいずれも収まっていたので、
+宣言だけの誤り。
+
+この欠陥は「フレーム数を数えるだけ」では出ず、実ログを1本ずつ
+`decode_message()` に通して初めて出た。出す前に検証スクリプトを書くこと。
+
+**未確定な点も正直にコメントへ入れてある:**
+`ELECTRIC.UNKNOWN_B1` は未同定（電圧に連動するが電圧ではない。
+`B0 + 2*B1 ≒ 418` の拘束がある）、`FUEL_LEVEL` はセンダーが両端でクリップし
+非線形であること、`GEAR_RATIO` が滑りを含まない機械比であること。
+
+**受け入れ先の前例は確認済み:** `mazda_rx8.dbc` が存在する一方 RX-8 は
+`docs/CARS.md` に載っていない。opendbc は車種ポートを伴わない DBC 単体も
+持っている。opendbc の貢献フローは openpilot の car port 向けに書かれているが、
+DBC だけの追加に前例がないわけではない。
+
+**走行ログでの検証も完了 (2026-09-09):**
+
+```
+raw_20260908_200350   623,404 フレーム  最高 71.8 km/h  エラー0件
+raw_20260907_131204   522,709 フレーム  最高 67.2 km/h  エラー0件
+                    合計 1,146,113 フレーム
+```
+
+**独立実装との突合が取れた (これが本質)。** `SPEED` と4輪速の一致 (58,375点で
+中央値 +0.08 km/h) は DBC 内部の整合にすぎず、「DBC を DBC で検証」している
+だけだった。別に書かれた Go 実装 (`internal/can`) と突き合わせた:
+
+```
+scripts/ops/xcheck-dbc.py
+  raw_20260908_200350   1,620,388 点  全一致
+  raw_20260907_131204   1,358,655 点  全一致
+                  計 2,979,043 点 (差 < 1e-6)  全6メッセージ・全19信号
+```
+
+**当初これは 320,823 点・4メッセージだけだった。** 先頭20万フレームで打ち切り、
+ログも1本しか使っていなかった。AT_CTRL と AT_STATUS は突き合わせてすらいない
+のに「全信号を検証した」と書きかけた。打ち切りを撤廃して2本とも通した。
+
+チェッカの検出力も確認済み。壊すと落ちる:
+
+| 壊し方 | 結果 |
+|---|---|
+| RPM 係数 0.25→0.26 | 71,077点 不一致 |
+| AT_RANGE 幅 4→3 bit | 検出 |
+| GEAR_RATIO 係数 0.01→0.02 | 検出 |
+| HOLD のビット 15→14 | 3,088点 不一致 |
+
+**HOLD は最初検出できなかった。** 9/8 のログでは HOLD が 88,622 フレーム中
+一度も 1 にならず、ビットをずらしても差が出なかった。9/7 のログを足して初めて
+検出できた。**「一致した」は、その信号が変化するデータで測ったときだけ意味がある。**
+
+`GEAR_RATIO` が機械比であること（1速で 8bit ラップして 0.26）も分布で確認。
+1速 61,479 フレーム中 0.26 が 76.8%、0.24〜0.29 で 85%。観測値の集合だけ見ると
+0.00〜2.55 に広がるが、それは変速中の過渡で、定常値は 0.26 に集中する。
+**集合ではなく分布を見ること。** 集合だけ見て「機械比という記述は誤り」と
+判断しかけた。
+
+`VAL_` に無い生値も見つけたので頻度つきで注記した (`GEAR` の 0x00/0xF1、
+`AT_RANGE` の 0)。いずれも 0.1% 未満の過渡で、名前を捏造せず「未同定」と
+書いてある。
+
+**残っているのは opendbc への出し方だけ。** ファイル名と配置は
+`opendbc/dbc/mazda_demio_dy.dbc` で既存の命名に合う。
+
+
+### `0001-brcmfmac-log-firmware-status-on-failed-connect.patch`
+
+`brcmf_bss_connect_done()` が、ファームウェアから受け取った失敗理由
+(`e->status`) を捨てて `WLAN_STATUS_AUTH_TIMEOUT`(16) 固定で報告している。
+**情報は引数で渡ってきているのに使われていない。** 2行足して、失敗時に
+ファームの status をログへ出す。
+
+- **動作は変えない。** cfg80211 へ返す status はそのまま
+- `brcmf_err()` は `net_ratelimit()` を通るのでログが溢れない
+- Linux mainline (2026-09 時点) にクリーンに適用できることを確認済み
+
+#### 検証済み (2026-09-09)
+
+Docker の arm64 コンテナで mainline を引いて確かめた。
+
+| 項目 | 結果 |
+|---|---|
+| 適用 | Linux **7.3.0-rc2** (`28924df2a`) に `git apply` がクリーンに通る |
+| コンパイル | `ARCH=arm64 W=1` で `cfg80211.o` 生成成功、**警告0** |
+| checkpatch | `--strict` で **0 errors, 0 warnings**（名前とメールを埋めた場合） |
+| 書式指定子 | `event_code` / `status` / `reason` はいずれも `u32` (`fweh.h`) なので `%u` で正しい |
+
+再現手順は `scripts/verify-brcmfmac-patch.sh`。
+
+#### 送る前に残っていること
+
+```
+1. <YOUR NAME> <YOUR EMAIL> を2箇所（From: と Signed-off-by:）差し替える
+   Signed-off-by は DCO への署名。本名とメールで書く決まりで、
+   本人以外が代筆してはいけない
+2. 実機で「失敗時に実際にログが出る」ことを確認する
+   コンパイルは通ったが、実行時に brcmf_err() が期待どおり出るところは
+   まだ見ていない
+```
+
+#### 送り先
+
+`MAINTAINERS` の `BROADCOM BRCM80211` エントリから取った。
+
+```
+git send-email \
+  --to=linux-wireless@vger.kernel.org \
+  --cc="Arend van Spriel <arend.vanspriel@broadcom.com>" \
+  --cc=brcm80211@lists.linux.dev \
+  --cc=brcm80211-dev-list.pdl@broadcom.com \
+  --cc=linux-kernel@vger.kernel.org \
+  contrib/0001-brcmfmac-log-firmware-status-on-failed-connect.patch
+```
+
+**Johannes Berg は入れない。** `NETWORKING DRIVERS (WIRELESS)` エントリは
+`X: drivers/net/wireless/broadcom/` でこのパスを除外している。wireless ツリーの
+管理者なので linux-wireless で見る。宛先はその時点の `scripts/get_maintainer.pl`
+で再確認すること。
+
+#### SMTP の設定状況
+
+資格情報でない項目はこのリポジトリのローカル設定に入れてある
+(`git config --local --get-regexp '^sendemail\.'`)。
+
+```
+sendemail.smtpserver      smtp.gmail.com
+sendemail.smtpserverport  587
+sendemail.smtpencryption  tls
+sendemail.smtpuser        laurel.medalist12@gmail.com
+sendemail.from            Ryohei Hashimoto <laurel.medalist12@gmail.com>
+credential.helper         osxkeychain
+```
+
+Perl 依存は確認済み (`Net::SMTP` 3.13 / `IO::Socket::SSL` 2.068 /
+`Authen::SASL` 2.16)。`Net::SMTP::SSL` は無いが git 2.51 では不要。
+
+`--dry-run` は通っている。From が `Signed-off-by` と一致し、
+`Content-Transfer-Encoding: 8bit` でパッチが再エンコードされないことも確認した。
+
+**残っているのはアプリパスワードだけ。** Google アカウントで2段階認証を有効に
+してから https://myaccount.google.com/apppasswords で発行する。通常のアカウント
+パスワードでは通らない。初回送信時に git が一度だけ聞き、keychain に入る。
+
+**Gmail の Web 画面から送ってはいけない。** 行を折り返して HTML にするので
+パッチが壊れる。SMTP 経由なら上記のとおり無改変で通る。
+
+**先に #38 のスレッドに貼って反応を見る手もある。** あそこには同じ症状の人が
+複数いるので、実機で試してもらえる可能性がある。カーネルのMLに投げるより
+敷居が低い。
