@@ -84,3 +84,16 @@ func TestRFC3339OrEmpty(t *testing.T) {
 		t.Errorf("= %q", got)
 	}
 }
+
+// TestHighMAPIsNotFuelCut は、MAP が高い (スロットルが開いている) のに
+// 負荷だけが低く読めた行を燃料カットにしないことを確かめる。
+//
+// 修正前は MAP の判定と負荷の判定が独立した if として並んでいたため、
+// MAP が条件を外れても負荷の判定へ落ちて 0 にされていた。
+func TestHighMAPIsNotFuelCut(t *testing.T) {
+	// MAP 95kPa = ほぼ全開。負荷は 3% と低く読めているが古い値の可能性がある。
+	_, rate := calcFuelEconomy(60, 2500, 3, 5.0, true, 95, true, 1.3, 1.0)
+	if rate <= 0 {
+		t.Errorf("MAP 95kPa はスロットルが開いている。燃料カットにしてはいけない: rate=%v", rate)
+	}
+}
