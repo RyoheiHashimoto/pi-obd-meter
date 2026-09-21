@@ -11,8 +11,8 @@
   --color-red: #f44336;
   --color-blue: #29b6f6;
 
-  --color-toast-border: #ffb74d;
-  --color-toast-text: #ffd54f;
+  /* 琥珀色。給油ダイアログの「送信待ち」に使う */
+  --color-amber: #ffb74d;
 
   /* --- Fonts --- */
   --font-display: 'Orbitron', monospace;
@@ -81,28 +81,144 @@ body {
   padding: 8px 10px;
 }
 
-/* --- Toast notification --- */
-.toast {
+/* --- 給油ダイアログ (#120) --- */
+/*
+ * 停車中だけ出る。入力は無く、自動検出の進み具合を見せるだけ。
+ * pointer-events を持たないので、画面3秒長押しのキオスク終了は効いたまま。
+ * 日本語は Share Tech Mono に字が無く、実機のフォールバックに落ちるため
+ * 明示してある。
+ */
+.refuel {
   position: fixed;
+  left: 100px;
   top: 50%;
-  left: 280px;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.95);
-  border: 1px solid var(--color-toast-border);
-  border-radius: 8px;
-  padding: 16px 32px;
+  width: 600px;
+  transform: translateY(-50%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 32px;
+  background: rgba(26, 26, 34, 0.97);
+  border: 1.5px solid #3a3a46;
+  border-radius: 14px;
+  font-family: 'Noto Sans CJK JP', 'Noto Sans JP', sans-serif;
+  z-index: 100;
+  pointer-events: none;
+}
+/* display:flex が [hidden] の display:none に勝つため、明示的に消す */
+.refuel[hidden],
+.refuel-head [hidden],
+.refuel-note[hidden],
+.refuel-prev[hidden] {
+  display: none;
+}
+
+.refuel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.refuel-title {
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.refuel-badge {
+  padding: 4px 16px;
+  border: 2px solid;
+  border-radius: 999px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.refuel-badge.is-full {
+  color: var(--color-green);
+  border-color: var(--color-green);
+}
+.refuel-badge.is-partial {
+  color: var(--color-blue);
+  border-color: var(--color-blue);
+}
+
+.refuel-steps {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.refuel-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.refuel-connector {
+  width: 36px;
+  height: 2px;
+  background: #3a3a46;
+}
+.refuel-dot {
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--color-surface);
+}
+.refuel-dot.is-done {
+  background: var(--color-green);
+  box-shadow: 0 0 12px var(--color-green);
+}
+.refuel-dot.is-active {
+  background: var(--color-orange);
+  box-shadow: 0 0 12px var(--color-orange);
+}
+.refuel-dot.is-waiting {
+  background: var(--color-amber);
+}
+.refuel-dot.is-pending {
+  background: var(--color-surface);
+  border: 2px solid #4a4a56;
+}
+.refuel-step-label {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.refuel-step-label.is-active {
+  color: var(--color-orange);
+}
+.refuel-step-label.is-waiting {
+  color: var(--color-amber);
+}
+.refuel-step-label.is-pending {
+  color: #6a6a74;
+}
+
+.refuel-note,
+.refuel-prev {
+  padding-top: 20px;
+  border-top: 1px solid #3a3a46;
+}
+.refuel-note {
+  font-size: 20px;
+  color: var(--color-muted);
+}
+.refuel-prev {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+}
+.refuel-prev-label {
+  font-size: 20px;
+  color: var(--color-muted);
+}
+.refuel-prev-val {
   font-family: var(--font-display);
   font-size: 28px;
   font-weight: 700;
-  color: var(--color-toast-text);
-  text-align: center;
-  z-index: 100;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.5s ease-in-out;
+  color: var(--color-text);
 }
-.toast.show {
-  opacity: 1;
+.refuel-prev-note {
+  font-size: 16px;
+  color: #6a6a74;
 }
 
 /* --- Right panel indicators --- */

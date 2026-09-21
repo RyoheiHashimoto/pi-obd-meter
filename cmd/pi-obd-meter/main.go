@@ -304,6 +304,11 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 給油の自動検出 (#120)。
 			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
 			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
+			if ev := app.refuel.Event(); ev != nil && app.noteRefuelDetected(ev) {
+				// 検出した瞬間に送る。定期送信を待つと最大5分かかり、
+				// ダイアログが「送信待ち」のまま止まって見える。
+				app.sendMaintenanceStatusAsync(ctx)
+			}
 
 			// 航続距離に使う燃料残量。使った燃料で減らし、燃料計へはゆっくり寄せる。
 			// 停車中の燃料計を直接使うと、スロッシングで停車のたびに 10〜25km 跳ねる。
@@ -374,6 +379,7 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 				OdometerCANKm:    data.OdometerCANKm,
 				ElecB0Pct:        data.ElecB0Pct,
 				ElecB1Raw:        data.ElecB1Raw,
+				Refuel:           app.refuelUISnapshot(data.SpeedKmh),
 				OilAlert:         string(oil.Alert),
 				OilCurrentKm:     oil.CurrentKm,
 				OilRemainingKm:   oil.RemainingKm,
