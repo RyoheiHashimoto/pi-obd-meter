@@ -126,9 +126,10 @@ web/
     meter.html              メーター画面HTML
     meter.css               CSS Custom Properties でテーマ管理
     js/
-      main.js               エントリポイント + WebSocket/HTTPポーリング + Toast + キオスク終了
+      main.js               エントリポイント + WebSocket/HTTPポーリング + キオスク終了
       gauge.js              速度ゲージ(針+アーク) + RPMアーク + スロットルアーク + ギア/レンジ表示 + 下部インジケーター(TEMP/TRIP/ECO) + 60fps LERP補間
       indicators.js         右パネル バキューム計 + 4行インジケーター (ECO/TEMP/TRIP/OIL)
+      refuel.js             給油ダイアログ (自動検出の進み具合。停車中のみ表示、入力なし)
     fonts/
       Orbitron-*.ttf        速度・数値表示フォント
       ShareTechMono-*.woff2 リードアウト表示フォント
@@ -182,11 +183,13 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - X11 / lightdm / Chromium 不使用 (Wayland 白フラッシュ回避、低メモリ)
 - `greetd` で systemd-user-sessions 依存、SSH ロックアウト注意 (過去事故 → バイナリ起動時に復旧コード実行)
 
-### 給油記録（手動 — スマホダッシュボード経由）
-- スマホからGASダッシュボードにアクセスし、日付・距離・給油量を入力
-- GAS側で燃費を自動算出し Google Sheets に記録
-- 給油記録時にトリップリセットを GAS → Pi に通知（`pending_resets` レスポンス経由）
-- Pi は次回メンテナンス送信時にレスポンスから `trip_reset` を検出してトリップをリセット
+### 給油記録（自動検出が本線 — #120）
+- **Pi が燃料計 (CAN 0x430 B0) の跳躍から給油を検出する**（`internal/fuel/refuel.go`）。判定は起動直後の停車中に1回だけ
+- 検出した瞬間にメンテナンス送信へ相乗りさせて GAS へ送り、GAS が「給油記録」シートに行を作る
+- 同じ応答で `trip_correction_km=0` が返り、Pi がトリップをリセットする（`tracker.go:318`）
+- 進み具合（検出 → 記録 → トリップリセット）はメーター画面のダイアログに出す（`web/static/js/refuel.js`、停車中のみ）
+- **満タンのときは給油量を出さない。** センダーが上限でクリップするため、跳躍量から出した値に根拠が無い
+- スマホの GAS フォームは残しているが、**レシートと突き合わせて検出量を較正するためのもの**で、毎回手入力する前提ではない
 
 ### GAS Webダッシュボード
 - `doGet` で `HtmlService.createHtmlOutput()` によるモバイル対応HTMLを返す
@@ -277,12 +280,12 @@ hdmi_cvt 800 480 60 6 0 0 0
 - **メンテナンス状態**: Pi → GAS Webhook (type: "maintenance") → Google Sheets（始動時 + 5分間隔）
 - **状態復元**: Pi起動時 → GAS Webhook (type: "restore") → ODO/最終給油距離を取得
 - **リアルタイム表示**: Pi → meter.html（車載LCD、WebSocket優先 / HTTP APIフォールバック）
-- **給油記録**: スマホ → GAS doGet/doPost → Google Sheets（手動入力、燃費自動算出）
+- **給油記録**: Pi が自動検出 → GAS Webhook（メンテナンス送信に相乗り）→ Google Sheets。スマホからの入力はレシートによる較正用
 - **ODO補正・メンテリセット**: スマホ → GAS → Pi（次回メンテ送信レスポンスで反映）
 
 ### ローカルAPI
 - `GET /api/config` — max_speed_kmh, ECO閾値, スロットル設定, version
-- `GET /api/realtime` — 速度・RPM・負荷・スロットル・MAP・燃費・トリップ・接続状態
+- `GET /api/realtime` — 速度・RPM・負荷・スロットル・MAP・燃費・トリップ・接続状態・給油ダイアログの状態 (`refuel`)
 - `WS /ws/realtime` — WebSocket リアルタイム配信 (HTTP フォールバック: GET /api/realtime)
 - `GET /api/maintenance` — メンテナンス全項目の進捗
 - `GET /api/health` — OBD/WiFi接続・キューサイズ・uptime・バージョン

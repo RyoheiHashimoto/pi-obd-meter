@@ -44,7 +44,7 @@ type oilStatusPayload struct {
 	// 量ではなく RefuelDetected を記録の起点にする。量を条件にすると
 	// 満タン給油が丸ごと記録されず、トリップのリセットも失われる。
 	RefuelDetected bool    `json:"refuel_detected,omitempty"`
-	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × 0.51 L/pt
+	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × fuel.LitersPerPoint
 	RefuelDeltaPt  float64 `json:"refuel_delta_pt,omitempty"`  // 燃料残量の跳躍量 (ポイント)
 	RefuelFullTank bool    `json:"refuel_full_tank,omitempty"` // 満タンに達したか (燃費検算の可否)
 }
@@ -91,6 +91,10 @@ type App struct {
 	// エンジンを切れば忘れてよい。
 	atfMaxMu sync.Mutex
 	atfMax   float64
+
+	// 給油ダイアログの進み具合 (#120)。検出していなければ nil。
+	refuelUIMu sync.Mutex
+	refuelUI   *refuelUIState
 
 	// 故障コード。始動時に1回読み、変化したときだけ journal に残す。
 	dtc dtcStore
@@ -291,6 +295,7 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		// 送信できた給油イベントは消す。重複記録を防ぐ。
 		if refuelEvent != nil {
 			app.refuel.ClearEvent()
+			app.noteRefuelRecorded()
 		}
 
 		if len(respBody) == 0 {
@@ -330,11 +335,18 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		app.totalKmMu.Unlock()
 
 		// トリップ補正処理
+		//
+		// 0 は給油による「新しいトリップを始めろ」(tracker.go:318)。
+		// ダイアログに前のタンクの結果を出すため、消える前の値を控える。
 		if gasResp.TripCorrectionKm != nil {
 			km := *gasResp.TripCorrectionKm
+			if km == 0 {
+				app.noteRefuelTripReset(app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy())
+			}
 			app.tracker.SetDistance(km)
 			slog.Info("トリップ補正", "km", km)
 		} else if gasResp.TripReset {
+			app.noteRefuelTripReset(app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy())
 			app.tracker.ManualReset()
 			slog.Info("トリップリセット", "reason", "給油記録")
 		}

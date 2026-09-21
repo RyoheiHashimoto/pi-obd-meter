@@ -42,3 +42,14 @@ out/
 # 上流検証用に Pi から回収した CAN ログ（大きいので追跡しない）
 logs-pi/can-verify/*_dbc.log
 logs-pi/can-verify/*_dbc.log.gz
+
+# Pi から回収した走行・IMU・GPS・journal のログ（2026-09-21 に追加）
+#
+# 未追跡のまま 730MB たまり、コミット前のクロスレビューが差分の上限
+# (400KB) を超えて失敗するようになったため。**既に追跡しているファイルは
+# このパターンでは外れない**ので、これまでの記録はそのまま残る。
+logs-pi/**/*.csv
+logs-pi/**/*.log
+logs-pi/**/*.log.gz
+logs-pi/**/*.txt
+logs-pi/**/*.gpx

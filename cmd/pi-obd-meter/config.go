@@ -129,6 +129,8 @@ type RealtimeData struct {
 	IntakeAirTemp  float64 `json:"intake_air_temp"`
 	O2Voltage      float64 `json:"o2_voltage"`
 	RuntimeSec     int     `json:"runtime_sec"`
+	// 給油ダイアログ (#120)。検出していない間と走行中は nil。
+	Refuel *RefuelUI `json:"refuel,omitempty"`
 	// 機関系の診断値 (2026-09-16 追加)。
 	// 燃料トリムは fuel_system_str が「クローズドループ」のときだけ意味を持つ。
 	LongFuelTrim     float64           `json:"long_fuel_trim"`

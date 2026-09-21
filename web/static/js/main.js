@@ -4,6 +4,7 @@
 
 import { buildSpeedGauge, updateThrottle, updateGear, speedColor, rpmColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax, setMapDirect, restoreMapTransition } from './indicators.js';
+import { createRefuelDialog, updateRefuelDialog } from './refuel.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180,
@@ -84,6 +85,7 @@ function applyData(d) {
   const g = displayGear(obdOn, d);
   updateGear(g.gear, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null, g.shifting);
   updateIndicators(dom, d, conf);
+  updateRefuelDialog(d);
 }
 
 // 表示するギアを決める。
@@ -297,6 +299,7 @@ async function initApp() {
   document.body.classList.add('booting');
 
   dom = createIndicators(document.getElementById('panel'));
+  createRefuelDialog(document.body);
 
   try {
     const resp = await fetch('/api/config');
