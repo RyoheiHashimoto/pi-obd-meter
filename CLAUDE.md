@@ -123,13 +123,14 @@ internal/
 web/
   embed.go                  go:embed で static/ をバイナリに埋め込み
   static/
-    meter.html              メーター画面HTML
+    meter.html              メーター画面HTML (screen-meter / screen-status の2枚)
     meter.css               CSS Custom Properties でテーマ管理
     js/
       main.js               エントリポイント + WebSocket/HTTPポーリング + キオスク終了
       gauge.js              速度ゲージ(針+アーク) + RPMアーク + スロットルアーク + ギア/レンジ表示 + 下部インジケーター(TEMP/TRIP/ECO) + 60fps LERP補間
       indicators.js         右パネル バキューム計 + 4行インジケーター (ECO/TEMP/TRIP/OIL)
       refuel.js             給油ダイアログ (自動検出の進み具合。停車中のみ表示、入力なし)
+      status.js             2画面目「状態画面」(#178)。記録/通信/保存/ATF/オイル/給油 + 異常時のみの行
     fonts/
       Orbitron-*.ttf        速度・数値表示フォント
       ShareTechMono-*.woff2 リードアウト表示フォント
@@ -257,12 +258,26 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - **オープニングアニメ** 4 phase (sweep out 1.2s → sweep back 0.8s → text フェードイン 0.8s → 通常)
 - **ACC 検出** (CAN 無通信 1秒) で `body.obd-offline` → `.acc-dim` + svg text が 800ms フェードアウト
 - **フリーズ watchdog** (rAF 3s 停止で `location.reload()`) + POST /api/client-error でエラー通知
-- CSS/JS分離済み (meter.html + meter.css + js/main.js + js/gauge.js + js/indicators.js)
+- CSS/JS分離済み (meter.html + meter.css + js/main.js + js/gauge.js + js/indicators.js + js/status.js)
 - CSS Custom Properties で色・レイアウトを一元管理
 - requestAnimationFrame で 60fps LERP 補間
 - WebSocket 優先 (/ws/realtime) + HTTP フォールバック (ライブラリ: github.com/coder/websocket)
 - 時刻ベースで自動輝度調整 (wlr-randr、config で設定可能)
 - 画面3秒長押しでキオスク終了
+
+### 2画面目「状態画面」(#178)
+- **載せる基準は「見て、何か変わるか」。** 実際に車内で聞かれて SSH するまで答えられなかったものだけ
+  （版 / ロガーの生存 / WiFi・最終送信・未送信 / `/data` の空き / ATF この走行の最高 / オイル残 / 未送信の給油）
+- **電圧と燃料トリムは異常のときだけ**、下段のピル型で出す。平時は1行も使わない
+- **ロガーは active と writing を分ける。** systemd が active でもファイルが伸びていないことがある
+  （#164 の gps-log は active のまま 480km 衛星0個だった）。伸びていなければ橙 + 経過秒
+- データ源は2本 (#178 の案A)。`/api/health` をこの画面が出ている間だけ 3秒ごと + realtime の横流し。
+  ディスク空きも SoC 温度も 5Hz で動く値ではないので realtime には相乗りさせない
+- **切り替えは左右スワイプ + キー** (←→↑↓ / PageUp・PageDown / Enter・Space)。
+  キーを見るのは BLE ボタン (HID キーボードとして見える) をそのまま使えるようにするため。
+  **割り当てに無いキーは journal に流す** ので、USB キーボードを挿せばキーコードを実測できる
+- **2km/h 以上で走り出したらメーターへ自動で戻る** (給油ダイアログと同じ基準)。速度計より優先するものは無い
+- 隠すほうは `display:none`。2枚を横に並べて transform で送ると、見えていない側のゲージも Pi 4 で合成され続ける
 
 ### ディスプレイ設定 (config.txt)
 ELECROW 5インチ IPS (800×480) 用。`/boot/firmware/config.txt` に追記:
@@ -289,6 +304,9 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `WS /ws/realtime` — WebSocket リアルタイム配信 (HTTP フォールバック: GET /api/realtime)
 - `GET /api/maintenance` — メンテナンス全項目の進捗
 - `GET /api/health` — OBD/WiFi接続・キューサイズ・uptime・バージョン
+  + Pi 健全性 (`pi`: SoC温度・電圧降下・`/data` 空き・ロガーの active/writing/経過秒)
+  + 状態画面向け (`atf_max_c` / `atf_max_level` / `last_sent_at` / `pending_fuel`)
+  - **`/api/pi-health` を新設しないこと。** 過去に `GET /api/health` を二重登録して起動時 panic を起こしている
 - `POST /api/kiosk/stop` — キオスクモード終了
 - `POST /api/client-error` — フロントからの JS エラー・watchdog 発動を journal に記録
 
