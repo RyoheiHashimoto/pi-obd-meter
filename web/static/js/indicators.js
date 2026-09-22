@@ -430,15 +430,15 @@ export function restoreMapTransition() {
   }
 }
 
-// OIL lamp colors (2画面目へ移した際に再利用する)
-const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
+// OIL lamp colors (2画面目 status.js からも使う)
+export const OIL_COLORS = { green: '#69f0ae', yellow: '#fdd835', orange: '#ff9800', red: '#f44336' };
 
 // ATF 油温の色。キーは API の atf_level (空文字 = 正常)。
 //
 // 区分は「1段 = 油の寿命が半分」で刻んである (internal/can/obd.go を参照)。
 // 実測 24.1時間での滞在割合は 緑59% / 黄緑21% / 黄14% / 橙5% / 赤0%。
 // 高速に乗ると黄緑が主役になり、踏み続けると黄へ移る。
-const ATF_COLORS = {
+export const ATF_COLORS = {
   '': '#69f0ae',        // 〜90℃    緑     普段。街乗りとアイドリングはほぼここ
   warm: '#c6ff00',      // 90-100   黄緑   高速に乗った。想定内
   caution: '#fdd835',   // 100-110  黄     踏んでいる。劣化が5倍で進む

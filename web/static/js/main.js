@@ -5,6 +5,7 @@
 import { buildSpeedGauge, updateThrottle, updateGear, speedColor, rpmColor, setThrottleIdleBaseline, setThrottleMaxPct } from './gauge.js';
 import { createIndicators, updateIndicators, setCoolantThresholds, setEcoGradientMax, setMapDirect, restoreMapTransition } from './indicators.js';
 import { createRefuelDialog, updateRefuelDialog } from './refuel.js';
+import { createStatusScreen, setStatusVisible, noteRealtime } from './status.js';
 
 const DEFAULTS = {
   max_speed_kmh: 180,
@@ -16,6 +17,32 @@ const DEFAULTS = {
 // HTTP フォールバック用
 const POLL_INTERVAL_MS = 50;
 const FETCH_TIMEOUT_MS = 3000;
+
+// --- 画面切り替え (#178) ---
+// 1画面目 = 走行メーター、2画面目 = 状態画面。
+const SCREEN_IDS = ['screen-meter', 'screen-status'];
+
+// これ以上の速度で走り出したらメーターへ戻す。
+//
+// 給油ダイアログと同じ基準にしてある (refuel_ui.go の refuelUIHideSpeedKmh)。
+// 状態画面は停車中に一瞥するためのもので、出したまま走られると速度計が
+// 見えない。ブレーキを離してクリープで動き出した時点で戻る。
+const SCREEN_EXIT_KMH = 2.0;
+
+// スワイプの判定。長押し3秒のキオスク終了とは干渉しない
+// (touchmove が既に長押しを取り消している)。
+const SWIPE_MIN_PX = 60;
+const SWIPE_MAX_DRIFT_PX = 80;
+const SWIPE_MAX_MS = 800;
+
+// キー割り当て。長押し (キオスク終了) と重ならないよう、単押しだけに割る。
+const KEY_NEXT = ['ArrowRight', 'ArrowDown', 'PageDown'];
+const KEY_PREV = ['ArrowLeft', 'ArrowUp', 'PageUp'];
+const KEY_TOGGLE = ['Enter', ' ', 'Spacebar'];
+
+// 未割り当てキーを journal に流す間隔。押しっぱなしのリピートで
+// ログを埋めないための下限。
+const KEY_REPORT_MIN_MS = 1000;
 
 // WebSocket 再接続
 const WS_RECONNECT_BASE_MS = 1000;
@@ -31,6 +58,7 @@ let wsReconnectDelay = WS_RECONNECT_BASE_MS;
 let wsEverConnected = false;
 let wsRetryCount = 0;
 let usingPolling = false;
+let screenIdx = 0;
 
 // 直前に確定した実ギア。変速の過渡で実ギアが不定 (0) になる間、これを表示する。
 //
@@ -86,6 +114,70 @@ function applyData(d) {
   updateGear(g.gear, obdOn ? (d.at_range_str || '--') : '--', obdOn && (d.hold || false), obdOn && (d.tc_locked || false), obdOn ? d.tcc_lock_pct : null, g.shifting);
   updateIndicators(dom, d, conf);
   updateRefuelDialog(d);
+
+  // 状態画面へ最新値を渡す (描画はあちらの 3秒 tick でまとめる)
+  noteRealtime(d);
+  // 走り出したらメーターへ戻す。速度計より優先されるものは無い。
+  if (screenIdx !== 0 && spd >= SCREEN_EXIT_KMH) showScreen(0);
+}
+
+// --- 画面切り替え (#178) ---
+
+// showScreen は i 番目の画面だけを表示する。負値・範囲外は巡回する。
+function showScreen(i) {
+  const n = SCREEN_IDS.length;
+  screenIdx = ((i % n) + n) % n;
+  SCREEN_IDS.forEach((id, k) => {
+    const node = document.getElementById(id);
+    if (node) node.hidden = k !== screenIdx;
+  });
+  // 給油ダイアログは body 直下の position:fixed なので、このクラスが無いと
+  // 状態画面の上に重なって出る。どちらも停車中に出るものなので必ず当たる。
+  document.body.classList.toggle('screen-meter', screenIdx === 0);
+  // 状態画面は出ている間だけ /api/health を叩く
+  setStatusVisible(SCREEN_IDS[screenIdx] === 'screen-status');
+}
+
+// setupScreenSwitching は左右スワイプとキー入力を繋ぐ。
+//
+// キーを見るのは Bluetooth の小さいボタンで切り替えたいため (#178 のコメント)。
+// 市販の BLE リモコンの多くは HID キーボードとして見えるので、bluez →
+// libinput → labwc → cog と流れて keydown で届く。届けば Go 側の実装は要らない。
+// まだ実機で確認していないので、割り当てに無いキーは journal に流して
+// 実測できるようにしてある。USB キーボードを挿せば、そもそも cog が
+// keydown を JS に渡すのかどうかがその場で分かる。
+function setupScreenSwitching() {
+  let touch = null;
+
+  document.body.addEventListener('touchstart', (e) => {
+    const t = e.changedTouches && e.changedTouches[0];
+    touch = t ? { x: t.clientX, y: t.clientY, at: performance.now() } : null;
+  }, { passive: true });
+
+  document.body.addEventListener('touchend', (e) => {
+    const start = touch;
+    touch = null;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    if (performance.now() - start.at > SWIPE_MAX_MS) return;
+    if (Math.abs(dx) < SWIPE_MIN_PX || Math.abs(dy) > SWIPE_MAX_DRIFT_PX) return;
+    // 左へ払ったら次の画面 (紙をめくる向き)
+    showScreen(screenIdx + (dx < 0 ? 1 : -1));
+  });
+
+  let lastKeyReportAt = 0;
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (KEY_NEXT.includes(e.key)) { showScreen(screenIdx + 1); return; }
+    if (KEY_PREV.includes(e.key)) { showScreen(screenIdx - 1); return; }
+    if (KEY_TOGGLE.includes(e.key)) { showScreen(screenIdx + 1); return; }
+    const now = performance.now();
+    if (now - lastKeyReportAt < KEY_REPORT_MIN_MS) return;
+    lastKeyReportAt = now;
+    reportError('keydown', { key: e.key, code: e.code, keyCode: e.keyCode });
+  });
 }
 
 // 表示するギアを決める。
@@ -300,6 +392,9 @@ async function initApp() {
 
   dom = createIndicators(document.getElementById('panel'));
   createRefuelDialog(document.body);
+  createStatusScreen(document.getElementById('screen-status'));
+  showScreen(0);
+  setupScreenSwitching();
 
   try {
     const resp = await fetch('/api/config');

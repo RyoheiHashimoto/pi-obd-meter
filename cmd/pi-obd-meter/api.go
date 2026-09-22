@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/hashimoto/pi-obd-meter/internal/health"
 	"io/fs"
 	"log/slog"
 	"math"
@@ -13,6 +12,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/hashimoto/pi-obd-meter/internal/can"
+	"github.com/hashimoto/pi-obd-meter/internal/health"
 	"github.com/hashimoto/pi-obd-meter/web"
 )
 
@@ -52,9 +53,12 @@ type healthResponse struct {
 	Pi health.Status `json:"pi"`
 
 	// 2画面目「状態画面」向け (#178)。SSH しないと分からなかったもの。
-	ATFMaxC     float64 `json:"atf_max_c"`    // この走行の ATF 最高。0 は未取得
-	LastSentAt  string  `json:"last_sent_at"` // 最後に送信が成功した時刻 (RFC3339)。空は未送信
-	PendingFuel bool    `json:"pending_fuel"` // 未送信の給油イベントがあるか
+	ATFMaxC float64 `json:"atf_max_c"` // この走行の ATF 最高。0 は未取得
+	// ATFMaxC の色区分。閾値を UI 側に持たせない。JS で 110/120 を
+	// 書き直すと can.ATFLevel と二重実装になり、片方だけ直る (#194)。
+	ATFMaxLevel string `json:"atf_max_level"`
+	LastSentAt  string `json:"last_sent_at"` // 最後に送信が成功した時刻 (RFC3339)。空は未送信
+	PendingFuel bool   `json:"pending_fuel"` // 未送信の給油イベントがあるか
 }
 
 // rfc3339OrEmpty はゼロ値なら空文字列を返す。
@@ -189,6 +193,7 @@ func (app *App) buildMux() *http.ServeMux {
 			NumGoroutine:  runtime.NumGoroutine(),
 			Pi:            app.health.Status(),
 			ATFMaxC:       app.ATFMaxC(),
+			ATFMaxLevel:   can.ATFLevel(app.ATFMaxC()),
 			LastSentAt:    rfc3339OrEmpty(app.client.LastSentAt()),
 			PendingFuel:   app.refuel.Event() != nil,
 		})

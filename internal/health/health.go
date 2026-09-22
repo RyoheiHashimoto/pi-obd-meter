@@ -68,8 +68,25 @@ type Status struct {
 	DataTotalGB float64 `json:"data_total_gb"`
 
 	// 走行ログを書くサービスが生きているか。「ログ取れてる？」に
-	// 答えるため (#178)。キーはユニット名、値は active なら true。
-	Loggers map[string]bool `json:"loggers"`
+	// 答えるため (#178)。キーはユニット名。
+	Loggers map[string]LoggerStatus `json:"loggers"`
+}
+
+// LoggerStatus はロガー1本の状態。
+//
+// 【active だけでは「記録できている」と言えない】
+//
+// プロセスが生きていてもファイルに書けていないことがある (保存先が満杯、
+// 権限、CAN が落ちた、開いたまま止まった)。#164 では gps-log が 480km・
+// 全12ファイルにわたって active のまま衛星0個で、systemd から見れば
+// 正常だった。だから active と「実際に伸びているか」を分けて出す。
+//
+// AgeSec は最新ログの更新からの経過秒。-1 はログが1つも無い (ディレクトリ
+// が無い場合も含む) ことを表す。0 と区別すること。
+type LoggerStatus struct {
+	Active  bool  `json:"active"`
+	Writing bool  `json:"writing"`
+	AgeSec  int64 `json:"age_sec"`
 }
 
 // Alert は注意すべき状態を短い日本語で返す。何も無ければ空文字列。
@@ -168,19 +185,53 @@ func (m *Monitor) Status() Status {
 	return s
 }
 
-// readSoCTemp は SoC の温度を℃で返す。取れなければ 0。
 // loggerUnits は生存を見る systemd ユニット。
 //
 // poll22 は ATF 油温の同定が済んだので 2026-09-07 に停止した。
 // 復活させるならここに足す。
 var loggerUnits = []string{"drive-verify", "gps-log", "imu-log", "can-verify"}
 
-// readLoggers は各ロガーが active かを返す。
+// loggerLogDirs は各ロガーの書き込み先。テストから差し替えられるように変数。
+//
+// 実体は /data/log/... (SSD) へのシンボリックリンク。log-retention.sh が
+// 同じ対応表を持っているので、片方だけ変えないこと。
+var loggerLogDirs = map[string]string{
+	"drive-verify": "/var/log/drive-verify",
+	"gps-log":      "/var/log/gps",
+	"imu-log":      "/var/log/imu",
+	"can-verify":   "/var/log/can-verify",
+}
+
+// loggerStaleSec はログが「伸びている」と見なす上限 (秒)。
+//
+// drive-verify と gps-log は行バッファ (buffering=1) なので1行ごとに mtime が
+// 動く。imu-log は 2秒ごとに flush する。いちばん遅い imu-log に合わせれば
+// 数秒で足りるが、ファイルを切り替える境目や停車中の低レートを拾って
+// 誤って赤にしないよう余裕を取ってある。
+const loggerStaleSec = 30
+
+// readLoggers は各ロガーの状態を返す。
 //
 // systemctl を1回だけ呼ぶ。ユニットごとに呼ぶと車載機では 4 回分の
 // プロセス起動が毎秒走ることになる。
-func readLoggers() map[string]bool {
-	out := map[string]bool{}
+func readLoggers() map[string]LoggerStatus {
+	active := readLoggerActive()
+	now := time.Now()
+	out := make(map[string]LoggerStatus, len(loggerUnits))
+	for _, u := range loggerUnits {
+		st := LoggerStatus{Active: active[u], AgeSec: -1}
+		if mt, ok := newestMTime(loggerLogDirs[u]); ok {
+			st.AgeSec = ageSec(now, mt)
+			st.Writing = st.AgeSec <= loggerStaleSec
+		}
+		out[u] = st
+	}
+	return out
+}
+
+// readLoggerActive は systemctl is-active をまとめて1回だけ呼ぶ。
+func readLoggerActive() map[string]bool {
+	out := make(map[string]bool, len(loggerUnits))
 	args := append([]string{"is-active"}, loggerUnits...)
 	b, _ := exec.Command("systemctl", args...).Output() //nolint:errcheck // 非0終了でも出力は使える
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
@@ -188,6 +239,45 @@ func readLoggers() map[string]bool {
 		out[u] = i < len(lines) && strings.TrimSpace(lines[i]) == "active"
 	}
 	return out
+}
+
+// ageSec は mt からの経過秒を返す。
+//
+// 負にはしない。Pi に RTC が無く、NTP が同期した瞬間に壁時計が数十分〜数時間
+// 飛ぶため (#195)、ファイルの mtime が「未来」になることが現に起こる。
+// そのまま引くと経過が負になり、書けているのに赤く出る。
+func ageSec(now, mt time.Time) int64 {
+	d := now.Sub(mt)
+	if d < 0 {
+		return 0
+	}
+	return int64(d.Seconds())
+}
+
+// newestMTime はディレクトリ内でいちばん新しいファイルの更新時刻を返す。
+// ディレクトリが無い・読めない・ファイルが1つも無いときは ok=false。
+func newestMTime(dir string) (time.Time, bool) {
+	if dir == "" {
+		return time.Time{}, false
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return time.Time{}, false
+	}
+	var newest time.Time
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+	}
+	return newest, !newest.IsZero()
 }
 
 // dataDir は走行ログの保存先。テストから差し替えられるように変数にしておく。
@@ -207,6 +297,7 @@ func readDataFree(path string) (freeGB, totalGB float64) {
 		float64(st.Blocks) * float64(st.Bsize) / gb
 }
 
+// readSoCTemp は SoC の温度を℃で返す。取れなければ 0。
 func readSoCTemp() float64 {
 	b, err := os.ReadFile("/sys/class/thermal/thermal_zone0/temp")
 	if err != nil {

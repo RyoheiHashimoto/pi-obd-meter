@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // 不正終了の計数。running が立ったまま起動したら前回は不正終了。
@@ -114,5 +115,131 @@ func TestThrottledBits(t *testing.T) {
 			s.ThrottledNow != tt.thNow || s.ThrottledEver != tt.thEv {
 			t.Errorf("raw=0x%X → %+v", tt.raw, s)
 		}
+	}
+}
+
+// ログが実際に伸びているかの判定。
+//
+// systemd の active/inactive では「動いているのに書けていない」を拾えない。
+// #164 の gps-log がまさにそれで、active のまま中身が空だった。
+func TestReadLoggers_WritingFromMTime(t *testing.T) {
+	dir := t.TempDir()
+
+	fresh := filepath.Join(dir, "fresh")
+	stale := filepath.Join(dir, "stale")
+	empty := filepath.Join(dir, "empty")
+	for _, d := range []string{fresh, stale, empty} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt := func(dir, name string, age time.Duration) {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Now().Add(-age)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeAt(fresh, "drive-0101-0000.csv", 3*time.Second)
+	writeAt(stale, "gps-0101-0000.csv", 10*time.Minute)
+
+	orig := loggerLogDirs
+	loggerLogDirs = map[string]string{
+		"drive-verify": fresh,
+		"gps-log":      stale,
+		"imu-log":      empty,
+		"can-verify":   filepath.Join(dir, "存在しない"),
+	}
+	defer func() { loggerLogDirs = orig }()
+
+	got := readLoggers()
+
+	if !got["drive-verify"].Writing {
+		t.Errorf("drive-verify: 3秒前に更新されたのに writing=false (age=%d)", got["drive-verify"].AgeSec)
+	}
+	if got["gps-log"].Writing {
+		t.Errorf("gps-log: 10分止まっているのに writing=true")
+	}
+	if got["gps-log"].AgeSec < 540 {
+		t.Errorf("gps-log: 経過 = %d秒, want 540以上", got["gps-log"].AgeSec)
+	}
+	// ログが1本も無いのと「今まさに書いた (age=0)」は別物。-1 で区別する。
+	if got["imu-log"].AgeSec != -1 {
+		t.Errorf("imu-log: 空ディレクトリの経過 = %d, want -1", got["imu-log"].AgeSec)
+	}
+	if got["can-verify"].AgeSec != -1 {
+		t.Errorf("can-verify: ディレクトリ無しの経過 = %d, want -1", got["can-verify"].AgeSec)
+	}
+	if len(got) != len(loggerUnits) {
+		t.Errorf("ロガー数 = %d, want %d", len(got), len(loggerUnits))
+	}
+}
+
+// 壁時計が飛んでも赤くしない。Pi に RTC が無く、NTP 同期の瞬間に
+// 時刻が数時間ずれる (#195)。mtime が未来になっても経過は負にしない。
+func TestAgeSec_NeverNegative(t *testing.T) {
+	now := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name string
+		mt   time.Time
+		want int64
+	}{
+		{"3秒前", now.Add(-3 * time.Second), 3},
+		{"同時刻", now, 0},
+		{"2時間先 (時刻が飛んだ直後)", now.Add(2 * time.Hour), 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ageSec(now, tt.mt); got != tt.want {
+				t.Errorf("ageSec() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// 一番新しいファイルを見る。ディレクトリは数えない。
+func TestNewestMTime(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok := newestMTime(dir); ok {
+		t.Error("空ディレクトリで ok=true")
+	}
+	if _, ok := newestMTime(filepath.Join(dir, "無い")); ok {
+		t.Error("存在しないディレクトリで ok=true")
+	}
+	if _, ok := newestMTime(""); ok {
+		t.Error("空文字列で ok=true")
+	}
+
+	// サブディレクトリだけがあっても「ファイルは無い」
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := newestMTime(dir); ok {
+		t.Error("サブディレクトリのみで ok=true")
+	}
+
+	old := time.Now().Add(-time.Hour)
+	recent := time.Now().Add(-time.Minute)
+	for _, f := range []struct {
+		name string
+		mt   time.Time
+	}{{"a.csv", old}, {"b.csv", recent}, {"c.csv", old}} {
+		p := filepath.Join(dir, f.name)
+		if err := os.WriteFile(p, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, f.mt, f.mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, ok := newestMTime(dir)
+	if !ok {
+		t.Fatal("ファイルがあるのに ok=false")
+	}
+	if d := got.Sub(recent); d < -time.Second || d > time.Second {
+		t.Errorf("最新の mtime = %v, want %v", got, recent)
 	}
 }
