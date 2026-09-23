@@ -282,11 +282,23 @@ check_stable() {
         cp "${tmpdir}/pi-obd-scanner" "${APP_DIR}/pi-obd-scanner"
         chmod +x "${APP_DIR}/pi-obd-scanner"
     fi
-    # web/static を更新 (stable release でも UI 差し替え)
-    if [ -d "${tmpdir}/web/static" ]; then
-        mkdir -p "${DEST}/web/static"
-        cp -r "${tmpdir}/web/static/"* "${DEST}/web/static/"
-    fi
+    # web/static は配らない。UI はバイナリに埋め込んである (web/embed.go)。
+    #
+    # 【なぜ配るのをやめたか】
+    # 以前はここで ${DEST}/web/static へ展開していた。だが /opt は overlayfs の
+    # 上層 (tmpfs) なので再起動で消える。一方バージョン記録は /data に残るため
+    # 「適用済み」と判定され、二度と配り直されない。バイナリ・scripts で直した
+    # のと同じ筋 (#191) が、UI にだけ残っていた。
+    #
+    # 結果、overlayfs を入れた 2026-09-05 以降、UI の更新は一度も車に届いて
+    # いなかった。2026-09-24 に実機で確認: 給油ダイアログ (#120) を含む
+    # dev-1359159 が動いているのに、画面は 9/4〜9/7 の版で refuel.js は 404。
+    #
+    # 埋め込みならバイナリと UI が必ず同じ版になり、消える場所に依存しない。
+    # 配信元は設定ファイルからは変えられない (Config.WebStaticDir は json:"-")。
+    # 設定ファイルは git 管理外で OTA からも直せないため、コード側で受け取らない
+    # ようにして初めて直る。ファイルから配りたい開発時だけ -web-dir を渡す。
+
     # scripts/ と systemd ユニットも更新する。
     #
     # 以前は check_dev だけが install_scripts を呼んでいた。stable release を
@@ -365,11 +377,8 @@ check_dev() {
     # まで古いままだった。auto-update.sh 自身もここで更新される。
     install_scripts "$tmpdir"
 
-    # web/static を更新（開発用ファイルシステム配信）
-    if [ -d "${tmpdir}/web/static" ]; then
-        mkdir -p "${DEST}/web/static"
-        cp -r "${tmpdir}/web/static/"* "${DEST}/web/static/"
-    fi
+    # web/static は配らない (理由は stable 側の同じ箇所に書いた)。
+    # UI はバイナリに埋め込みで、配信元は -web-dir フラグでしか変えられない。
     systemctl start "$SERVICE"
 
     # ヘルスチェック（10秒以内にプロセスが生存しているか）

@@ -76,13 +76,25 @@ type WebSocketConfig struct {
 const defaultFuelRateCorrection = 1.12
 
 type Config struct {
-	CANInterface        string            `json:"can_interface"`
-	SerialPort          string            `json:"serial_port"`
-	WebhookURL          string            `json:"webhook_url"`
-	PollIntervalMs      int               `json:"poll_interval_ms"`
-	LocalAPIPort        int               `json:"local_api_port"`
-	MaintenancePath     string            `json:"maintenance_path"`
-	WebStaticDir        string            `json:"web_static_dir"`
+	CANInterface    string `json:"can_interface"`
+	SerialPort      string `json:"serial_port"`
+	WebhookURL      string `json:"webhook_url"`
+	PollIntervalMs  int    `json:"poll_interval_ms"`
+	LocalAPIPort    int    `json:"local_api_port"`
+	MaintenancePath string `json:"maintenance_path"`
+	// WebStaticDir は設定ファイルからは受け取らない (`-web-dir` フラグ専用)。
+	//
+	// UI はバイナリに埋め込んである (web/embed.go)。設定ファイルでここに
+	// パスを書けてしまうと、そのディレクトリが古いままでも必ず優先される。
+	// 実際 Pi の config.json は /opt/pi-obd-meter/web/static を指しており、
+	// /opt は overlayfs の上層 (tmpfs) なので再起動のたびに中身が 9/4 の版へ
+	// 戻っていた。OTA でバイナリだけ新しくなっても画面は古いまま、という
+	// 状態が 2026-09-05 以降ずっと続いていた (2026-09-24 に実機で確認)。
+	//
+	// 設定ファイルは git 管理外で OTA からも更新できないため、コード側で
+	// 受け取らないようにして初めて直る。開発でファイルから配りたいときは
+	// `-web-dir <path>` を渡す。
+	WebStaticDir        string            `json:"-"`
 	MaxSpeedKmh         int               `json:"max_speed_kmh"`
 	OBDProtocol         string            `json:"obd_protocol"`
 	EngineDisplacementL float64           `json:"engine_displacement_l"`

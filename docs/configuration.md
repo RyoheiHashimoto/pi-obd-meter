@@ -11,7 +11,6 @@
   "poll_interval_ms": 500,
   "local_api_port": 9090,
   "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
-  "web_static_dir": "",
   "obd_protocol": "6",
   "max_speed_kmh": 180,
   "engine_displacement_l": 1.3,
@@ -68,7 +67,17 @@
 | パラメータ | 型 | デフォルト | 説明 |
 |---|---|---|---|
 | `maintenance_path` | string | `"/var/lib/pi-obd-meter/maintenance.json"` | メンテナンス状態の保存先 |
-| `web_static_dir` | string | `""` | Web UI 配信元ディレクトリ。空 = go:embed (本番)、パス指定 = ファイルシステム (開発) |
+
+**Web UI の配信元は設定ファイルでは変えられない。** 常にバイナリ埋め込み (go:embed) から配る。
+開発でファイルから配りたいときだけ `-web-dir <path>` を渡す:
+
+```bash
+./pi-obd-meter -config configs/config.mac.json -web-dir ./web/static -demo
+```
+
+以前は `web_static_dir` で指定できたが、Pi の設定が `/opt/pi-obd-meter/web/static` を指しており、
+そこは overlayfs の上層 (tmpfs) で再起動のたびに中身が古い版へ戻る。設定ファイルは git 管理外で
+OTA からも更新できないため、UI の更新が車に届かない状態が続いていた (2026-09-24 に実機で確認)。
 
 ---
 
