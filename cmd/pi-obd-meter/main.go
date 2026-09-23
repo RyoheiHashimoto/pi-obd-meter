@@ -73,9 +73,13 @@ func main() {
 
 	configPath := flag.String("config", "/etc/pi-obd-meter/config.json", "設定ファイルパス")
 	demo := flag.Bool("demo", false, "デモモード（OBDなしでサイン波データ表示）")
+	webDir := flag.String("web-dir", "", "Web UI をこのディレクトリから配信する（開発用。既定は埋め込み）")
 	flag.Parse()
 
 	cfg := loadConfig(*configPath)
+	// 配信元はフラグでしか変えられない。設定ファイルから受け取らない理由は
+	// Config.WebStaticDir のコメントを参照。
+	cfg.WebStaticDir = *webDir
 
 	fmt.Println("=================================")
 	fmt.Printf("  DYデミオ 燃費メーター %s\n", version)

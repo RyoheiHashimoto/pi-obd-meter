@@ -5,7 +5,6 @@
   "poll_interval_ms": 50,
   "local_api_port": 9090,
   "maintenance_path": "/var/lib/pi-obd-meter/maintenance.json",
-  "web_static_dir": "/opt/pi-obd-meter/web/static",
   "obd_protocol": "6",
   "max_speed_kmh": 180,
   "engine_displacement_l": 1.3,

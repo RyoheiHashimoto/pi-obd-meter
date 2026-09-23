@@ -57,8 +57,13 @@ Raspberry Pi 4 + CAN HAT 直結で速度・RPM・スロットル・インマニ�
 - 周期実行 (`OnUnitActiveSec=2min`) は 8281f78 で廃止。GitHub API のレート制限 (60回/時) を空回りで食い潰していたため。
   ACC ON のたびに1回チェックされるので OTA としては足りる。走行中にメーターが再起動しない利点もある
 - Stable release → `dev-latest` pre-release の順にチェック
-- 新ビルド検出時: ダウンロード → バイナリ + web/static 差し替え → サービス再起動
-- バージョン管理: `/var/lib/pi-obd-meter/{release-version,dev-version}`
+- 新ビルド検出時: ダウンロード → バイナリ + scripts/ + systemd ユニット差し替え → サービス再起動
+- **UI (web/static) は配らない。** バイナリに go:embed で入っており、配信元は設定ファイルでは
+  変えられない（`-web-dir` フラグ専用）。**`/opt` へ展開し直してはいけない**:
+  `/` は overlayfs の上層が tmpfs なので再起動で消えるのに、バージョン記録は `/data` に残り
+  「適用済み」と判定されて配り直されない。これで 2026-09-05 以降、UI の更新が一度も車に
+  届いていなかった（2026-09-24 に実機で確認）
+- バージョン管理: `/data/pi-obd-meter/app/{release-version,dev-version}`（バイナリと同じ永続層に置く）
 
 ## ビルド & デプロイ
 
@@ -141,7 +146,7 @@ gas/
 
 configs/
   config.json               アプリ設定（CAN interface, webhook URL, 車両パラメータ等）
-  config.mac.json           Mac ローカル demo 用 (can_interface=空, web_static_dir=repo 絶対パス)
+  config.mac.json           Mac ローカル demo 用 (can_interface=空。UI は -web-dir で repo を指す)
   pi-obd-meter.service      systemd メインサービス
   cog-kiosk.sh              cog (WPE WebKit) キオスク起動 — labwc autostart から実行
   kiosk.sh                  旧 Chromium 版 (レガシー、参考用)
@@ -299,7 +304,7 @@ hdmi_cvt 800 480 60 6 0 0 0
 ### Web UI 埋め込み（go:embed）
 - `web/embed.go` で `web/static/` をバイナリに埋め込み（`go:embed static`）
 - 本番: 埋め込みファイルから配信（バイナリ1つで完結）
-- 開発: config.json の `web_static_dir` にパスを指定すればファイルシステムから配信
+- 開発: `-web-dir <path>` を渡せばファイルシステムから配信（例: `-web-dir ./web/static`）
 
 ### 自動更新（2系統）
 - **起動時 (go-selfupdate)**: `cmd/pi-obd-meter/update.go` でGitHub Releasesをチェック、バイナリ差し替え
@@ -323,7 +328,8 @@ hdmi_cvt 800 480 60 6 0 0 0
 - `engine_displacement_l`: エンジン排気量 (例: ZJ-VE=1.3) — 燃費推定に使用
 - `max_speed_kmh`: 速度メーター最大値 (例: 180)
 - `initial_odometer_km`: 初期ODO値 (km)
-- `web_static_dir`: Web UI配信元 (空 = 埋め込みファイル使用、開発時にパス指定可)
+- **Web UI の配信元は config.json では指定できない。** 常に埋め込み。開発時のみ `-web-dir` フラグ
+  （設定ファイルは git 管理外で OTA からも更新できず、古い指定が残ると画面が更新されないため）
 - `throttle_idle_pct`: スロットルアイドル開度 (例: 1) — CAN LOAD 生値のゼロ基準
 - `throttle_max_pct`: スロットル最大開度 (例: 197) — CAN LOAD 生値の100%基準
 - `fuel_tank_l`: 燃料タンク容量 (例: 46) — トリップ警告閾値の導出に使用
