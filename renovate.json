@@ -5,7 +5,15 @@
     ":dependencyDashboard"
   ],
   "timezone": "Asia/Tokyo",
-  "schedule": ["* 0-6 * * 1"],
+
+  "description": [
+    "スケジュールは指定しない（既定の at any time）。",
+    "スケジュールは Renovate を起動するものではなく、「その時間なら PR を作ってよい」",
+    "という受け入れ窓でしかない。Mend のホスト版の巡回が窓に当たらなければ PR は立たない。",
+    "2026-09-20 に \"* 0-6 * * 1\" (月曜 0-6時) を入れたところ、4日間 PR が 0 件のまま",
+    "ダッシュボードの更新も止まった。月曜終日に広げても状況は変わらなかったため、",
+    "窓そのものを外す。依存は直接4つ・間接22で、prConcurrentLimit 3 があれば溢れない。"
+  ],
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
   "labels": ["dependencies"],
