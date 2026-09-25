@@ -47,7 +47,11 @@ f.write("t,speed,rpm,gear,engaged,ratio,mech,slip,tcc,locked,hold,range,shifting
         # 4輪の車速 (2026-09-16 追加)。前輪がわずかに速いのが定常状態で、
         # 幅は速度で変わる (120km/h で +0.5〜1.0、低速で +0.1〜0.3)。
         # その速度での幅を超える前後差が続いたらホイールスピン。単発はノイズ。
-        "wfl,wfr,wrl,wrr\n")
+        "wfl,wfr,wrl,wrr,"
+        # MAF の生値 (2026-09-26 追加)。rate_lh は燃料カット判定を通した
+        # 後の値なので、カット中は 0 になって元の空気量が残らない。
+        # 判定を変えて過去のログを引き直すには生値が要る。
+        "maf\n")
 print("記録先: %s" % path, flush=True)
 
 
@@ -81,7 +85,8 @@ while True:
     a22 = d.get("aux22") or {}
     f.write("%.1f,%.2f,%.1f,%d,%d,%.3f,%.3f,%.4f,%s,%s,%s,%s,%s,%.1f,%.2f,%.0f,%.5f,%.2f,%.3f,%.2f,%.1f,%.1f,%.1f,%s,%s,%s,%d,%.3f,"
             "%.2f,%.2f,%.1f,%.1f,%.3f,%d,%.1f,%.1f,%s,%d,%s,%s,%s,%s,%s,%s,"
-            "%.2f,%.2f,%.2f,%.2f\n" % (
+            "%.2f,%.2f,%.2f,%.2f,"
+            "%.2f\n" % (
         time.time(),
         d.get("speed_kmh") or 0, d.get("rpm") or 0, g, eng, r, mech, slip,
         d.get("tcc_lock_pct") or 0, d.get("tc_locked"),
@@ -116,6 +121,8 @@ while True:
         # その速度での幅を超える前後差が続いたらホイールスピン。単発はノイズ。
         d.get("wheel_fl") or 0, d.get("wheel_fr") or 0,
         d.get("wheel_rl") or 0, d.get("wheel_rr") or 0,
+        # MAF (g/s)。判定前の生値なので、燃料カット中も 0 にならない。
+        d.get("maf_airflow") or 0,
     ))
     # 0.2秒周期。加速度を差分から求めるため、0.5秒では全開加速のサンプルが
     # 数点しか取れずトルク推定の分解能が足りなかった。書き込み量は
