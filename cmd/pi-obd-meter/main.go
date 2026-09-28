@@ -309,6 +309,15 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
 			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
 			if ev := app.refuel.Event(); ev != nil && app.noteRefuelDetected(ev) {
+				// トリップはこの場で畳む。GAS の応答を待たない。
+				//
+				// 以前は GAS が返す TripReset だけがリセットの経路だった。
+				// GAS が未設定だったり圏外だったりすると応答が永久に来ず、
+				// 給油したのにトリップが前のタンクのまま残る。2026-09-28 に
+				// 実車で踏んだ (377.7km が給油後も消えなかった)。
+				// 走行の区切りを外部サービスの可用性に賭けてはいけない。
+				app.resetTripOnRefuel()
+
 				// 検出した瞬間に送る。定期送信を待つと最大5分かかり、
 				// ダイアログが「送信待ち」のまま止まって見える。
 				app.sendMaintenanceStatusAsync(ctx)

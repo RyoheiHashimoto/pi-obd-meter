@@ -212,6 +212,41 @@ type Event struct {
 	DeltaPt    float64   `json:"delta_pt"`
 	AmountL    float64   `json:"amount_l"`
 	FullTank   bool      `json:"full_tank"`
+
+	// トリップを畳んだ記録。給油の検出時にアプリ側が書き込む。
+	//
+	// **メモリに置いてはいけない。** 圏外で給油すると送信できず、この
+	// イベントは PendingEvent として次の起動へ持ち越される。そのとき
+	// 復元されたイベントは「新しい給油」に見えるので、畳む処理へもう一度
+	// 来る。メモリだけで持っていると、畳む前の距離が再起動後の値
+	// (ほぼ 0) に潰れ、GAS へ「前のタンクは 0km」と送ってしまう。
+	// 現在のトリップ距離から「畳み済みか」を推し量る判定も、再起動後に
+	// 少し走っていると成り立たない (2026-09-28、9 回の指摘で確定)。
+	TripFolded  bool    `json:"trip_folded,omitempty"`
+	PrevTripKm  float64 `json:"prev_trip_km,omitempty"`
+	PrevEcoKmpl float64 `json:"prev_eco_kmpl,omitempty"`
+}
+
+// MarkTripFolded は、いま検出している給油についてトリップを畳んだ記録を
+// イベントへ書き、その場で永続化する。
+//
+// 保存まで行うのは、次の起動で復元したときに「もう畳んだ」と分かる必要が
+// あるため。戻り値は書けたかどうか。既に畳んである、または検出中の給油が
+// 無ければ false。
+func (d *Detector) MarkTripFolded(prevTripKm, prevEcoKmpl float64) bool {
+	d.mu.Lock()
+	if d.event == nil || d.event.TripFolded {
+		d.mu.Unlock()
+		return false
+	}
+	d.event.TripFolded = true
+	d.event.PrevTripKm = prevTripKm
+	d.event.PrevEcoKmpl = prevEcoKmpl
+	cur := d.current
+	d.mu.Unlock()
+
+	d.save(cur)
+	return true
 }
 
 type state struct {
@@ -374,7 +409,8 @@ func (d *Detector) Event() *Event {
 	}
 	// **コピーを返す。** 内部ポインタを渡すと、呼び出し側が読んでいる間に
 	// 検出側が同じ構造体を書き換えられる。読むのは送信ゴルーチン
-	// (sendMaintenanceStatus)、書くのは OBD ループなので、別々に動く。
+	// (sendMaintenanceStatus)、書くのは OBD ループと MarkTripFolded で、
+	// 別々に動く。
 	// Event の中身は値型だけなので浅いコピーで足りる。
 	ev := *d.event
 	return &ev

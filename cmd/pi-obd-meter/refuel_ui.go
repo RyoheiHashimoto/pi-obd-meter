@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"time"
 
 	"github.com/hashimoto/pi-obd-meter/internal/fuel"
@@ -100,19 +101,51 @@ func (app *App) noteRefuelRecorded() {
 	}
 }
 
-// noteRefuelTripReset はトリップのリセットが返ってきたことを記録する。
+// noteRefuelTripReset はダイアログを「トリップも畳んだ」まで進める。
 // prevTripKm / prevEcoKmpl はリセット前のトリップの値を渡すこと。
-func (app *App) noteRefuelTripReset(prevTripKm, prevEcoKmpl float64) {
+//
+// 戻り値は「この呼び出しで進めたか」。既に進んでいれば false。
+// **これを tracker を畳む条件に使ってはいけない。** 畳むのは
+// resetTripOnRefuel の1箇所だけで、ここは表示の話しかしていない。
+func (app *App) noteRefuelTripReset(prevTripKm, prevEcoKmpl float64) bool {
 	app.refuelUIMu.Lock()
 	defer app.refuelUIMu.Unlock()
 	if app.refuelUI == nil {
-		return
+		return false
+	}
+	if app.refuelUI.stage >= refuelStageTripReset {
+		return false // 既に畳んである
 	}
 	app.refuelUI.stage = refuelStageTripReset
 	app.refuelUI.prevTripKm = prevTripKm
 	app.refuelUI.prevEcoKmpl = prevEcoKmpl
 	app.refuelUI.doneAt = time.Now()
 	app.refuelUI.lastProgressAt = app.refuelUI.doneAt
+	return true
+}
+
+// resetTripOnRefuel は給油の検出時点でトリップを畳む。
+//
+// GAS のレスポンス待ちにしない。圏外でも未設定でも、給油したら区切る。
+// 以前は GAS が返す TripReset だけが経路で、GAS が未設定だと永久に
+// 畳まれなかった (2026-09-28 に実車で 377.7km が残った)。
+//
+// **畳んだ記録は給油イベントに書く。** イベントは未送信なら
+// PendingEvent として次の起動へ持ち越されるので、圏外で給油して
+// 再起動しても「もう畳んだ」と分かる。メモリのフラグや「トリップが
+// 短いか」の判定では、再起動をまたぐと必ず壊れる。
+//
+// ダイアログの stage はここでは進めない。stage は「GAS へ送れたか」を
+// 見せるためのもので、畳んだかどうかとは別の話。ここで完了まで飛ばすと
+// 送信が滞っていても「完了」に見えてしまう。
+func (app *App) resetTripOnRefuel() {
+	prevKm, prevEco := app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy()
+	if !app.refuel.MarkTripFolded(prevKm, prevEco) {
+		return // 既に畳んである (復元されたイベントなど)
+	}
+	app.tracker.ManualReset()
+	slog.Info("トリップリセット", "reason", "給油検出",
+		"prev_trip_km", prevKm, "prev_eco_kmpl", prevEco)
 }
 
 // refuelUISnapshot は画面に渡す状態を返す。出さないときは nil。

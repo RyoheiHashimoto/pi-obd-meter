@@ -244,14 +244,31 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		odoApplied := app.odoApplied
 		app.totalKmMu.Unlock()
 
+		// 給油でトリップを畳んだ直後は、tracker が 0 を返す。
+		// GAS へ送るのは畳む前の値でなければ、給油間の距離と燃費が
+		// 外部の記録で 0 になる。
+		// 給油イベントはペイロードを組み立てる前に押さえる。
+		// 「この送信に給油が乗っているか」が、下のトリップ処理の分岐にも効く。
+		refuelEvent := app.refuel.Event()
+
+		tripKm, avgEco := app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy()
+		if refuelEvent != nil {
+			// この送信に給油が乗っている。検出時に畳んであれば
+			// tracker はほぼ 0 なので、畳む前の値を送る。
+			// まだ畳んでいなければ tracker の現在値がそのまま正しい。
+			if refuelEvent.TripFolded {
+				tripKm, avgEco = refuelEvent.PrevTripKm, refuelEvent.PrevEcoKmpl
+			}
+		}
+
 		payload := oilStatusPayload{
 			OilCurrentKm:       oil.CurrentKm,
 			OilRemainingKm:     oil.RemainingKm,
 			OilAlert:           string(oil.Alert),
 			TotalKm:            app.maintMgr.TotalKm(),
-			TripKm:             app.tracker.DistanceKm(),
+			TripKm:             tripKm,
 			OdometerApplied:    odoApplied,
-			AvgFuelEconomy:     app.tracker.AvgFuelEconomy(),
+			AvgFuelEconomy:     avgEco,
 			FuelRateCorrection: app.cfg.FuelRateCorrection,
 			SentAt:             time.Now(),
 		}
@@ -272,7 +289,6 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		}
 
 		// 給油を検出していれば相乗りさせる。送信経路を増やさない。
-		refuelEvent := app.refuel.Event()
 		if refuelEvent != nil {
 			payload.RefuelDetected = true
 			payload.RefuelAmountL = refuelEvent.AmountL
@@ -296,6 +312,9 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		if refuelEvent != nil {
 			app.refuel.ClearEvent()
 			app.noteRefuelRecorded()
+			// 畳んだ記録はここでは落とさない。この下でレスポンスの
+			// TripReset を見るまで持つ。先に落とすと claimTripReset が
+			// また通り、給油から通信までに走った分を消してしまう。
 		}
 
 		if len(respBody) == 0 {
@@ -338,17 +357,54 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 		//
 		// 0 は給油による「新しいトリップを始めろ」(tracker.go:318)。
 		// ダイアログに前のタンクの結果を出すため、消える前の値を控える。
-		if gasResp.TripCorrectionKm != nil {
+		if gasResp.TripCorrectionKm != nil && *gasResp.TripCorrectionKm == 0 &&
+			refuelEvent != nil && refuelEvent.TripFolded {
+			// この 0 は、いま送った給油に対する応答。webhook.gs は給油を
+			// 記録すると trip_correction_km に 0 を置く。検出時に畳んで
+			// あるので、ここで SetDistance(0) を通すと、給油してから
+			// 通信が終わるまでに走った分が消える。
+			//
+			// 判定にイベントの TripFolded を使うのは、これが「その給油に
+			// ついて畳んだ」ことを指すため。フラグや距離で測ると、通信中に
+			// 別の給油が入ったときに取り違える。
+			_ = app.noteRefuelTripReset(refuelEvent.PrevTripKm, refuelEvent.PrevEcoKmpl)
+			slog.Info("トリップ補正を省略", "reason", "給油検出時に畳み済み",
+				"prev_trip_km", refuelEvent.PrevTripKm)
+		} else if gasResp.TripCorrectionKm != nil {
 			km := *gasResp.TripCorrectionKm
 			if km == 0 {
-				app.noteRefuelTripReset(app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy())
+				// 検出時に畳んでいれば tracker は 0 を返す。そのまま
+				// 出すとダイアログの「前のタンク」が 0km になる。
+				prevKm, prevEco := app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy()
+				if refuelEvent != nil && refuelEvent.TripFolded {
+					prevKm, prevEco = refuelEvent.PrevTripKm, refuelEvent.PrevEcoKmpl
+				}
+				// 戻り値は見ない。GAS が明示した補正なので、既に畳んで
+				// あっても下の SetDistance は必ず通す。
+				_ = app.noteRefuelTripReset(prevKm, prevEco)
 			}
 			app.tracker.SetDistance(km)
 			slog.Info("トリップ補正", "km", km)
 		} else if gasResp.TripReset {
-			app.noteRefuelTripReset(app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy())
-			app.tracker.ManualReset()
-			slog.Info("トリップリセット", "reason", "給油記録")
+			// **ここでは tracker を畳まない。** 畳むのは給油を検出した
+			// resetTripOnRefuel の1箇所だけにする。
+			//
+			// 経路を2つ持つと必ず競合する。送信には数秒かかり、その間に
+			// 給油が検出されて別のゴルーチンが畳むことがある。フラグでも
+			// refuelEvent の有無でも距離でも、判定と実行の間に隙間が空く。
+			// 経路が1つなら隙間そのものが無い。
+			//
+			// GAS から畳ませたいときの経路は TripCorrectionKm=0 (上の分岐)。
+			// 実際 webhook.gs は給油を記録したら trip_correction_km に 0 を
+			// 置く。**trip_reset は GAS 側で一度も設定されていない** ので、
+			// この分岐に入ること自体がまず無い。入ってもダイアログを
+			// 進めるだけにしておく。
+			prevKm, prevEco := app.tracker.DistanceKm(), app.tracker.AvgFuelEconomy()
+			if refuelEvent != nil && refuelEvent.TripFolded {
+				prevKm, prevEco = refuelEvent.PrevTripKm, refuelEvent.PrevEcoKmpl
+			}
+			_ = app.noteRefuelTripReset(prevKm, prevEco)
+			slog.Info("トリップリセットは給油検出時に実施済み", "prev_trip_km", prevKm)
 		}
 
 		return
