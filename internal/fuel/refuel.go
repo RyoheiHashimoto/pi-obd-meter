@@ -369,7 +369,15 @@ func (d *Detector) Event() *Event {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.event
+	if d.event == nil {
+		return nil
+	}
+	// **コピーを返す。** 内部ポインタを渡すと、呼び出し側が読んでいる間に
+	// 検出側が同じ構造体を書き換えられる。読むのは送信ゴルーチン
+	// (sendMaintenanceStatus)、書くのは OBD ループなので、別々に動く。
+	// Event の中身は値型だけなので浅いコピーで足りる。
+	ev := *d.event
+	return &ev
 }
 
 // ClearEvent は送信済みの給油イベントを消す。
