@@ -423,3 +423,30 @@ func TestSettledLiters_nilで落ちない(t *testing.T) {
 		t.Errorf("nil: %.2f, want 0", got)
 	}
 }
+
+// TestEventReturnsCopy は Event() が内部の構造体を直接渡さないことを確認する。
+//
+// 読むのは送信ゴルーチン、書くのは OBD ループで、別々に動く。内部ポインタを
+// 返すと、送信側が中身を読んでいる最中に検出側が書き換えられる。
+func TestEventReturnsCopy(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "fuel.json")
+
+	d1 := NewDetector(p)
+	feed(d1, 30, settleSamples)
+	d := NewDetector(p)
+	feed(d, 95, settleSamples)
+
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("給油が検出されていない")
+	}
+	ev.AmountL = 999 // 呼び出し側が書き換えても
+
+	again := d.Event()
+	if again.AmountL == 999 {
+		t.Fatal("内部の構造体をそのまま渡している。呼び出し側の書き換えが漏れる")
+	}
+	if again.DeltaPt != ev.DeltaPt {
+		t.Fatalf("コピーの中身が違う: %v vs %v", again.DeltaPt, ev.DeltaPt)
+	}
+}
