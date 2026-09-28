@@ -59,6 +59,15 @@ func (c *Client) SendWithResponse(ctx context.Context, payloadType string, data 
 	respBody, err := c.doPost(ctx, payload)
 	if err != nil {
 		c.enqueue(payload)
+		// **失敗は必ず記録する。** ここが無言だったせいで、2026-09-28 に
+		// 給油後のトリップが 322 秒畳まれなかった件の原因を特定できなかった。
+		// キューに入った事実 (リトライ側の count) からしか失敗を推し量れず、
+		// 何回目の送信がどう失敗したのかが残っていなかった。
+		// リトライ側 (RetryPending) には元から警告が出ている。
+		slog.Warn("データ送信失敗、リトライキューへ",
+			"type", payloadType,
+			"error", err,
+			"queue_size", c.QueueSize())
 		return nil, err
 	}
 	slog.Info("データ送信完了", "type", payloadType)

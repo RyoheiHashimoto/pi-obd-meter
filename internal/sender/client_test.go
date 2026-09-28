@@ -1,11 +1,14 @@
 package sender
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -317,5 +320,41 @@ func TestPayloadJSON(t *testing.T) {
 	data := decoded["data"].(map[string]any)
 	if data["fuel_economy"] != 12.5 {
 		t.Errorf("fuel_economy: got %v, want 12.5", data["fuel_economy"])
+	}
+}
+
+// TestSendFailureIsLogged は、送信失敗が必ずログに残ることを確認する。
+//
+// ここが無言だったせいで、2026-09-28 に給油後のトリップが 322 秒畳まれなかった
+// 件の原因を特定できなかった。キューに入った事実からしか失敗を推し量れず、
+// 何回目の送信がどう失敗したのかが残っていなかった。
+func TestSendFailureIsLogged(t *testing.T) {
+	// 500 を返すサーバ。ネットワーク到達性の問題と切り分けるため、
+	// 接続自体は成功させて HTTP エラーで落とす。
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	defer slog.SetDefault(prev)
+
+	c := NewClient(srv.URL)
+	_, err := c.SendWithResponse(context.Background(), "maintenance", map[string]string{"x": "1"})
+	if err == nil {
+		t.Fatal("500 を返したのにエラーにならない")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "データ送信失敗") {
+		t.Fatalf("失敗がログに出ていない。出力: %q", out)
+	}
+	if !strings.Contains(out, "maintenance") {
+		t.Fatalf("どの種類の送信か分からない。出力: %q", out)
+	}
+	if c.QueueSize() != 1 {
+		t.Fatalf("リトライキューに入っていない: size=%d", c.QueueSize())
 	}
 }
