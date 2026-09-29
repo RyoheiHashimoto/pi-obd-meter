@@ -126,9 +126,9 @@ func (app *App) noteRefuelTripReset(prevTripKm, prevEcoKmpl float64) bool {
 
 // resetTripOnRefuel は給油の検出時点でトリップを畳む。
 //
-// GAS のレスポンス待ちにしない。圏外でも未設定でも、給油したら区切る。
-// 以前は GAS が返す TripReset だけが経路で、GAS が未設定だと永久に
-// 畳まれなかった (2026-09-28 に実車で 377.7km が残った)。
+// GAS のレスポンス待ちにしない。通信が通らなくても、給油したら区切る。
+// 以前は GAS が返す trip_correction_km=0 だけが経路で、送信が通るまで
+// 畳まれなかった (2026-09-28 に実車で 322 秒かかった)。
 //
 // **畳んだ記録は給油イベントに書く。** イベントは未送信なら
 // PendingEvent として次の起動へ持ち越されるので、圏外で給油して
