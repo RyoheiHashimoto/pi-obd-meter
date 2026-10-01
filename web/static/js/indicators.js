@@ -254,7 +254,6 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
   }
   instValEl.setAttribute('fill', col);
-  instUnitEl.setAttribute('fill', col);
   // 出し方が変わったとき (エンブレに入った、止まった) は1秒を待たずに書き換える
   if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
     instValEl.textContent = text;
@@ -412,13 +411,15 @@ export function createIndicators(panelEl) {
   // Active arc
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
-  // 瞬間燃費 — 針の下に配置。数字は右寄せ、単位は左寄せで、桁が変わっても単位が動かない
-  instValEl = svgEl(svg, 'text', { x: MAP_CX + 30, y: MAP_CY - 30, class: 'g-num', fill: '#333', 'font-size': 26, style: 'text-anchor: end' });
+  // 瞬間燃費 — 針の下に配置。数字は右寄せ、単位は左寄せで、桁が変わっても単位が動かない。
+  // いちばん広い「99.99 km/L」がゲージの中央に来る位置 (幅 148)。これより右だと
+  // 単位が目盛りの「-.2」に、下だと「-.8」「-.2」の高さに掛かる (2026-10-02 に実測)
+  instValEl = svgEl(svg, 'text', { x: MAP_CX + 18, y: MAP_CY - 34, class: 'g-num', fill: '#333', 'font-size': 26, style: 'text-anchor: end' });
   instValEl.textContent = '--';
   bloomText(instValEl, 2.5, 0.45);
-  instUnitEl = svgEl(svg, 'text', { x: MAP_CX + 34, y: MAP_CY - 30, class: 'g-unit', fill: '#333', 'font-size': 16, style: 'text-anchor: start' });
+  // 単位は他の単位 (Bar、ECO 行の km/L) と同じ書式: g-unit・24・白
+  instUnitEl = svgEl(svg, 'text', { x: MAP_CX + 22, y: MAP_CY - 34, class: 'g-unit', fill: '#fff', 'font-size': 24, style: 'text-anchor: start' });
   instUnitEl.textContent = 'km/L';
-  bloomText(instUnitEl, 2, 0.45);
 
   // Needle (瞬間燃費の上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
