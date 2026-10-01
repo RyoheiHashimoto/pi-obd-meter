@@ -252,7 +252,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 外側にRPMアーク (レッドゾーン背景付き)
 - ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
 - 右パネル: バキューム計 + 4行インジケーター
-  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar)、VACUUM ラベルが負圧に応じて暗→明→赤
+  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar)。針の付け根の上に瞬間燃費（2秒の合計窓、1秒ごとに書き換え、停車中は L/h、エンブレ判定中は `--`。詳細は `docs/meter-indicators.md`）
   - 4行インジケーター: ECO / TEMP / TRIP / OIL (縦配置、bloom 付きアイコン + ガラスパネル枠)
 - **fake bloom** による軽量グロー (SVG `feGaussianBlur` 相当の重い処理なし)
   - 針: clone 方式 + `transform 0.6s cubic-bezier` で光の尾のように遅延追従
