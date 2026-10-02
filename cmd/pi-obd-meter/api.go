@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/hashimoto/pi-obd-meter/internal/health"
+	"html"
+	"io"
 	"io/fs"
 	"log/slog"
 	"math"
@@ -87,6 +90,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// buildVersionPlaceholder は meter.html の <meta name="build-version"> に
+// 置いてある目印。配信時にバイナリの版で置き換える (buildMux)。
+const buildVersionPlaceholder = "__BUILD_VERSION__"
+
 // buildMux はルーティングを組み立てる。
 //
 // startLocalAPI から切り出してある。net/http はパターンの二重登録で登録時に
@@ -115,6 +122,34 @@ func (app *App) buildMux() *http.ServeMux {
 		w.Header().Set("Cache-Control", "no-cache")
 		fileSrv.ServeHTTP(w, r)
 	}))
+
+	// meter.html だけは、配ったバイナリの版を埋め込んで返す。
+	//
+	// 画面は版が変わったら読み込み直す (main.js の startVersionCheck)。以前は
+	// 比べる元の版を、読み込みから 30 秒以上たってから /api/config で取っていた。
+	// auto-update はページを読み込んだ後でバイナリを入れ替えるので、その間に
+	// 入れ替わると新しい版を元として記録してしまい、古い画面のまま気づかない。
+	// 2026-10-02 に実車で起きた: cog がページを読んだのが 09:14:31、新しい版の
+	// 起動が 09:14:56。auto-update の `systemctl restart kiosk` は、cog が
+	// labwc の autostart から起動しているこの車では何もしない。
+	// HTML に版を入れておけば、そのページを配ったバイナリの版で比べられる。
+	mux.HandleFunc("GET /meter.html", func(w http.ResponseWriter, r *http.Request) {
+		f, err := webFS.Open("/meter.html")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer f.Close() //nolint:errcheck // 読み取り専用
+		b, err := io.ReadAll(f)
+		if err != nil {
+			http.Error(w, "meter.html を読めない", http.StatusInternalServerError)
+			return
+		}
+		b = bytes.Replace(b, []byte(buildVersionPlaceholder), []byte(html.EscapeString(version)), 1)
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(b)
+	})
 
 	// --- 設定API（meter.htmlがmax_speed_kmhを取得する） ---
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
