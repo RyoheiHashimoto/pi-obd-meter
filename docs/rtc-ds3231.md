@@ -2,7 +2,7 @@
 
 issue #195。Pi 4 に RTC が無く、ログの時刻が信用できない問題を直す。
 
-この文書の値は 2026-09-29 に実機で確認した。
+この文書の値は 2026-09-29 に実機で確認した。5・6・8 章の時刻まわりは 2026-10-02 に実機のカーネル設定を見て直した。
 
 ## なぜ要るか
 
@@ -195,28 +195,52 @@ timedatectl
 ls -l /dev/rtc*
 ```
 
-初回は RTC に時刻が入っていないので、NTP で合った状態で書き込む。
+初回は RTC に時刻が入っていない。**`hwclock` は使わない。** この Pi には
+入っていない (2026-10-02 に `command -v hwclock` で確認。`sudo hwclock -w` は
+「コマンドが無い」で失敗する)。入れなくてよい:
+
+- カーネルが `CONFIG_RTC_SYSTOHC=y` (`CONFIG_RTC_SYSTOHC_DEVICE="rtc0"`)。
+  NTP で時計が合っている間、カーネルが 11 分ごとに RTC へ書き込む
+- よって、配線後に **NTP が繋がった状態で 11 分以上動かせば** RTC に時刻が入る
 
 ```bash
-timedatectl   # System clock synchronized: yes を確認してから
-sudo hwclock -w
-sudo hwclock -r   # 書けたか読み返す
+timedatectl   # System clock synchronized: yes になってから 11 分以上待つ
 ```
 
-以後は起動時にカーネルが RTC から読む。`systemd-timesyncd` は NTP が
-繋がったときだけ補正するので、そのままでよい。
+**起動時に RTC から時計を合わせるのもカーネル。** `CONFIG_RTC_HCTOSYS=y`
+(`CONFIG_RTC_HCTOSYS_DEVICE="rtc0"`)。ドライバ `rtc-ds1307` はモジュール
+(`CONFIG_RTC_DRV_DS1307=m`) だが、今のカーネル (6.18) は RTC が rtc0 として
+登録された時点で時計を合わせる見込み。**取り付け後に 6 章で確かめて確定させる。**
+Debian の udev `hwclock-set` は入っておらず、頼れない。
+
+`systemd-timesyncd` は NTP が繋がったときだけ補正するので、そのままでよい。
 
 ## 6. 効いているかの判定
 
-RTC を載せた後、**NTP に繋がらない状態で起動して**確認する。
+**`date` が正しいことは判定に使えない。** RTC が無くても、`systemd-timesyncd` が
+前回保存した時刻 (`/data/state/timesync`) まで時計を進める。止めていた時間が
+短ければ、RTC が効いていなくても `date` はほぼ正しく見える。
+
+代わりに、カーネルが RTC から時計を合わせた記録と、その時刻を見る。
 
 ```bash
-# 起動直後（WiFi が繋がる前）に
-date
-timedatectl | grep -E 'synchronized|RTC time'
+# (1) カーネルが RTC から時計を合わせたか。この行が無ければ効いていない
+sudo dmesg | grep -i 'setting system clock'
+#   例: rtc-ds1307 1-0068: setting system clock to 2026-10-03T08:12:34 UTC (...)
+
+# (2) それが journal の書き出しより前か。前でなければ、journal の保管ファイル名に
+#     古い時刻が付く問題 (docs/boot-resilience.md) は残る
+journalctl -b -q -t systemd-journald -o short-monotonic | grep -m1 'System Journal'
+
+# (3) 保管された前回分の journal に、正しい日付の名前が付いたか
+#     (system@<16桁の16進>-....journal~ の先頭 16 桁がマイクロ秒の時刻)
+ls /var/log/journal/*/ | grep '^system@'
+
+# (4) RTC と時計の差
+timedatectl | grep -E 'synchronized|RTC time|Local time'
 ```
 
-`System clock synchronized: no` なのに `date` が正しければ RTC が効いている。
+(1) の行があり、その起動からの秒が (2) より小さければ RTC が効いている。
 
 ログ側では、飛びが消えたことを次で見る。連続する 2 行の差が 5 秒を超える
 箇所が無くなる。
@@ -280,6 +304,12 @@ DS3231 も外す。それから電源を入れ直す。
   あると起動時にどちらが勝つか分かりにくくなる
 - `/var/lib/systemd/timesync` は SSD へ bind 済み（`/data/state/timesync`）。
   RTC を載せても外す必要はない。害はない
+- **`hwclock` は入っていない。** 手順に `hwclock -w` を足さないこと。書き込みは
+  カーネルの 11 分モード (`CONFIG_RTC_SYSTOHC`) に任せる。どうしても今すぐ
+  書きたいなら `sudo overlayroot-chroot apt-get install -y util-linux-extra`
+  (稼働中の `/` に入れると再起動で消える)
+- **効いているかは `dmesg` の「setting system clock」で見る。** `date` では
+  分からない (6 章)
 
 ## 関連
 
