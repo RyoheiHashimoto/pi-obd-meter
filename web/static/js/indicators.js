@@ -412,14 +412,14 @@ export function createIndicators(panelEl) {
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
   // 瞬間燃費 — 針の下に配置。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
-  // 置いて中央にそろえる。いちばん広い「99.99」で数字は x 64〜156・y 86〜118、
-  // 単位は y 116〜143。目盛りの数字に掛からず、針の付け根 (y 150〜) の手前で
-  // 止まり、中心から最も遠い角は 83 でリングの内側 (104) に収まる (2026-10-02 に実測)
-  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 43, class: 'g-num', fill: '#333', 'font-size': 26, 'text-anchor': 'middle' });
+  // 置いて中央にそろえる。数字は単位から離して上に寄せ、目盛りの「-.6」「-.4」の
+  // すぐ下に置く。単位は針の付け根 (y 150〜) の手前で止まる
+  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 26, 'text-anchor': 'middle' });
   instValEl.textContent = '--';
   bloomText(instValEl, 2.5, 0.45);
-  // 単位は他の単位 (Bar、ECO 行の km/L) と同じ書式: g-unit・24・白
-  instUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 18, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
+  // 単位は他の単位と同じ g-unit・白。大きさだけ 20 に落とす。数字が 26 と小さく、
+  // 24 だと単位が数字とほぼ同じ大きさに見えたため (Bar は数字 48 に対して 24)
+  instUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 17, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
   instUnitEl.textContent = 'km/L';
 
   // Needle (瞬間燃費の上)
