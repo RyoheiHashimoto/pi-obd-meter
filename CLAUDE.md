@@ -225,7 +225,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 状態ファイル（maintenance.json, trip_state.json）: アトミック書き込み（tmp+rename+fsync）で電源断保護
 - トリップ状態: 0.1km（100m）走行ごとに保存（距離ベース）
 - 送信失敗データ: メモリ内キュー（最大100件、指数バックオフ 5m→30m）
-- ログ: journald（SSD `/data/log/journal` に永続化。2026-09-09 に RAM 運用から変更）
+- ログ: journald（SSD `/data/log/journal` に永続化、上限 512M。2026-10-02 まで上限が 64M のままで、前回起動のシステム記録が毎回消えていた。docs/boot-resilience.md）。起動ごとに `scripts/ops/persist-check.sh` が恒久化を確かめ、外れは `/api/health` の `pi.persist` に出る
 - 起動時にGASからODO復元（`type: "restore"`）。電源断でリセットされた場合のフォールバック
 
 ### CAN データの注意事項
@@ -252,7 +252,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 外側にRPMアーク (レッドゾーン背景付き)
 - ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
 - 右パネル: バキューム計 + 4行インジケーター
-  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar)、VACUUM ラベルが負圧に応じて暗→明→赤
+  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar)。針の付け根の上に瞬間燃費（2秒の合計窓、1秒ごとに書き換え、停車中は L/h、エンブレ判定中は `--`。詳細は `docs/meter-indicators.md`）
   - 4行インジケーター: ECO / TEMP / TRIP / OIL (縦配置、bloom 付きアイコン + ガラスパネル枠)
 - **fake bloom** による軽量グロー (SVG `feGaussianBlur` 相当の重い処理なし)
   - 針: clone 方式 + `transform 0.6s cubic-bezier` で光の尾のように遅延追従

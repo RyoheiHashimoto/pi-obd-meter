@@ -70,6 +70,21 @@ type Status struct {
 	// 走行ログを書くサービスが生きているか。「ログ取れてる？」に
 	// 答えるため (#178)。キーはユニット名、値は active なら true。
 	Loggers map[string]bool `json:"loggers"`
+
+	// 再起動で消えては困る設定が効いているか (scripts/ops/persist-check.sh)。
+	// 今回の起動でまだ確かめていなければ nil。前の起動の結果は出さない。
+	Persist *PersistCheck `json:"persist,omitempty"`
+}
+
+// PersistCheck は scripts/ops/persist-check.sh の結果。
+//
+// root は overlayfs で、/etc を直接書き換えた変更は再起動で黙って消える。
+// journald の上限が 3 週間元に戻ったまま気づかなかった (2026-10-02) ので、
+// 起動のたびに確かめた結果をここに載せ、GAS への送信にも乗せる。
+type PersistCheck struct {
+	BootID   string   `json:"boot_id"`
+	OK       bool     `json:"ok"`
+	Failures []string `json:"failures"`
 }
 
 // Alert は注意すべき状態を短い日本語で返す。何も無ければ空文字列。
@@ -81,6 +96,8 @@ func (s Status) Alert() string {
 		return "高温で制限中"
 	case s.SoCTempC >= 80:
 		return "SoC高温"
+	case s.Persist != nil && !s.Persist.OK:
+		return "設定が消えている"
 	case s.UnderVoltageEver:
 		return "電圧低下の履歴あり"
 	}
@@ -152,6 +169,7 @@ func (m *Monitor) Status() Status {
 	}
 	s.DataFreeGB, s.DataTotalGB = readDataFree(dataDir)
 	s.Loggers = readLoggers()
+	s.Persist = readPersistCheck(persistCheckPath, readBootID())
 	if raw, ok := readThrottled(); ok {
 		s.UnderVoltageNow = raw&bitUnderVoltageNow != 0
 		s.FreqCappedNow = raw&bitFreqCappedNow != 0
@@ -192,6 +210,41 @@ func readLoggers() map[string]bool {
 
 // dataDir は走行ログの保存先。テストから差し替えられるように変数にしておく。
 var dataDir = "/data"
+
+// persistCheckPath は scripts/ops/persist-check.sh が結果を書く場所。
+// bootIDPath は今回の起動の ID。どちらもテストから差し替える。
+var (
+	persistCheckPath = "/data/pi-obd-meter/persist-check.json"
+	bootIDPath       = "/proc/sys/kernel/random/boot_id"
+)
+
+func readBootID() string {
+	b, err := os.ReadFile(bootIDPath)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// readPersistCheck は今回の起動での確認結果を返す。
+//
+// ファイルが無い、読めない、前の起動に書かれたものなら nil。確認は起動の
+// 90 秒後に走るので、それまでは nil になる。古い結果を今の状態として出すと、
+// 消えた設定を「OK」と見せてしまう。
+func readPersistCheck(path, bootID string) *PersistCheck {
+	if bootID == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var pc PersistCheck
+	if err := json.Unmarshal(b, &pc); err != nil || pc.BootID != bootID {
+		return nil
+	}
+	return &pc
+}
 
 // readDataFree は保存先の空き容量と総容量を GB で返す。
 // マウントされていない・取得できない場合は 0, 0。呼び出し側は 0 を
