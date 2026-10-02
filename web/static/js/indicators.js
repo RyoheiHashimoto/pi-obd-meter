@@ -433,8 +433,9 @@ export function createIndicators(panelEl) {
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
   addOffsetShadow(mapValEl);
   mapValEl.textContent = '--';
-  // Unit
-  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
+  // Unit — 数字との間を瞬間燃費 (数字と単位の間 約 16) とつり合わせる。
+  // +44 では約 27 空いて、単位だけ離れて見えた (2026-10-02)
+  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 36, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
   // === 3行インジケーター ===
