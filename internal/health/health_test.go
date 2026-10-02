@@ -116,3 +116,54 @@ func TestThrottledBits(t *testing.T) {
 		}
 	}
 }
+
+// 恒久化の確認結果は、今回の起動のものだけを返す。
+//
+// 前の起動に書かれた「OK」を今の状態として出すと、今回消えた設定を
+// 見逃す。boot_id が合わなければ nil (= まだ確かめていない) にする。
+func TestReadPersistCheck_OnlyThisBoot(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "persist-check.json")
+	body := `{"boot_id":"aaaa","ok":false,"failures":["journal の上限が 64M (期待 512M)"]}`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pc := readPersistCheck(p, "aaaa")
+	if pc == nil {
+		t.Fatal("今回の起動の結果が読めていない")
+	}
+	if pc.OK || len(pc.Failures) != 1 || pc.Failures[0] != "journal の上限が 64M (期待 512M)" {
+		t.Errorf("中身が違う: %+v", pc)
+	}
+	if got := readPersistCheck(p, "bbbb"); got != nil {
+		t.Errorf("前の起動の結果を返している: %+v", got)
+	}
+	if got := readPersistCheck(filepath.Join(t.TempDir(), "none.json"), "aaaa"); got != nil {
+		t.Errorf("ファイルが無いのに結果を返している: %+v", got)
+	}
+	if got := readPersistCheck(p, ""); got != nil {
+		t.Errorf("boot_id が読めないのに結果を返している: %+v", got)
+	}
+	if err := os.WriteFile(p, []byte("{壊れた"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readPersistCheck(p, "aaaa"); got != nil {
+		t.Errorf("壊れたファイルから結果を返している: %+v", got)
+	}
+}
+
+// 設定が消えていれば警告を出す。電圧低下の履歴より優先する。
+func TestAlert_PersistFailure(t *testing.T) {
+	s := Status{UnderVoltageEver: true, Persist: &PersistCheck{OK: false, Failures: []string{"x"}}}
+	if got := s.Alert(); got != "設定が消えている" {
+		t.Errorf("Alert() = %q, want 設定が消えている", got)
+	}
+	s.Persist.OK = true
+	if got := s.Alert(); got != "電圧低下の履歴あり" {
+		t.Errorf("確認が通ったのに Alert() = %q", got)
+	}
+	s = Status{}
+	if got := s.Alert(); got != "" {
+		t.Errorf("未確認 (nil) で警告している: %q", got)
+	}
+}

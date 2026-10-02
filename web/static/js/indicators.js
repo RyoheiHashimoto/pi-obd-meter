@@ -135,8 +135,9 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 }
 
 // --- Module state ---
-let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
+let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
+let instValEl, instUnitEl;
 
 let ecoValEl, ecoIconEls;
 let rngValEl, rngIconEl;
@@ -181,17 +182,85 @@ function lerpMap() {
   setFilter(mapArcEl, active ? 'url(#glow-strong)' : '');
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
   setFilter(mapNeedleEl, active ? 'url(#glow-strong)' : '');
-  // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
-  if (vacLabelEl) {
-    const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
-    const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
-    const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
-    vacLabelEl.setAttribute('fill', vacCol);
-    setFilter(vacLabelEl, active ? (pct > 60 ? 'url(#glow-strong)' : 'url(#glow-mid)') : '');
-  }
   mapValEl.setAttribute('fill', active ? col : '#333');
   mapValEl.textContent = active ? mapCur.toFixed(2) : '--';
   mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP * 0.01 ? requestAnimationFrame(lerpMap) : 0;
+}
+
+// --- 瞬間燃費 (バキューム計の中、針の付け根の上) ---
+//
+// 値は 50 ms ごとに届くが、届いた瞬間燃費をそのまま出すと読めない。
+// 直近2秒の距離と燃料をそれぞれ合計してから割り、数字は1秒ごとに書き換える。
+//
+// 2026-09-17〜28 の走行ログ (10 km/h 以上で約20時間) で、2秒平均を小数2桁で
+// 出したときに数字が1秒あたり何回変わるかを数えた。0.4秒ごとの書き換えなら
+// 2.4回、1秒ごとなら 0.9回。MIL-STD-1472F 5.14.3.4.1 は「確実に読ませたい
+// 数字は毎秒1回より速く更新しない」としている。マツダ純正 (DJ デミオ) と
+// ScanGauge は約2秒ごと。踏み方の良し悪しは、毎回書き換える色で追える。
+//
+// 出し分けは docs/calculation-logic.md の仕様どおり:
+//   fuel_economy > 0  → km/L
+//   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
+//   fuel_economy = -1 → "--" (エンブレ判定。約半分が外れているので数値を出さない)
+// エンブレ判定中の値は合計にも入れない。入れると、終わった直後の燃費が良く出る。
+const INST_WINDOW_MS = 2000;  // 合計する長さ
+const INST_TEXT_MS = 1000;    // 数字を書き換える間隔
+const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (エンブレ明けなど)
+// 届く間隔がこれより空いたら合計をやり直す。同じ内容の配信は省かれて
+// 1秒ごとの heartbeat だけになる (ws_hub.go) ので、それより長くとる。
+const INST_GAP_MS = 1500;
+const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
+let instSamples = [];         // { t, dt, km, l }
+let instLastAt = 0;
+let instTextAt = 0;
+let instMode = '';
+
+// バキューム計と同じ色相 (0 bar = 赤, -1 bar = 青)
+function vacHueOf(mapKpa) {
+  const bar = (mapKpa - 101.3) / 100;
+  const pct = Math.max(0, Math.min(100, (bar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
+  return (1 - pct / 100) * HUE_MAX;
+}
+
+function updateInstantEco(d, obdOn, mapKpa, now) {
+  const fe = d.fuel_economy || 0;
+  const dt = instLastAt ? now - instLastAt : 0;
+  instLastAt = now;
+  if (!obdOn || dt > INST_GAP_MS) instSamples = [];
+  if (obdOn && fe >= 0 && dt > 0) {
+    const h = dt / 3600000;
+    instSamples.push({ t: now, dt, km: (d.speed_kmh || 0) * h, l: (d.fuel_rate_lh || 0) * h });
+  }
+  while (instSamples.length && instSamples[0].t <= now - INST_WINDOW_MS) instSamples.shift();
+
+  let ms = 0, km = 0, l = 0;
+  for (const s of instSamples) { ms += s.dt; km += s.km; l += s.l; }
+
+  let mode, text = '--', col;
+  if (!obdOn) {
+    mode = 'off';
+    col = '#333';
+  } else if (fe < 0 || ms < INST_MIN_MS) {
+    mode = 'none';
+    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+  } else if (fe === 0) {
+    mode = 'L/h';
+    text = (l / (ms / 3600000)).toFixed(2);
+    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+  } else {
+    mode = 'km/L';
+    const kmL = l > 0 ? Math.min(km / l, INST_MAX_KML) : INST_MAX_KML;
+    text = kmL.toFixed(2);
+    col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
+  }
+  instValEl.setAttribute('fill', col);
+  // 出し方が変わったとき (エンブレに入った、止まった) は1秒を待たずに書き換える
+  if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
+    instValEl.textContent = text;
+    instUnitEl.textContent = mode === 'L/h' ? 'L/h' : 'km/L';
+    instMode = mode;
+    instTextAt = now;
+  }
 }
 
 // --- アイコン生成 ---
@@ -342,12 +411,18 @@ export function createIndicators(panelEl) {
   // Active arc
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
-  // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
-  vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
-  vacLabelEl.textContent = 'VACUUM';
-  bloomText(vacLabelEl, 2.5, 0.45);
+  // 瞬間燃費 — 針の下に配置。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
+  // 置いて中央にそろえる。数字は単位から離して上に寄せ、目盛りの「-.6」「-.4」の
+  // すぐ下に置く。単位は針の付け根 (y 150〜) の手前で止まる
+  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 26, 'text-anchor': 'middle' });
+  instValEl.textContent = '--';
+  bloomText(instValEl, 2.5, 0.45);
+  // 単位は他の単位と同じ g-unit・白。大きさだけ 20 に落とす。数字が 26 と小さく、
+  // 24 だと単位が数字とほぼ同じ大きさに見えたため (Bar は数字 48 に対して 24)
+  instUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 17, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
+  instUnitEl.textContent = 'km/L';
 
-  // Needle (VACUUM ラベルの上)
+  // Needle (瞬間燃費の上)
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
   mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
@@ -368,7 +443,7 @@ export function createIndicators(panelEl) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: ECO (葉アイコン、色 = 瞬間燃費ベース)
+  // Row 0: ECO (葉アイコン、数字も色も平均燃費)
   const ecoY = IND_Y_START;
   addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
@@ -458,21 +533,15 @@ export function updateIndicators(dom, d, conf) {
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // ECO 累積平均 (Row 1) — 色は瞬間燃費ベース (元の仕様)
+  // 瞬間燃費 (バキューム計の中)
+  updateInstantEco(d, d.obd_connected !== false, mapKpa, performance.now());
+
+  // ECO 平均燃費 (Row 0) — 色も平均燃費で決める (0 km/L 赤 → ecoGradientMax 以上で緑)。
+  // 以前は色だけ瞬間燃費で、数字と色が別の値を指していた。瞬間燃費はバキューム計の中に出す
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
-  const instantEco = d.fuel_economy || 0;
-  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
-  let ecoCol;
-  if (instantEco < 0 || instantEco < 0.1) {
-    // エンブレ/停車: VACUUM 計と同じ色に同期
-    const vacBar = (mapKpa - 101.3) / 100;
-    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
-    const vacHue = (1 - vacPct / 100) * HUE_MAX;
-    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
-  } else {
-    const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
-    ecoCol = `hsl(${hue}, 100%, 55%)`;
-  }
+  const hasAvg = avgEco > 0.1;
+  ecoValEl.textContent = hasAvg ? avgEco.toFixed(2) : '--';
+  const ecoCol = hasAvg ? `hsl(${Math.min(avgEco / ecoGradientMax, 1) * 153}, 100%, 55%)` : '#fff';
   ecoValEl.setAttribute('fill', ecoCol);
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
