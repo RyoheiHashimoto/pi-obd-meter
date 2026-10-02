@@ -225,7 +225,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 状態ファイル（maintenance.json, trip_state.json）: アトミック書き込み（tmp+rename+fsync）で電源断保護
 - トリップ状態: 0.1km（100m）走行ごとに保存（距離ベース）
 - 送信失敗データ: メモリ内キュー（最大100件、指数バックオフ 5m→30m）
-- ログ: journald（SSD `/data/log/journal` に永続化。2026-09-09 に RAM 運用から変更）
+- ログ: journald（SSD `/data/log/journal` に永続化、上限 512M。2026-10-02 まで上限が 64M のままで、前回起動のシステム記録が毎回消えていた。docs/boot-resilience.md）。起動ごとに `scripts/ops/persist-check.sh` が恒久化を確かめ、外れは `/api/health` の `pi.persist` に出る
 - 起動時にGASからODO復元（`type: "restore"`）。電源断でリセットされた場合のフォールバック
 
 ### CAN データの注意事項

@@ -1,0 +1,7 @@
+[Unit]
+Description=Check that settings survived the reboot (overlayfs)
+After=systemd-journal-flush.service local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/persist-check.sh
