@@ -199,11 +199,19 @@ function lerpMap() {
 // 数字は毎秒1回より速く更新しない」としている。マツダ純正 (DJ デミオ) と
 // ScanGauge は約2秒ごと。踏み方の良し悪しは、毎回書き換える色で追える。
 //
-// 出し分けは docs/calculation-logic.md の仕様どおり:
+// 出し分け:
 //   fuel_economy > 0  → km/L
 //   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
-//   fuel_economy = -1 → "--" (エンブレ判定。約半分が外れているので数値を出さない)
+//   fuel_economy = -1 → "--"。燃料流量が 0 (= 1300 rpm 以上での燃料カット) なら
+//                       アークを右端まで伸ばす。燃費は無限大なので市販の燃費計と同じく
+//                       上限に張り付ける。数字は実際の値ではないので出さない。
+//                       1300 rpm 未満は燃料が戻っている (fuel.go) のでアークも消す
 // エンブレ判定中の値は合計にも入れない。入れると、終わった直後の燃費が良く出る。
+//
+// 判定の当たり具合: 10 秒以上続いた判定 197 回で、燃料系の状態 (PID 0x03) が
+// 一度更新された後 (5.5 秒以降) は 92.3% が「4 = 開ループ (カット側)」だった
+// (2026-09-17〜28 の走行ログ)。以前「約半分が外れる」としていたのは、その値が
+// 5 秒に 1 回しか更新されず、中央値 2.6 秒のエンブレに追いつかないための見かけ。
 const INST_WINDOW_MS = 2000;  // 合計する長さ
 const INST_TEXT_MS = 1000;    // 数字を書き換える間隔
 const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (エンブレ明けなど)
@@ -256,14 +264,22 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
   let ms = 0, km = 0, l = 0;
   for (const s of instSamples) { ms += s.dt; km += s.km; l += s.l; }
 
-  // frac はアークの長さ (0〜1)。null ならアークを消す (km/L も L/h も出さない場面)
+  // frac はアークの長さ (0〜1)。null ならアークを消す、undefined ならそのまま置いておく
   let mode, text = '--', col, frac = null;
   if (!obdOn) {
     mode = 'off';
     col = '#333';
+  } else if (fe < 0 && (d.fuel_rate_lh || 0) <= 0) {
+    // 燃料カット。アークは右端、色は数字と同じバキュームの色
+    mode = 'cut';
+    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+    frac = 1;
   } else if (fe < 0 || ms < INST_MIN_MS) {
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+    // カット明けで 2 秒平均がまだたまっていない間は、アークを動かさない。
+    // 消すと「右端 → 消える → 伸び直す」とちらつく
+    if (fe >= 0) frac = undefined;
   } else if (fe === 0) {
     // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
     mode = 'L/h';
@@ -282,7 +298,7 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
   if (frac === null) {
     instArcTgt = instArcCur = 0;
     instArcEl.setAttribute('d', '');
-  } else {
+  } else if (frac !== undefined) {
     instArcTgt = frac;
     instArcCol = col;
     if (!instArcRaf) instArcRaf = requestAnimationFrame(lerpInstArc);
