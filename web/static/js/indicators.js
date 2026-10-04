@@ -138,6 +138,7 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 let instValEl, instUnitEl;
+let instArcEl, instArcCur = 0, instArcTgt = 0, instArcCol = '', instArcRaf = 0;
 
 let ecoValEl, ecoIconEls;
 let rngValEl, rngIconEl;
@@ -210,10 +211,29 @@ const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出�
 // 1秒ごとの heartbeat だけになる (ws_hub.go) ので、それより長くとる。
 const INST_GAP_MS = 1500;
 const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
+
+// 内側のリングに出すアークの振り切り。2026-09-17〜28 の走行ログ (2秒平均) で決めた。
+//   km/L (10 km/h 以上): 中央値 12.7・75% 点 19・90% 点 27.6。30 を超えるのは 7.7%
+//   L/h  (10 km/h 未満): 停車の中央値 0.88・99% 点 1.76、低速の 99% 点 2.90
+// 速度計の内側のアーク (スロットル) と同じく、主のアーク (太さ 6) より細く、
+// にじみも薄くして、外側のバキュームと見分けられるようにする。
+const INST_ARC_MAX_KML = 30;
+const INST_ARC_MAX_LH = 3;
+const VAC_INNER_R = MAP_R - 16;  // バキューム計の内側のリング
 let instSamples = [];         // { t, dt, km, l }
 let instLastAt = 0;
 let instTextAt = 0;
 let instMode = '';
+
+// 内側のアーク。数字と同じ値・同じ色で、毎フレームなめらかに寄せる。
+function lerpInstArc() {
+  const delta = instArcTgt - instArcCur;
+  instArcCur = Math.abs(delta) > 0.001 ? instArcCur + delta * MG_LERP : instArcTgt;
+  const angle = MG_ARC_START + instArcCur * MG_ARC_SWEEP;
+  instArcEl.setAttribute('d', instArcCur > 0.005 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
+  instArcEl.setAttribute('stroke', instArcCol);
+  instArcRaf = Math.abs(instArcCur - instArcTgt) > 0.0005 ? requestAnimationFrame(lerpInstArc) : 0;
+}
 
 // バキューム計と同じ色相 (0 bar = 赤, -1 bar = 青)
 function vacHueOf(mapKpa) {
@@ -236,7 +256,8 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
   let ms = 0, km = 0, l = 0;
   for (const s of instSamples) { ms += s.dt; km += s.km; l += s.l; }
 
-  let mode, text = '--', col;
+  // frac はアークの長さ (0〜1)。null ならアークを消す (km/L も L/h も出さない場面)
+  let mode, text = '--', col, frac = null;
   if (!obdOn) {
     mode = 'off';
     col = '#333';
@@ -244,16 +265,28 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
   } else if (fe === 0) {
+    // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
     mode = 'L/h';
-    text = (l / (ms / 3600000)).toFixed(2);
-    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+    const lh = l / (ms / 3600000);
+    text = lh.toFixed(2);
+    frac = Math.min(lh / INST_ARC_MAX_LH, 1);
+    col = `hsl(${(1 - frac) * 153}, 100%, 55%)`;
   } else {
     mode = 'km/L';
     const kmL = l > 0 ? Math.min(km / l, INST_MAX_KML) : INST_MAX_KML;
     text = kmL.toFixed(2);
+    frac = Math.min(kmL / INST_ARC_MAX_KML, 1);
     col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
   }
   instValEl.setAttribute('fill', col);
+  if (frac === null) {
+    instArcTgt = instArcCur = 0;
+    instArcEl.setAttribute('d', '');
+  } else {
+    instArcTgt = frac;
+    instArcCol = col;
+    if (!instArcRaf) instArcRaf = requestAnimationFrame(lerpInstArc);
+  }
   // 出し方が変わったとき (エンブレに入った、止まった) は1秒を待たずに書き換える
   if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
     instValEl.textContent = text;
@@ -388,8 +421,7 @@ export function createIndicators(panelEl) {
   // バキュームトラック（radialGradient ストローク）
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
   // バキュームインナーリング
-  const vacInnerR = MAP_R - 16;
-  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
+  createGradientTrack(svg, MAP_CX, MAP_CY, VAC_INNER_R, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
 
   // Ticks
   for (let i = 0; i <= VAC_TOTAL; i++) {
@@ -400,34 +432,36 @@ export function createIndicators(panelEl) {
     const [x1, y1] = polar(MAP_CX, MAP_CY, ri, a);
     const [x2, y2] = polar(MAP_CX, MAP_CY, ro, a);
     svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 4 : 2 });
-    if (isMj) {
-      const v = VAC_MIN + (i / VAC_TOTAL) * (VAC_MAX - VAC_MIN);
-      const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 32, a);
-      const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 18 });
-      t.textContent = v === 0 ? '0' : v.toFixed(1).replace('-0.', '-.');
-    }
   }
+  // 目盛りの数字 (-1.0〜0) は出さない (2026-10-04)。値は下の数字で読め、内側の
+  // 瞬間燃費のアークの始まりが「-1.0」に重なる。速度計の外側・内側のアークにも
+  // 目盛りの数字は無い。
 
   // Active arc
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
+  // 瞬間燃費のアーク (内側のリング)。主のアークの 2/3 の太さで、にじみも細く薄く
+  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 4, 'stroke-linecap': 'round' }, 7, 0.30);
 
-  // 瞬間燃費 — 針の下に配置。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
-  // 置いて中央にそろえる。数字は単位から離して上に寄せ、目盛りの「-.6」「-.4」の
-  // すぐ下に置く。単位は針の付け根 (y 150〜) の手前で止まる
-  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 26, 'text-anchor': 'middle' });
+  // Needle
+  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
+  const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
+  mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
+  // Center dot
+  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
+
+  // 瞬間燃費 — 針の上に重ねる (後に描いた方が前に出る)。速度計の回転数の数字と同じく、
+  // 針が通っても数字が隠れない。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
+  // 置いて中央にそろえる。数字は 36 (38 まで入るが、見比べて一段控えめにした)。
+  // いちばん広い「99.99」でも角が内側のアークのにじみ (中心から約 103.5 より外) に
+  // 掛からない。
+  // 単位は針の付け根 (y 150〜) の手前で止まる (2026-10-04 に実測)
+  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 36, 'text-anchor': 'middle' });
   instValEl.textContent = '--';
   bloomText(instValEl, 2.5, 0.45);
   // 単位は他の単位と同じ g-unit・白。大きさだけ 20 に落とす。数字が 26 と小さく、
   // 24 だと単位が数字とほぼ同じ大きさに見えたため (Bar は数字 48 に対して 24)
   instUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 17, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
   instUnitEl.textContent = 'km/L';
-
-  // Needle (瞬間燃費の上)
-  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
-  const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
-  mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
-  // Center dot
-  svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
   // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
