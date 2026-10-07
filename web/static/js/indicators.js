@@ -202,10 +202,9 @@ function lerpMap() {
 // 出し分け:
 //   fuel_economy > 0  → km/L
 //   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
-//   fuel_economy = -1 → "--"。燃料流量が 0 (= 1300 rpm 以上での燃料カット) なら
-//                       アークを右端まで伸ばす。燃費は無限大なので市販の燃費計と同じく
-//                       上限に張り付ける。数字は実際の値ではないので出さない。
-//                       1300 rpm 未満は燃料が戻っている (fuel.go) のでアークも消す
+//   fuel_economy = -1 → "--"。アークは一番短い状態 (点線ひとつ分) まで縮めて残す。
+//                       燃料流量が 0 (= 1300 rpm 以上での燃料カット) なら燃料を食って
+//                       いないので最短が正しい。1300 rpm 未満の惰性も同じ扱いにする
 // エンブレ判定中の値は合計にも入れない。入れると、終わった直後の燃費が良く出る。
 //
 // 判定の当たり具合: 10 秒以上続いた判定 197 回で、燃料系の状態 (PID 0x03) が
@@ -220,14 +219,24 @@ const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出�
 const INST_GAP_MS = 1500;
 const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
 
-// 内側のリングに出すアークの振り切り。2026-09-17〜28 の走行ログ (2秒平均) で決めた。
+// 内側のアークは「燃料の食い方」を表す。長いほど・赤いほど食っている。
+//   km/L: 長さ = 1 - km/L ÷ 30。燃費が良いほど縮み、30 km/L 以上で最短 (点線ひとつ分)
+//   L/h : 長さ = L/h ÷ 3。燃料が多いほど伸びる
+// km/L の数字とは逆に動くが、外側のバキューム (負荷が大きいほど伸びる) と先端が
+// そろって動く。走行ログで先端の角度の相関は +0.73 (2026-10-08 にユーザーと決めた)。
+// 振り切りは 2026-09-17〜28 の走行ログ (2秒平均) で決めた。
 //   km/L (10 km/h 以上): 中央値 12.7・75% 点 19・90% 点 27.6。30 を超えるのは 7.7%
 //   L/h  (10 km/h 未満): 停車の中央値 0.88・99% 点 1.76、低速の 99% 点 2.90
-// 速度計の内側のアーク (スロットル) と同じく、主のアーク (太さ 6) より細く、
-// にじみも薄くして、外側のバキュームと見分けられるようにする。
+// 2本が同じ向きに同じような色で動くので、内側は点線にして形で見分ける。速度計の
+// 内側のアーク (スロットル) と同じく、主のアーク (太さ 6) より細く、にじみも薄い。
 const INST_ARC_MAX_KML = 30;
 const INST_ARC_MAX_LH = 3;
 const VAC_INNER_R = MAP_R - 16;  // バキューム計の内側のリング
+const INST_ARC_DASH = 5;      // 点線の線の長さ
+const INST_ARC_GAP = 3.5;     // 点線の隙間
+// 一番縮んだときも消さず、左端に点線ひとつ分を残す (エンブレ中・30 km/L 以上)。
+// 消えると「止まった・壊れた」と区別がつかない。消すのは ACC OFF のときだけ
+const INST_ARC_MIN = INST_ARC_DASH / (VAC_INNER_R * MG_ARC_SWEEP * DEG);
 let instSamples = [];         // { t, dt, km, l }
 let instLastAt = 0;
 let instTextAt = 0;
@@ -269,17 +278,17 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
   if (!obdOn) {
     mode = 'off';
     col = '#333';
-  } else if (fe < 0 && (d.fuel_rate_lh || 0) <= 0) {
-    // 燃料カット。アークは右端、色は数字と同じバキュームの色
-    mode = 'cut';
+  } else if (fe < 0) {
+    // エンブレ判定。燃料カット (流量 0) なら燃料を食っていないので、アークは
+    // なめらかに一番短い状態まで縮める。色は数字と同じバキュームの色
+    mode = (d.fuel_rate_lh || 0) <= 0 ? 'cut' : 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
-    frac = 1;
-  } else if (fe < 0 || ms < INST_MIN_MS) {
+    frac = INST_ARC_MIN;
+  } else if (ms < INST_MIN_MS) {
+    // カット明けなどで 2 秒平均がまだたまっていない。アークは動かさない
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
-    // カット明けで 2 秒平均がまだたまっていない間は、アークを動かさない。
-    // 消すと「右端 → 消える → 伸び直す」とちらつく
-    if (fe >= 0) frac = undefined;
+    frac = undefined;
   } else if (fe === 0) {
     // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
     mode = 'L/h';
@@ -291,7 +300,7 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     mode = 'km/L';
     const kmL = l > 0 ? Math.min(km / l, INST_MAX_KML) : INST_MAX_KML;
     text = kmL.toFixed(2);
-    frac = Math.min(kmL / INST_ARC_MAX_KML, 1);
+    frac = 1 - Math.min(kmL / INST_ARC_MAX_KML, 1);
     col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
   }
   instValEl.setAttribute('fill', col);
@@ -299,6 +308,7 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     instArcTgt = instArcCur = 0;
     instArcEl.setAttribute('d', '');
   } else if (frac !== undefined) {
+    frac = Math.max(frac, INST_ARC_MIN);
     instArcTgt = frac;
     instArcCol = col;
     if (!instArcRaf) instArcRaf = requestAnimationFrame(lerpInstArc);
@@ -456,7 +466,7 @@ export function createIndicators(panelEl) {
   // Active arc
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
   // 瞬間燃費のアーク (内側のリング)。主のアークの 2/3 の太さで、にじみも細く薄く
-  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 4, 'stroke-linecap': 'round' }, 7, 0.30);
+  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 4, 'stroke-linecap': 'butt', 'stroke-dasharray': `${INST_ARC_DASH} ${INST_ARC_GAP}` }, 7, 0.30);
 
   // Needle
   const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
