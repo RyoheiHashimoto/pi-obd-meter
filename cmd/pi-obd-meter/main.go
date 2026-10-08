@@ -309,6 +309,22 @@ func (app *App) obdProcessingLoop(ctx context.Context, cancel context.CancelFunc
 			// 走行中はスロッシングで 24〜33ポイント振れるため停車中のみ採る。
 			app.refuel.Update(data.ElecB0Pct, data.SpeedKmh < 0.5)
 			if ev := app.refuel.Event(); ev != nil && app.noteRefuelDetected(ev) {
+				// トリップはこの場で畳む。GAS の応答を待たない。
+				//
+				// 以前は、GAS が返す trip_correction_km=0 だけがリセットの
+				// 経路だった (tracker.go の SetDistance)。送信が通るまで
+				// 畳まれないので、通信の遅れがそのまま表示の遅れになる。
+				//
+				// 2026-09-28 の給油で、検出は起動 3 秒、畳まれたのは 322 秒
+				// だった (drive ログの monotonic 列で実測)。**その 319 秒の
+				// 中身は特定できていない。** 当該起動の journal はローテートで
+				// 消えており、送信失敗もログに出ていなかったため。
+				// 送信間隔と再送間隔がどちらも 5 分なので、1 回落とすと次の
+				// 機会まで 5 分空く、という筋は通るが裏は取れていない。
+				//
+				// 原因が何であれ、走行の区切りを通信の成否に賭ける必要はない。
+				app.resetTripOnRefuel()
+
 				// 検出した瞬間に送る。定期送信を待つと最大5分かかり、
 				// ダイアログが「送信待ち」のまま止まって見える。
 				app.sendMaintenanceStatusAsync(ctx)

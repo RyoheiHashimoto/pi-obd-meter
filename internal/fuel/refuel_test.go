@@ -423,3 +423,79 @@ func TestSettledLiters_nilで落ちない(t *testing.T) {
 		t.Errorf("nil: %.2f, want 0", got)
 	}
 }
+
+// TestEventReturnsCopy は Event() が内部の構造体を直接渡さないことを確認する。
+//
+// 読むのは送信ゴルーチン、書くのは OBD ループと MarkTripFolded で、別々に
+// 動く。内部ポインタを返すと、送信側が中身を読んでいる最中に書き換えられる。
+func TestEventReturnsCopy(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "fuel.json")
+
+	d1 := NewDetector(p)
+	feed(d1, 30, settleSamples)
+	d := NewDetector(p)
+	feed(d, 95, settleSamples)
+
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("給油が検出されていない")
+	}
+	ev.AmountL = 999 // 呼び出し側が書き換えても
+
+	again := d.Event()
+	if again.AmountL == 999 {
+		t.Fatal("内部の構造体をそのまま渡している。呼び出し側の書き換えが漏れる")
+	}
+	if again.DeltaPt != ev.DeltaPt {
+		t.Fatalf("コピーの中身が違う: %v vs %v", again.DeltaPt, ev.DeltaPt)
+	}
+}
+
+// TestMarkTripFoldedSurvivesRestart は、トリップを畳んだ記録が
+// 再起動をまたいで残ることを確認する。
+//
+// 圏外で給油すると GAS へ送れず、イベントは PendingEvent として次の起動へ
+// 持ち越される。復元されたイベントは「新しい給油」に見えるので、アプリは
+// もう一度トリップを畳もうとする。記録がメモリにしか無いと、そこで畳み直して
+// 「前のタンクの距離」が再起動後の値 (ほぼ 0) に潰れ、GAS へ 0km が飛ぶ。
+func TestMarkTripFoldedSurvivesRestart(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "fuel.json")
+
+	// 給油の検出は再起動をまたぐ (走行による消費と区別するため)。
+	d0 := NewDetector(p)
+	feed(d0, 30, settleSamples)
+
+	d := NewDetector(p)
+	feed(d, 95, settleSamples)
+
+	ev := d.Event()
+	if ev == nil {
+		t.Fatal("給油が検出されていない")
+	}
+	if ev.TripFolded {
+		t.Fatal("検出直後に畳んだことになっている")
+	}
+
+	if !d.MarkTripFolded(377.7, 11.1) {
+		t.Fatal("1回目の記録に失敗")
+	}
+	if d.MarkTripFolded(0.2, 9.9) {
+		t.Fatal("2回目が通った。畳む前の値が上書きされてしまう")
+	}
+
+	// 送れないまま再起動したことにする。
+	d2 := NewDetector(p)
+	ev2 := d2.Event()
+	if ev2 == nil {
+		t.Fatal("給油イベントが持ち越されていない")
+	}
+	if !ev2.TripFolded {
+		t.Fatal("畳んだ記録が消えた。復元後に畳み直して前のタンクの距離を失う")
+	}
+	if ev2.PrevTripKm != 377.7 || ev2.PrevEcoKmpl != 11.1 {
+		t.Fatalf("値が違う: km=%v eco=%v", ev2.PrevTripKm, ev2.PrevEcoKmpl)
+	}
+	if d2.MarkTripFolded(0.3, 9.0) {
+		t.Fatal("復元後に畳み直せてしまう")
+	}
+}
