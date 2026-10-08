@@ -70,6 +70,9 @@ const HUE_MAX = 210;
 const MAP_CX = 110;
 const MAP_CY = 155;
 const MAP_R = 125;
+// 内側のリング。バキュームのアークを描く (外側は瞬間燃費の点灯式。2026-10-08 に入れ替えた。
+// 針の先とバキュームのアークの先がそろい、針とアークが同じものを指すと分かる)
+const VAC_INNER_R = MAP_R - 16;
 const ARC_W = 10;
 
 // インジケーター配置
@@ -138,7 +141,7 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
 let instValEl, instUnitEl;
-let instArcEl, instArcCur = 0, instArcTgt = 0, instArcCol = '', instArcRaf = 0;
+let instArcEl, instArcRaf = 0;
 
 let ecoValEl, ecoIconEls;
 let rngValEl, rngIconEl;
@@ -173,7 +176,7 @@ function lerpMap() {
   // -1.0=左端(0%), 0=右端(100%)
   const pct = Math.max(0, Math.min(100, (mapCur - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
   const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
-  mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
   rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   const active = mapCur < 0.01;
   // 色: 0 bar(大気圧/全開)=赤, -1 bar(深い負圧)=青
@@ -197,59 +200,75 @@ function lerpMap() {
 // 出したときに数字が1秒あたり何回変わるかを数えた。0.4秒ごとの書き換えなら
 // 2.4回、1秒ごとなら 0.9回。MIL-STD-1472F 5.14.3.4.1 は「確実に読ませたい
 // 数字は毎秒1回より速く更新しない」としている。マツダ純正 (DJ デミオ) と
-// ScanGauge は約2秒ごと。踏み方の良し悪しは、毎回書き換える色で追える。
+// ScanGauge は約2秒ごと。踏み方の良し悪しは、すぐ動くアークと色で追える。
 //
 // 出し分け:
-//   fuel_economy > 0  → km/L
 //   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
-//   fuel_economy = -1 → "--"。アークは一番短い状態 (点線ひとつ分) まで縮めて残す。
-//                       燃料流量が 0 (= 1300 rpm 以上での燃料カット) なら燃料を食って
-//                       いないので最短が正しい。1300 rpm 未満の惰性も同じ扱いにする
-// エンブレ判定中の値は合計にも入れない。入れると、終わった直後の燃費が良く出る。
+//   それ以外          → km/L (エンブレ判定中 (-1) も含む。99.99 で頭打ち)
 //
-// 判定の当たり具合: 10 秒以上続いた判定 197 回で、燃料系の状態 (PID 0x03) が
-// 一度更新された後 (5.5 秒以降) は 92.3% が「4 = 開ループ (カット側)」だった
-// (2026-09-17〜28 の走行ログ)。以前「約半分が外れる」としていたのは、その値が
-// 5 秒に 1 回しか更新されず、中央値 2.6 秒のエンブレに追いつかないための見かけ。
-const INST_WINDOW_MS = 2000;  // 合計する長さ
+// エンブレ判定中も "--" にせず、合計にも入れる (2026-10-08 にユーザーと決めた)。
+// 判定は吸気圧 30 kPa 未満で決まるので、アクセルを離していても入ったり外れたりする。
+// 9月の走行ログでアクセルを離していた 408 分のうち、判定されたのは 55% で、
+// 残り 45% は中央値 27 km/L の数字が出ていた。アクセルを1回離す間に "--" と数字が
+// 入れ替わる場面が 65% あった。燃料カット中は燃料が 0 なので 99.99 に張り付き、
+// 「離すと数字が上がる」一続きの動きになる。市販の燃費計 (テクトム 99.9 km/L、
+// ScanGauge 9999 MPG) も燃料カット中は上限に張り付ける。
+const INST_WINDOW_MS = 2000;  // 数字のために合計する長さ
 const INST_TEXT_MS = 1000;    // 数字を書き換える間隔
-const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (エンブレ明けなど)
+const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (始動直後など)
 // 届く間隔がこれより空いたら合計をやり直す。同じ内容の配信は省かれて
 // 1秒ごとの heartbeat だけになる (ws_hub.go) ので、それより長くとる。
 const INST_GAP_MS = 1500;
 const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
 
-// 内側のアークは「燃料の食い方」を表す。長いほど・赤いほど食っている。
-//   km/L: 長さ = 1 - km/L ÷ 30。燃費が良いほど縮み、30 km/L 以上で最短 (点線ひとつ分)
-//   L/h : 長さ = L/h ÷ 3。燃料が多いほど伸びる
-// km/L の数字とは逆に動くが、外側のバキューム (負荷が大きいほど伸びる) と先端が
-// そろって動く。走行ログで先端の角度の相関は +0.73 (2026-10-08 にユーザーと決めた)。
+// 外側のリングは「燃料の食い方」を 30 個の区切りの点灯数で表す。多いほど・赤いほど食っている。
+//   km/L: 点灯数 = 30 - km/L (1 個 = 1 km/L)。30 km/L 以上 (燃料カット中を含む) は 1 個
+//   L/h : 点灯数 = L/h ÷ 0.1 (1 個 = 0.1 L/h)
+// 消えている区切りが目盛りの代わりになるので、目盛りの線は置かない。
 // 振り切りは 2026-09-17〜28 の走行ログ (2秒平均) で決めた。
-//   km/L (10 km/h 以上): 中央値 12.7・75% 点 19・90% 点 27.6。30 を超えるのは 7.7%
+//   km/L (アクセルを踏んでいる走行中): 中央値 12.0・75% 点 17.9・90% 点 29.8
 //   L/h  (10 km/h 未満): 停車の中央値 0.88・99% 点 1.76、低速の 99% 点 2.90
-// 2本が同じ向きに同じような色で動くので、内側は点線にして形で見分ける。速度計の
-// 内側のアーク (スロットル) と同じく、主のアーク (太さ 6) より細く、にじみも薄い。
+//
+// 点灯数と色は 0.6 秒の合計で決める (数字の 2 秒より短い)。同じログで、踏み込んで
+// から点灯数が落ち着くまでの中央値は 2 秒で 1.4 秒、0.6 秒で 0.8 秒。0.4 秒にしても
+// 0.8 秒のまま。区切りが粗いので、短くしても点灯数の変わる回数は増えない
+// (走行中 1 秒に 1.7 回前後。停車中は 0.6 秒で 0.85 回)。
+// 増えるときはすぐ点け、減るときは 1 秒に 15 個まで、1 個ずつ消す (一気に消えない)。
+const INST_ARC_WINDOW_MS = 600;
+const INST_ARC_MIN_MS = 300;     // 合計できた長さがこれ未満なら点灯数を動かさない
 const INST_ARC_MAX_KML = 30;
 const INST_ARC_MAX_LH = 3;
-const VAC_INNER_R = MAP_R - 16;  // バキューム計の内側のリング
-const INST_ARC_DASH = 5;      // 点線の線の長さ
-const INST_ARC_GAP = 3.5;     // 点線の隙間
-// 一番縮んだときも消さず、左端に点線ひとつ分を残す (エンブレ中・30 km/L 以上)。
-// 消えると「止まった・壊れた」と区別がつかない。消すのは ACC OFF のときだけ
-const INST_ARC_MIN = INST_ARC_DASH / (VAC_INNER_R * MG_ARC_SWEEP * DEG);
+const INST_SEGS = 30;
+const INST_SEG_GAP_DEG = 2.2;    // 区切りの隙間 (角度)
+const INST_SEG_DOWN_MS = 1000 / 15;
+const INST_SEG_DASH = MAP_R * (MG_ARC_SWEEP / INST_SEGS - INST_SEG_GAP_DEG) * DEG;
+const INST_SEG_GAP = MAP_R * INST_SEG_GAP_DEG * DEG;
 let instSamples = [];         // { t, dt, km, l }
 let instLastAt = 0;
 let instTextAt = 0;
 let instMode = '';
+let instLitCur = 0, instLitTgt = 0, instLitCol = '', instLitStepAt = 0;
 
-// 内側のアーク。数字と同じ値・同じ色で、毎フレームなめらかに寄せる。
-function lerpInstArc() {
-  const delta = instArcTgt - instArcCur;
-  instArcCur = Math.abs(delta) > 0.001 ? instArcCur + delta * MG_LERP : instArcTgt;
-  const angle = MG_ARC_START + instArcCur * MG_ARC_SWEEP;
-  instArcEl.setAttribute('d', instArcCur > 0.005 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
-  instArcEl.setAttribute('stroke', instArcCol);
-  instArcRaf = Math.abs(instArcCur - instArcTgt) > 0.0005 ? requestAnimationFrame(lerpInstArc) : 0;
+// 点灯している区切りを1本の点線で描く。消えている区切りと同じ所から始めるので、
+// 点線の区切りが重なる
+function instSegPath(n) {
+  if (n <= 0) return '';
+  const s = MG_ARC_START + INST_SEG_GAP_DEG / 2;
+  const e = MG_ARC_START + n * (MG_ARC_SWEEP / INST_SEGS) - INST_SEG_GAP_DEG / 2;
+  return arcPath(MAP_CX, MAP_CY, MAP_R, s, e);
+}
+
+function stepInstArc(now) {
+  if (instLitTgt > instLitCur) {
+    instLitCur = instLitTgt;
+    instLitStepAt = now;
+  } else if (instLitTgt < instLitCur && now - instLitStepAt >= INST_SEG_DOWN_MS) {
+    instLitCur--;
+    instLitStepAt = now;
+  }
+  instArcEl.setAttribute('d', instSegPath(instLitCur));
+  instArcEl.setAttribute('stroke', instLitCol);
+  instArcRaf = instLitCur !== instLitTgt ? requestAnimationFrame(stepInstArc) : 0;
 }
 
 // バキューム計と同じ色相 (0 bar = 赤, -1 bar = 青)
@@ -259,61 +278,63 @@ function vacHueOf(mapKpa) {
   return (1 - pct / 100) * HUE_MAX;
 }
 
+function instSum(from) {
+  let ms = 0, km = 0, l = 0;
+  for (const s of instSamples) if (s.t > from) { ms += s.dt; km += s.km; l += s.l; }
+  return { ms, km, l };
+}
+const instKmL = (s) => s.l > 0 ? Math.min(s.km / s.l, INST_MAX_KML) : INST_MAX_KML;
+const instLH = (s) => s.l / (s.ms / 3600000);
+
 function updateInstantEco(d, obdOn, mapKpa, now) {
   const fe = d.fuel_economy || 0;
   const dt = instLastAt ? now - instLastAt : 0;
   instLastAt = now;
   if (!obdOn || dt > INST_GAP_MS) instSamples = [];
-  if (obdOn && fe >= 0 && dt > 0) {
+  if (obdOn && dt > 0) {
     const h = dt / 3600000;
     instSamples.push({ t: now, dt, km: (d.speed_kmh || 0) * h, l: (d.fuel_rate_lh || 0) * h });
   }
   while (instSamples.length && instSamples[0].t <= now - INST_WINDOW_MS) instSamples.shift();
 
-  let ms = 0, km = 0, l = 0;
-  for (const s of instSamples) { ms += s.dt; km += s.km; l += s.l; }
+  const all = instSum(now - INST_WINDOW_MS);
+  const arc = instSum(now - INST_ARC_WINDOW_MS);
+  const arcOk = arc.ms >= INST_ARC_MIN_MS;
 
-  // frac はアークの長さ (0〜1)。null ならアークを消す、undefined ならそのまま置いておく
-  let mode, text = '--', col, frac = null;
+  // lit は点灯数。null なら全部消す、undefined ならそのまま置いておく
+  let mode, text = '--', col, lit;
   if (!obdOn) {
     mode = 'off';
     col = '#333';
-  } else if (fe < 0) {
-    // エンブレ判定。燃料カット (流量 0) なら燃料を食っていないので、アークは
-    // なめらかに一番短い状態まで縮める。色は数字と同じバキュームの色
-    mode = (d.fuel_rate_lh || 0) <= 0 ? 'cut' : 'none';
-    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
-    frac = INST_ARC_MIN;
-  } else if (ms < INST_MIN_MS) {
-    // カット明けなどで 2 秒平均がまだたまっていない。アークは動かさない
+    lit = null;
+  } else if (all.ms < INST_MIN_MS) {
+    // 始動直後などで 2 秒平均がまだたまっていない
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
-    frac = undefined;
   } else if (fe === 0) {
     // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
     mode = 'L/h';
-    const lh = l / (ms / 3600000);
-    text = lh.toFixed(2);
-    frac = Math.min(lh / INST_ARC_MAX_LH, 1);
+    text = instLH(all).toFixed(2);
+    const frac = Math.min(instLH(arcOk ? arc : all) / INST_ARC_MAX_LH, 1);
     col = `hsl(${(1 - frac) * 153}, 100%, 55%)`;
+    if (arcOk) lit = Math.max(1, Math.round(frac * INST_SEGS));
   } else {
     mode = 'km/L';
-    const kmL = l > 0 ? Math.min(km / l, INST_MAX_KML) : INST_MAX_KML;
-    text = kmL.toFixed(2);
-    frac = 1 - Math.min(kmL / INST_ARC_MAX_KML, 1);
+    text = instKmL(all).toFixed(2);
+    const kmL = instKmL(arcOk ? arc : all);
     col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
+    if (arcOk) lit = Math.max(1, Math.round((1 - Math.min(kmL / INST_ARC_MAX_KML, 1)) * INST_SEGS));
   }
   instValEl.setAttribute('fill', col);
-  if (frac === null) {
-    instArcTgt = instArcCur = 0;
+  if (lit === null) {
+    instLitTgt = instLitCur = 0;
     instArcEl.setAttribute('d', '');
-  } else if (frac !== undefined) {
-    frac = Math.max(frac, INST_ARC_MIN);
-    instArcTgt = frac;
-    instArcCol = col;
-    if (!instArcRaf) instArcRaf = requestAnimationFrame(lerpInstArc);
+  } else if (lit !== undefined) {
+    instLitTgt = lit;
+    instLitCol = col;
+    if (!instArcRaf) instArcRaf = requestAnimationFrame(stepInstArc);
   }
-  // 出し方が変わったとき (エンブレに入った、止まった) は1秒を待たずに書き換える
+  // 出し方が変わったとき (止まった、走り出した) は1秒を待たずに書き換える
   if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
     instValEl.textContent = text;
     instUnitEl.textContent = mode === 'L/h' ? 'L/h' : 'km/L';
@@ -398,9 +419,6 @@ export function createIndicators(panelEl) {
   const svg = document.getElementById('rg');
 
   // === バキューム計 (-1.0 〜 0 bar) ===
-  const VAC_MJ = 5;    // 主目盛り数 (-1.0, -0.8, -0.6, -0.4, -0.2, 0)
-  const VAC_MN = 4;    // 主目盛り間の副目盛り数
-  const VAC_TOTAL = VAC_MJ * VAC_MN;
 
   // バキューム計中心グラデーション
   let vDefs = svg.querySelector('defs');
@@ -444,32 +462,26 @@ export function createIndicators(panelEl) {
 
   // (ベゼル一時無効化)
 
-  // バキュームトラック（radialGradient ストローク）
+  // 外側のトラック (瞬間燃費)
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
-  // バキュームインナーリング
+  // 内側のトラック (バキューム)
   createGradientTrack(svg, MAP_CX, MAP_CY, VAC_INNER_R, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
 
-  // Ticks
-  for (let i = 0; i <= VAC_TOTAL; i++) {
-    const a = MG_ARC_START + (i / VAC_TOTAL) * MG_ARC_SWEEP;
-    const isMj = i % VAC_MN === 0;
-    const ri = isMj ? MAP_R - 14 : MAP_R - 11;
-    const ro = MAP_R + 3;
-    const [x1, y1] = polar(MAP_CX, MAP_CY, ri, a);
-    const [x2, y2] = polar(MAP_CX, MAP_CY, ro, a);
-    svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 4 : 2 });
-  }
-  // 目盛りの数字 (-1.0〜0) は出さない (2026-10-04)。値は下の数字で読め、内側の
-  // 瞬間燃費のアークの始まりが「-1.0」に重なる。速度計の外側・内側のアークにも
-  // 目盛りの数字は無い。
+  // 目盛りの線も数字も置かない (2026-10-08)。値は数字で読め、外側の瞬間燃費の
+  // 消えている区切りが目盛りの代わりになる (区切り 6 個 = 0.2 bar)。
+  // 目盛りの数字は 2026-10-04 に消した。
 
-  // Active arc
+  // 瞬間燃費の区切り (外側)。消えている区切りを暗く並べ、点灯している分を上に重ねる
+  const segDash = `${INST_SEG_DASH} ${INST_SEG_GAP}`;
+  svgEl(svg, 'path', { d: instSegPath(INST_SEGS), fill: 'none', stroke: 'rgba(255,255,255,0.10)', 'stroke-width': 8, 'stroke-linecap': 'butt', 'stroke-dasharray': segDash });
+  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 8, 'stroke-linecap': 'butt', 'stroke-dasharray': segDash }, 7, 0.30);
+  // バキュームのアーク (内側)
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
-  // 瞬間燃費のアーク (内側のリング)。主のアークの 2/3 の太さで、にじみも細く薄く
-  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 4, 'stroke-linecap': 'butt', 'stroke-dasharray': `${INST_ARC_DASH} ${INST_ARC_GAP}` }, 7, 0.30);
 
   // Needle
-  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
+  // 先端は内側のリング (半径 104〜114) の手前で止め、バキュームのアークの先と少し
+  // 離す。以前は MAP_R - 18 (= 107) で、先端がアークの上に乗ってくっついて見えた (2026-10-08)
+  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 30, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
   mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
   // Center dot
@@ -478,8 +490,8 @@ export function createIndicators(panelEl) {
   // 瞬間燃費 — 針の上に重ねる (後に描いた方が前に出る)。速度計の回転数の数字と同じく、
   // 針が通っても数字が隠れない。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
   // 置いて中央にそろえる。数字は 36 (38 まで入るが、見比べて一段控えめにした)。
-  // いちばん広い「99.99」でも角が内側のアークのにじみ (中心から約 103.5 より外) に
-  // 掛からない。
+  // いちばん広い「99.99」でも、上の角 (中心から 104.7) が内側のバキュームのアークの
+  // にじみ (中心から 101 より外) に掛からない (2026-10-08 に実測)。
   // 単位は針の付け根 (y 150〜) の手前で止まる (2026-10-04 に実測)
   instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 36, 'text-anchor': 'middle' });
   instValEl.textContent = '--';
@@ -553,7 +565,7 @@ export function createIndicators(panelEl) {
 export function setMapDirect(pct, col) {
   if (!mapArcEl) return;
   const angle = MG_ARC_START + pct * MG_ARC_SWEEP;
-  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transition = 'none';
   rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   if (col) { mapArcEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('stroke', col); }
