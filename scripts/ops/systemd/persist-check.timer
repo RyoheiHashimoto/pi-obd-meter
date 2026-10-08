@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the persistence check after boot and every 30 minutes
+
+[Timer]
+# 起動直後の journald の flush と timesyncd の時刻の復元が済んでから。
+# 30 分ごとの回は、手作業で SD の下層を rw のまま残した場合に気づくため。
+OnBootSec=90s
+OnUnitActiveSec=30min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

@@ -345,7 +345,7 @@ async function initApp() {
   // フリーズ検知 watchdog (rAF 停止時 自動リロード)
   startWatchdog();
   // バージョン更新検知 (auto-update 後に自動リロード)
-  startVersionCheck();
+  startVersionCheck(servedVersion() || conf.version || null);
 
   // WebSocket 優先、失敗時は HTTP polling にフォールバック
   connectWebSocket();
@@ -403,9 +403,22 @@ function bootAnimation(gauge) {
   });
 }
 
+// このページを配ったバイナリの版。サーバが meter.html の meta に埋め込む (api.go)。
+// ファイルを直接開いたときなど、置き換えられていなければ null。
+function servedVersion() {
+  const v = document.querySelector('meta[name="build-version"]')?.content || '';
+  return v && v !== '__BUILD_VERSION__' ? v : null;
+}
+
 // バージョン検知: auto-update 後にページ自動リロード
-function startVersionCheck() {
-  let currentVersion = null;
+//
+// 比べる元はこのページを配ったバイナリの版にする。以前は読み込みから 30 秒以上
+// たった最初のチェックで /api/config の版を元にしていたため、その間に
+// auto-update がバイナリを入れ替えると新しい版を元として記録し、古い画面のまま
+// 気づかなかった (2026-10-02 に実車で発生。cog の読み込み 09:14:31、
+// 新しい版の起動 09:14:56)。
+function startVersionCheck(initialVersion) {
+  let currentVersion = initialVersion;
   setInterval(async () => {
     try {
       const resp = await fetch('/api/config');

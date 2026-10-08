@@ -44,3 +44,35 @@ func TestBuildMux_ServesEmbeddedUI(t *testing.T) {
 		t.Error("配られた refuel.js の中身が違う")
 	}
 }
+
+// meter.html には、配ったバイナリの版が埋め込まれること。
+//
+// 画面はこの版を元にして、auto-update で版が変わったら読み込み直す。
+// 埋め込まれていないと、読み込み後 30 秒以内に入れ替わった版を元として
+// 記録してしまい、古い画面のまま気づかない (2026-10-02 に実車で発生)。
+func TestBuildMux_MeterHTMLCarriesVersion(t *testing.T) {
+	prev := version
+	version = "dev-test123"
+	defer func() { version = prev }()
+
+	h := testApp(t).buildMux()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/meter.html", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("meter.html が配れていない: status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `<meta name="build-version" content="dev-test123">`) {
+		t.Error("meter.html に版が埋め込まれていない")
+	}
+	if strings.Contains(body, buildVersionPlaceholder) {
+		t.Error("目印が置き換えられずに残っている")
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+	if !strings.Contains(body, `src="js/main.js"`) {
+		t.Error("meter.html の本体が欠けている")
+	}
+}

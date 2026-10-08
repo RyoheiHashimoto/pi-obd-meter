@@ -70,6 +70,9 @@ const HUE_MAX = 210;
 const MAP_CX = 110;
 const MAP_CY = 155;
 const MAP_R = 125;
+// 内側のリング。バキュームのアークを描く (外側は瞬間燃費の点灯式。2026-10-08 に入れ替えた。
+// 針の先とバキュームのアークの先がそろい、針とアークが同じものを指すと分かる)
+const VAC_INNER_R = MAP_R - 16;
 const ARC_W = 10;
 
 // インジケーター配置
@@ -135,8 +138,10 @@ function createGradientTrack(svg, cx, cy, r, strokeW, startDeg, endDeg, innerCol
 }
 
 // --- Module state ---
-let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl, vacLabelEl;
+let mapArcEl, mapValEl, mapUnitEl, mapNeedleEl;
 let mapCur = 0, mapTgt = 0, mapRaf = 0;
+let instValEl, instUnitEl;
+let instArcEl, instArcRaf = 0;
 
 let ecoValEl, ecoIconEls;
 let rngValEl, rngIconEl;
@@ -171,7 +176,7 @@ function lerpMap() {
   // -1.0=左端(0%), 0=右端(100%)
   const pct = Math.max(0, Math.min(100, (mapCur - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
   const angle = MG_ARC_START + (pct / 100) * MG_ARC_SWEEP;
-  mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapArcEl.setAttribute('d', pct > 0.5 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
   rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   const active = mapCur < 0.01;
   // 色: 0 bar(大気圧/全開)=赤, -1 bar(深い負圧)=青
@@ -181,17 +186,161 @@ function lerpMap() {
   setFilter(mapArcEl, active ? 'url(#glow-strong)' : '');
   mapNeedleEl.setAttribute('stroke', active ? col : '#78909c');
   setFilter(mapNeedleEl, active ? 'url(#glow-strong)' : '');
-  // VACUUM label: 深い負圧=暗い, 浅い負圧=明るく色付きに
-  if (vacLabelEl) {
-    const lum = 20 + (pct / 100) * 35; // 20%(暗い) → 55%(明るい)
-    const sat = Math.min(100, pct * 1.5); // 0%(グレー) → 100%(鮮やか)
-    const vacCol = hue < 5 && sat > 80 ? '#f44336' : `hsl(${hue}, ${sat}%, ${lum}%)`;
-    vacLabelEl.setAttribute('fill', vacCol);
-    setFilter(vacLabelEl, active ? (pct > 60 ? 'url(#glow-strong)' : 'url(#glow-mid)') : '');
-  }
   mapValEl.setAttribute('fill', active ? col : '#333');
   mapValEl.textContent = active ? mapCur.toFixed(2) : '--';
   mapRaf = Math.abs(mapCur - mapTgt) > MG_LERP_STOP * 0.01 ? requestAnimationFrame(lerpMap) : 0;
+}
+
+// --- 瞬間燃費 (バキューム計の中、針の付け根の上) ---
+//
+// 値は 50 ms ごとに届くが、届いた瞬間燃費をそのまま出すと読めない。
+// 直近2秒の距離と燃料をそれぞれ合計してから割り、数字は1秒ごとに書き換える。
+//
+// 2026-09-17〜28 の走行ログ (10 km/h 以上で約20時間) で、2秒平均を小数2桁で
+// 出したときに数字が1秒あたり何回変わるかを数えた。0.4秒ごとの書き換えなら
+// 2.4回、1秒ごとなら 0.9回。MIL-STD-1472F 5.14.3.4.1 は「確実に読ませたい
+// 数字は毎秒1回より速く更新しない」としている。マツダ純正 (DJ デミオ) と
+// ScanGauge は約2秒ごと。踏み方の良し悪しは、すぐ動くアークと色で追える。
+//
+// 出し分け:
+//   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
+//   それ以外          → km/L (エンブレ判定中 (-1) も含む。99.99 で頭打ち)
+//
+// エンブレ判定中も "--" にせず、合計にも入れる (2026-10-08 にユーザーと決めた)。
+// 判定は吸気圧 30 kPa 未満で決まるので、アクセルを離していても入ったり外れたりする。
+// 9月の走行ログでアクセルを離していた 408 分のうち、判定されたのは 55% で、
+// 残り 45% は中央値 27 km/L の数字が出ていた。アクセルを1回離す間に "--" と数字が
+// 入れ替わる場面が 65% あった。燃料カット中は燃料が 0 なので 99.99 に張り付き、
+// 「離すと数字が上がる」一続きの動きになる。市販の燃費計 (テクトム 99.9 km/L、
+// ScanGauge 9999 MPG) も燃料カット中は上限に張り付ける。
+const INST_WINDOW_MS = 2000;  // 数字のために合計する長さ
+const INST_TEXT_MS = 1000;    // 数字を書き換える間隔
+const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (始動直後など)
+// 届く間隔がこれより空いたら合計をやり直す。同じ内容の配信は省かれて
+// 1秒ごとの heartbeat だけになる (ws_hub.go) ので、それより長くとる。
+const INST_GAP_MS = 1500;
+const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
+
+// 外側のリングは「燃料の食い方」を 30 個の区切りの点灯数で表す。多いほど・赤いほど食っている。
+//   km/L: 点灯数 = 30 - km/L (1 個 = 1 km/L)。30 km/L 以上 (燃料カット中を含む) は 1 個
+//   L/h : 点灯数 = L/h ÷ 0.1 (1 個 = 0.1 L/h)
+// 消えている区切りが目盛りの代わりになるので、目盛りの線は置かない。
+// 振り切りは 2026-09-17〜28 の走行ログ (2秒平均) で決めた。
+//   km/L (アクセルを踏んでいる走行中): 中央値 12.0・75% 点 17.9・90% 点 29.8
+//   L/h  (10 km/h 未満): 停車の中央値 0.88・99% 点 1.76、低速の 99% 点 2.90
+//
+// 点灯数と色は 0.6 秒の合計で決める (数字の 2 秒より短い)。同じログで、踏み込んで
+// から点灯数が落ち着くまでの中央値は 2 秒で 1.4 秒、0.6 秒で 0.8 秒。0.4 秒にしても
+// 0.8 秒のまま。区切りが粗いので、短くしても点灯数の変わる回数は増えない
+// (走行中 1 秒に 1.7 回前後。停車中は 0.6 秒で 0.85 回)。
+// 増えるときはすぐ点け、減るときは 1 秒に 15 個まで、1 個ずつ消す (一気に消えない)。
+const INST_ARC_WINDOW_MS = 600;
+const INST_ARC_MIN_MS = 300;     // 合計できた長さがこれ未満なら点灯数を動かさない
+const INST_ARC_MAX_KML = 30;
+const INST_ARC_MAX_LH = 3;
+const INST_SEGS = 30;
+const INST_SEG_GAP_DEG = 2.2;    // 区切りの隙間 (角度)
+const INST_SEG_DOWN_MS = 1000 / 15;
+const INST_SEG_DASH = MAP_R * (MG_ARC_SWEEP / INST_SEGS - INST_SEG_GAP_DEG) * DEG;
+const INST_SEG_GAP = MAP_R * INST_SEG_GAP_DEG * DEG;
+let instSamples = [];         // { t, dt, km, l }
+let instLastAt = 0;
+let instTextAt = 0;
+let instMode = '';
+let instLitCur = 0, instLitTgt = 0, instLitCol = '', instLitStepAt = 0;
+
+// 点灯している区切りを1本の点線で描く。消えている区切りと同じ所から始めるので、
+// 点線の区切りが重なる
+function instSegPath(n) {
+  if (n <= 0) return '';
+  const s = MG_ARC_START + INST_SEG_GAP_DEG / 2;
+  const e = MG_ARC_START + n * (MG_ARC_SWEEP / INST_SEGS) - INST_SEG_GAP_DEG / 2;
+  return arcPath(MAP_CX, MAP_CY, MAP_R, s, e);
+}
+
+function stepInstArc(now) {
+  if (instLitTgt > instLitCur) {
+    instLitCur = instLitTgt;
+    instLitStepAt = now;
+  } else if (instLitTgt < instLitCur && now - instLitStepAt >= INST_SEG_DOWN_MS) {
+    instLitCur--;
+    instLitStepAt = now;
+  }
+  instArcEl.setAttribute('d', instSegPath(instLitCur));
+  instArcEl.setAttribute('stroke', instLitCol);
+  instArcRaf = instLitCur !== instLitTgt ? requestAnimationFrame(stepInstArc) : 0;
+}
+
+// バキューム計と同じ色相 (0 bar = 赤, -1 bar = 青)
+function vacHueOf(mapKpa) {
+  const bar = (mapKpa - 101.3) / 100;
+  const pct = Math.max(0, Math.min(100, (bar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
+  return (1 - pct / 100) * HUE_MAX;
+}
+
+function instSum(from) {
+  let ms = 0, km = 0, l = 0;
+  for (const s of instSamples) if (s.t > from) { ms += s.dt; km += s.km; l += s.l; }
+  return { ms, km, l };
+}
+const instKmL = (s) => s.l > 0 ? Math.min(s.km / s.l, INST_MAX_KML) : INST_MAX_KML;
+const instLH = (s) => s.l / (s.ms / 3600000);
+
+function updateInstantEco(d, obdOn, mapKpa, now) {
+  const fe = d.fuel_economy || 0;
+  const dt = instLastAt ? now - instLastAt : 0;
+  instLastAt = now;
+  if (!obdOn || dt > INST_GAP_MS) instSamples = [];
+  if (obdOn && dt > 0) {
+    const h = dt / 3600000;
+    instSamples.push({ t: now, dt, km: (d.speed_kmh || 0) * h, l: (d.fuel_rate_lh || 0) * h });
+  }
+  while (instSamples.length && instSamples[0].t <= now - INST_WINDOW_MS) instSamples.shift();
+
+  const all = instSum(now - INST_WINDOW_MS);
+  const arc = instSum(now - INST_ARC_WINDOW_MS);
+  const arcOk = arc.ms >= INST_ARC_MIN_MS;
+
+  // lit は点灯数。null なら全部消す、undefined ならそのまま置いておく
+  let mode, text = '--', col, lit;
+  if (!obdOn) {
+    mode = 'off';
+    col = '#333';
+    lit = null;
+  } else if (all.ms < INST_MIN_MS) {
+    // 始動直後などで 2 秒平均がまだたまっていない
+    mode = 'none';
+    col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
+  } else if (fe === 0) {
+    // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
+    mode = 'L/h';
+    text = instLH(all).toFixed(2);
+    const frac = Math.min(instLH(arcOk ? arc : all) / INST_ARC_MAX_LH, 1);
+    col = `hsl(${(1 - frac) * 153}, 100%, 55%)`;
+    if (arcOk) lit = Math.max(1, Math.round(frac * INST_SEGS));
+  } else {
+    mode = 'km/L';
+    text = instKmL(all).toFixed(2);
+    const kmL = instKmL(arcOk ? arc : all);
+    col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
+    if (arcOk) lit = Math.max(1, Math.round((1 - Math.min(kmL / INST_ARC_MAX_KML, 1)) * INST_SEGS));
+  }
+  instValEl.setAttribute('fill', col);
+  if (lit === null) {
+    instLitTgt = instLitCur = 0;
+    instArcEl.setAttribute('d', '');
+  } else if (lit !== undefined) {
+    instLitTgt = lit;
+    instLitCol = col;
+    if (!instArcRaf) instArcRaf = requestAnimationFrame(stepInstArc);
+  }
+  // 出し方が変わったとき (止まった、走り出した) は1秒を待たずに書き換える
+  if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
+    instValEl.textContent = text;
+    instUnitEl.textContent = mode === 'L/h' ? 'L/h' : 'km/L';
+    instMode = mode;
+    instTextAt = now;
+  }
 }
 
 // --- アイコン生成 ---
@@ -270,9 +419,6 @@ export function createIndicators(panelEl) {
   const svg = document.getElementById('rg');
 
   // === バキューム計 (-1.0 〜 0 bar) ===
-  const VAC_MJ = 5;    // 主目盛り数 (-1.0, -0.8, -0.6, -0.4, -0.2, 0)
-  const VAC_MN = 4;    // 主目盛り間の副目盛り数
-  const VAC_TOTAL = VAC_MJ * VAC_MN;
 
   // バキューム計中心グラデーション
   let vDefs = svg.querySelector('defs');
@@ -316,50 +462,52 @@ export function createIndicators(panelEl) {
 
   // (ベゼル一時無効化)
 
-  // バキュームトラック（radialGradient ストローク）
+  // 外側のトラック (瞬間燃費)
   createGradientTrack(svg, MAP_CX, MAP_CY, MAP_R, ARC_W, MG_ARC_START, MG_ARC_END, '#040408', '#34344a', '#040408');
-  // バキュームインナーリング
-  const vacInnerR = MAP_R - 16;
-  createGradientTrack(svg, MAP_CX, MAP_CY, vacInnerR, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
+  // 内側のトラック (バキューム)
+  createGradientTrack(svg, MAP_CX, MAP_CY, VAC_INNER_R, 10, MG_ARC_START, MG_ARC_END, '#020204', '#333345', '#020204');
 
-  // Ticks
-  for (let i = 0; i <= VAC_TOTAL; i++) {
-    const a = MG_ARC_START + (i / VAC_TOTAL) * MG_ARC_SWEEP;
-    const isMj = i % VAC_MN === 0;
-    const ri = isMj ? MAP_R - 14 : MAP_R - 11;
-    const ro = MAP_R + 3;
-    const [x1, y1] = polar(MAP_CX, MAP_CY, ri, a);
-    const [x2, y2] = polar(MAP_CX, MAP_CY, ro, a);
-    svgEl(svg, 'line', { x1, y1, x2, y2, stroke: isMj ? '#aaa' : '#444', 'stroke-width': isMj ? 4 : 2 });
-    if (isMj) {
-      const v = VAC_MIN + (i / VAC_TOTAL) * (VAC_MAX - VAC_MIN);
-      const [lx, ly] = polar(MAP_CX, MAP_CY, MAP_R - 32, a);
-      const t = svgEl(svg, 'text', { x: lx, y: ly, class: 'tk-lbl', fill: '#fff', 'font-size': 18 });
-      t.textContent = v === 0 ? '0' : v.toFixed(1).replace('-0.', '-.');
-    }
-  }
+  // 目盛りの線も数字も置かない (2026-10-08)。値は数字で読め、外側の瞬間燃費の
+  // 消えている区切りが目盛りの代わりになる (区切り 6 個 = 0.2 bar)。
+  // 目盛りの数字は 2026-10-04 に消した。
 
-  // Active arc
+  // 瞬間燃費の区切り (外側)。消えている区切りを暗く並べ、点灯している分を上に重ねる
+  const segDash = `${INST_SEG_DASH} ${INST_SEG_GAP}`;
+  svgEl(svg, 'path', { d: instSegPath(INST_SEGS), fill: 'none', stroke: 'rgba(255,255,255,0.10)', 'stroke-width': 8, 'stroke-linecap': 'butt', 'stroke-dasharray': segDash });
+  instArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 8, 'stroke-linecap': 'butt', 'stroke-dasharray': segDash }, 7, 0.30);
+  // バキュームのアーク (内側)
   mapArcEl = createBloom(svg, 'path', { d: '', fill: 'none', stroke: '#555', 'stroke-width': 6, 'stroke-linecap': 'round' }, 10, 0.35);
 
-  // VACUUM label (負圧が浅いほど明るく赤く) — 針の下に配置
-  vacLabelEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 30, class: 'g-unit', fill: '#222', 'font-size': 24, 'text-anchor': 'middle' });
-  vacLabelEl.textContent = 'VACUUM';
-  bloomText(vacLabelEl, 2.5, 0.45);
-
-  // Needle (VACUUM ラベルの上)
-  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 18, MG_ARC_START);
+  // Needle
+  // 先端は内側のリング (半径 104〜114) の手前で止め、バキュームのアークの先と少し
+  // 離す。以前は MAP_R - 18 (= 107) で、先端がアークの上に乗ってくっついて見えた (2026-10-08)
+  const [mnx0, mny0] = polar(MAP_CX, MAP_CY, MAP_R - 30, MG_ARC_START);
   const [mtx0, mty0] = polar(MAP_CX, MAP_CY, -10, MG_ARC_START);
   mapNeedleEl = createBloom(svg, 'line', { x1: mtx0, y1: mty0, x2: mnx0, y2: mny0, stroke: '#78909c', 'stroke-width': 4.5, 'stroke-linecap': 'round', 'transform-origin': `${MAP_CX}px ${MAP_CY}px` }, 8, 0.3);
   // Center dot
   svgEl(svg, 'circle', { cx: MAP_CX, cy: MAP_CY, r: 5, fill: '#1a1a22', stroke: '#444', 'stroke-width': 2 });
 
+  // 瞬間燃費 — 針の上に重ねる (後に描いた方が前に出る)。速度計の回転数の数字と同じく、
+  // 針が通っても数字が隠れない。下半分の「-0.47 / Bar」と同じく、数字の下に単位を
+  // 置いて中央にそろえる。数字は 36 (38 まで入るが、見比べて一段控えめにした)。
+  // いちばん広い「99.99」でも、上の角 (中心から 104.7) が内側のバキュームのアークの
+  // にじみ (中心から 101 より外) に掛からない (2026-10-08 に実測)。
+  // 単位は針の付け根 (y 150〜) の手前で止まる (2026-10-04 に実測)
+  instValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 47, class: 'g-num', fill: '#333', 'font-size': 36, 'text-anchor': 'middle' });
+  instValEl.textContent = '--';
+  bloomText(instValEl, 2.5, 0.45);
+  // 単位は他の単位と同じ g-unit・白。大きさだけ 20 に落とす。数字が 26 と小さく、
+  // 24 だと単位が数字とほぼ同じ大きさに見えたため (Bar は数字 48 に対して 24)
+  instUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY - 17, class: 'g-unit', fill: '#fff', 'font-size': 20, 'text-anchor': 'middle' });
+  instUnitEl.textContent = 'km/L';
+
   // Value（ドロップシャドウ付き）
   mapValEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38, class: 'g-num', fill: '#333', 'font-size': 48, 'text-anchor': 'middle' });
   addOffsetShadow(mapValEl);
   mapValEl.textContent = '--';
-  // Unit
-  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 44, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
+  // Unit — 数字との間を瞬間燃費 (数字と単位の間 約 16) とつり合わせる。
+  // +44 では約 27 空いて、単位だけ離れて見えた (2026-10-02)
+  mapUnitEl = svgEl(svg, 'text', { x: MAP_CX, y: MAP_CY + MAP_R * 0.38 + 36, class: 'g-unit', fill: '#fff', 'font-size': 24, 'text-anchor': 'middle' });
   mapUnitEl.textContent = 'Bar';
 
   // === 3行インジケーター ===
@@ -368,7 +516,7 @@ export function createIndicators(panelEl) {
     createBloom(svg, 'rect', { class: 'acc-dim', x: -12, y: y - 30, width: 270, height: 44, rx: 6, fill: 'rgba(255,255,255,0.13)', stroke: 'rgba(255,255,255,0.22)', 'stroke-width': 1.5 }, 6, 0.25);
   }
 
-  // Row 0: ECO (葉アイコン、色 = 瞬間燃費ベース)
+  // Row 0: ECO (葉アイコン、数字も色も平均燃費)
   const ecoY = IND_Y_START;
   addIndPanel(ecoY);
   const leafIcons = createLeafIcon(svg, IND_X_ICON + 16, ecoY - 12, 30);
@@ -417,7 +565,7 @@ export function createIndicators(panelEl) {
 export function setMapDirect(pct, col) {
   if (!mapArcEl) return;
   const angle = MG_ARC_START + pct * MG_ARC_SWEEP;
-  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, MAP_R, MG_ARC_START, angle) : '');
+  mapArcEl.setAttribute('d', pct > 0.001 ? arcPath(MAP_CX, MAP_CY, VAC_INNER_R, MG_ARC_START, angle) : '');
   mapNeedleEl.style.transition = 'none';
   rotateWithBloom(mapNeedleEl, `rotate(${angle - MG_ARC_START}deg)`);
   if (col) { mapArcEl.setAttribute('stroke', col); mapNeedleEl.setAttribute('stroke', col); }
@@ -458,21 +606,15 @@ export function updateIndicators(dom, d, conf) {
   }
   if (!mapRaf) mapRaf = requestAnimationFrame(lerpMap);
 
-  // ECO 累積平均 (Row 1) — 色は瞬間燃費ベース (元の仕様)
+  // 瞬間燃費 (バキューム計の中)
+  updateInstantEco(d, d.obd_connected !== false, mapKpa, performance.now());
+
+  // ECO 平均燃費 (Row 0) — 色も平均燃費で決める (0 km/L 赤 → ecoGradientMax 以上で緑)。
+  // 以前は色だけ瞬間燃費で、数字と色が別の値を指していた。瞬間燃費はバキューム計の中に出す
   const avgEco = Math.min(d.avg_fuel_economy || 0, 99.99);
-  const instantEco = d.fuel_economy || 0;
-  ecoValEl.textContent = avgEco > 0.1 ? avgEco.toFixed(2) : '--';
-  let ecoCol;
-  if (instantEco < 0 || instantEco < 0.1) {
-    // エンブレ/停車: VACUUM 計と同じ色に同期
-    const vacBar = (mapKpa - 101.3) / 100;
-    const vacPct = Math.max(0, Math.min(100, (vacBar - VAC_MIN) / (VAC_MAX - VAC_MIN) * 100));
-    const vacHue = (1 - vacPct / 100) * HUE_MAX;
-    ecoCol = `hsl(${vacHue}, 100%, 55%)`;
-  } else {
-    const hue = Math.min(instantEco / ecoGradientMax, 1) * 153;
-    ecoCol = `hsl(${hue}, 100%, 55%)`;
-  }
+  const hasAvg = avgEco > 0.1;
+  ecoValEl.textContent = hasAvg ? avgEco.toFixed(2) : '--';
+  const ecoCol = hasAvg ? `hsl(${Math.min(avgEco / ecoGradientMax, 1) * 153}, 100%, 55%)` : '#fff';
   ecoValEl.setAttribute('fill', ecoCol);
   ecoIconEls.outline.setAttribute('stroke', ecoCol);
   ecoIconEls.vein.setAttribute('stroke', ecoCol);
