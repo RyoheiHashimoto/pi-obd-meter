@@ -252,7 +252,7 @@ cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
 - 外側にRPMアーク (レッドゾーン背景付き)
 - ゲージ左上にレンジ(P/R/N/D/S/L)、右上にギア番号、その下にHOLD/LOCKラベル
 - 右パネル: バキューム計 + 4行インジケーター
-  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar、目盛りの数字なし)。針の付け根の上に瞬間燃費（2秒の合計窓、1秒ごとに書き換え、停車中は L/h、エンブレ判定中は `--`）、内側のリングに「燃料の食い方」の点線アーク（1 − km/L ÷ 30 / L/h ÷ 3、エンブレ中は最短）。詳細は `docs/meter-indicators.md`
+  - バキューム計: MAP kPa → Bar 変換 (-1.0〜0 Bar、目盛りは線も数字もなし)。バキュームのアークは内側のリング。針の付け根の上に瞬間燃費（2秒の合計窓、1秒ごとに書き換え、停車中は L/h、エンブレ判定中も km/L で燃料カット中は 99.99）、外側のリングに「燃料の食い方」を 30 個の区切りの点灯数で出す（30 − km/L / L/h ÷ 0.1、最低 1 個、0.6 秒の合計、減るときは 1 秒に 15 個まで）。詳細は `docs/meter-indicators.md`
   - 4行インジケーター: ECO / TEMP / TRIP / OIL (縦配置、bloom 付きアイコン + ガラスパネル枠)
 - **fake bloom** による軽量グロー (SVG `feGaussianBlur` 相当の重い処理なし)
   - 針: clone 方式 + `transform 0.6s cubic-bezier` で光の尾のように遅延追従
