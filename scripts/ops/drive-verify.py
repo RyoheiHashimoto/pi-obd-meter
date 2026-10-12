@@ -103,7 +103,8 @@ while True:
         d.get("coolant_temp") or 0, d.get("intake_map") or 0,
         d.get("engine_load") or 0,
         # 2026-09-01 に同定した信号 (#150)。ブレーキ・ファン・エアコンは真偽値、
-        # 勾配は符号付きの生値で単位未確定 (負が登り)。
+        # grade_raw は符号付きの生値。名前と列名 (grade) は勾配と誤認していたときの
+        # ままで、実際はヨーレート相当 (右回りが正、約 0.01°/s。2026-10-12 に判明)。
         d.get("brake_pedal"), d.get("radiator_fan"), d.get("ac_compressor"),
         d.get("grade_raw") or 0,
         time.monotonic(),

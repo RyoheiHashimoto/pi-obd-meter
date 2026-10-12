@@ -181,7 +181,7 @@ type RealtimeData struct {
 	BrakePedal     bool    `json:"brake_pedal"`   // ブレーキペダル
 	RadiatorFan    bool    `json:"radiator_fan"`  // ラジエータファン
 	ACCompressor   bool    `json:"ac_compressor"` // エアコンコンプレッサー
-	GradeRaw       int     `json:"grade_raw"`     // 勾配の生値。負が登り。単位未確定
+	GradeRaw       int     `json:"grade_raw"`     // ヨーレート相当の生値 (0x3201)。右回りが正。名前は勾配と誤認していたときのまま
 	Shifting       bool    `json:"shifting"`
 	OdometerCANKm  float64 `json:"odometer_can_km"` // CAN 0x430 由来の累計走行距離（検証用に併記）
 	ElecB0Pct      float64 `json:"elec_b0_pct"`     // 0x430 B0 生値/2.55（燃料残量候補・未確定）

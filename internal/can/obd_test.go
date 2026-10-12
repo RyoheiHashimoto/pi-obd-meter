@@ -50,8 +50,8 @@ func TestDecodeACCompressor(t *testing.T) {
 	}
 }
 
-// 0x3201 = 勾配。符号付き16bit で負が登り。
-// 大橋JCT (8.9%) で -690、比叡山の急勾配区間で -2210 が観測されている。
+// 0x3201 = ヨーレート相当 (勾配と誤認していた)。符号付き16bit で右回りが正。
+// 大橋JCT の螺旋で -690、比叡山の山道で -2210 が観測されている。
 func TestDecodeGrade(t *testing.T) {
 	cases := []struct {
 		hi, lo byte
@@ -61,7 +61,7 @@ func TestDecodeGrade(t *testing.T) {
 		{0x00, 0x1E, 30},
 		{0xFD, 0x4E, -690},  // 大橋JCT の実測値
 		{0xF7, 0x5E, -2210}, // 比叡山の実測値
-		{0x05, 0x28, 1320},  // 登り切って正に反転した瞬間
+		{0x05, 0x28, 1320},  // 大橋JCT の螺旋を出たところ (正に反転)
 	}
 	for _, c := range cases {
 		got, ok := DecodeGrade([]byte{c.hi, c.lo})
