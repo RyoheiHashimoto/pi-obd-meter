@@ -82,7 +82,7 @@ func TestSendScheduleComposition(t *testing.T) {
 		slotMAF:   {5, "MAF (200ms 周期)"},
 		slotMAP:   {5, "MAP (200ms 周期)"},
 		slotBrake: {4, "ブレーキ (250ms 周期)"},
-		slotGrade: {1, "勾配 (1秒周期)"},
+		slotGrade: {1, "ヨーレート (1秒周期)"},
 		slotAC:    {1, "エアコン (1秒周期)"},
 		slotAux:   {2, "機関系 10個 → 5秒周期"},
 		slotProbe: {1, "未同定 6個 → 6秒周期"},
