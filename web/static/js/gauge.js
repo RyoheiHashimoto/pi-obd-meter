@@ -270,16 +270,22 @@ export function updateGear(gear, range, hold, tcLocked, tccLockPct, shifting) {
 }
 
 // --- RPM色: 回転数に応じた色 ---
-// RPM→色（ZJ-VE 91PS/6000rpm, 124Nm/3500rpm に合わせた8段階）
+// 1,000rpm ごと。3,000 台だけ、トルクの山 (ZJ-VE 124Nm/3500rpm) で 2 つに分ける。
+// 走行時間の 14% を占める 3,000〜3,499 は 4 速の高速巡航 (107〜124km/h) で、
+// 3,500〜3,999 (2%) は踏んで加速しているとき。色で見分けられるようにする。
+//
+// 赤は 6,000rpm (最大出力 91PS/6000rpm) から。1 速を 6,000rpm 付近まで使って
+// 2 速に上げる走り方で、5,000〜6,200rpm は馬力がまだ伸びている。以前は 5,000rpm
+// から赤で、伸びている途中で赤になっていた (2026-10-14、docs/vehicle-baseline.md)。
 export function rpmColor(rpm) {
-  if (rpm >= 5000) return '#f44336';  // 赤
-  if (rpm >= 4000) return '#ff9800';  // 橙
-  if (rpm >= 3500) return '#fdd835';  // 黄
-  if (rpm >= 3000) return '#76ff03';  // 黄緑（パワーバンド突入）
-  if (rpm >= 2500) return '#69f0ae';  // 緑（通常走行）
-  if (rpm >= 2000) return '#26c6da';  // 水色（街中走行）
-  if (rpm >= 1000) return '#42a5f5';  // 青（アイドル付近）
-  return '#78909c';                    // 非アクティブ
+  if (rpm >= 6000) return '#f44336';  // 赤（切り替えどき）
+  if (rpm >= 5000) return '#ff9800';  // 橙
+  if (rpm >= 4000) return '#fdd835';  // 黄
+  if (rpm >= 3500) return '#76ff03';  // 黄緑（トルクの山から上）
+  if (rpm >= 3000) return '#69f0ae';  // 緑（高速巡航）
+  if (rpm >= 2000) return '#26c6da';  // 水色（通常走行）
+  if (rpm >= 1000) return '#42a5f5';  // 青
+  return '#78909c';                    // 非アクティブ・アイドル
 }
 
 // --- RPM アニメーター ---
@@ -382,9 +388,9 @@ export function buildSpeedGauge(svgId, cfg) {
 
   // === 中央: RPM トラック + レッドゾーン ===
   createGradientTrack(svg, cx, cy, r, 16, ARC_START, ARC_END, '#040408', '#34344a', '#040408');
-  // レッドゾーンの背景帯は置かない。針とアークが 5,000rpm から赤になるので、
-  // 6,500 からの帯を重ねると赤が二重になる。実測の最高は 5,644rpm で、
-  // 6,500 以上には一度も入っていない（133走行・108万行）。
+  // レッドゾーンの背景帯は置かない。針とアークが 6,000rpm から赤になるので、
+  // 6,500 からの帯を重ねると赤が二重になる。実測の最高は 6,461rpm (2026-10-14、
+  // 1→2 に上げる瞬間) で、6,500 以上には一度も入っていない。
 
   // RPM 目盛り (0〜8, ×1000)
   const rpmMj = 8, rpmMn = 5;
