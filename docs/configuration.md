@@ -163,7 +163,7 @@ OTA からも更新できないため、UI の更新が車に届かない状態�
 
 | パラメータ | 型 | デフォルト | 説明 |
 |---|---|---|---|
-| `eco_gradient_max_kmpl` | float | `15` | ECO 表示の HSL グラデーション最大値 (km/L)。0 km/L = 赤、この値 = 緑 |
+| `eco_gradient_max_kmpl` | float | `15` | ECO 行 (平均燃費) の HSL グラデーション最大値 (km/L)。0 km/L = 赤、この値 = 緑。瞬間燃費の色には使わない (2026-10-16 から。`docs/meter-indicators.md`) |
 
 ---
 
