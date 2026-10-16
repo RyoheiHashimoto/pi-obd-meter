@@ -230,6 +230,32 @@ const INST_MIN_MS = 300;      // 合計できた長さがこれ未満なら出�
 const INST_GAP_MS = 1500;
 const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
 
+// 色は数字とリングで共通。「水色・緑が良い、赤が悪い」でそろえる (2026-10-16)。
+// 水色は「ほとんど燃料を使っていない」ときの色。燃料カット中は吸気圧が 18〜28 kPa で、
+// バキュームのリングは色相 154〜175 の青緑〜水色になる。それに近い 180 にした。
+// [値, 色相] の間を直線でつなぐ。両端より外は端の色。
+//   km/L: 5 以下 赤 → 20 緑 → 30 以上 水色 (99.99 を含む)。30 はリングが最低の 1 個になる所
+//   L/h : 0.6 以下 水色 → 0.95 黄 → 1.5 以上 赤
+// 2026-09-01〜10-14 の走行ログ (0.6 秒の合計) で、出る色の割合は
+//   km/L: 赤 10%・橙 10%・黄 17%・黄緑 13%・緑 14%・青緑 6%・水色 31%
+//         (水色のうち燃料カット中が 16%、30 km/L 以上が 13%)
+//   L/h : 水温 75℃ 以上の停車中、エアコン OFF は中央 0.62 L/h で水色 49%・緑 27%、
+//         エアコン ON は中央 0.94 L/h で黄 42%・黄緑 27%・橙 22%。入り切りの差が
+//         0.3 L/h しかないので、0.6〜0.95 の間で大きく色を変えて見分けられるようにした
+// 以前は km/L が 0 で赤 → 15 (eco_gradient_max_kmpl) で緑、L/h が 0 で緑 → 3 で赤で、
+// ふだんの燃費 (12〜20 km/L) ではずっと緑だった。ECO 行 (平均燃費) の色は今もそちら。
+const INST_HUE_KML = [[5, 0], [20, 153], [30, 180]];
+const INST_HUE_LH = [[0.6, 180], [0.95, 60], [1.5, 0]];
+
+function instHue(pts, v) {
+  if (v <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, h0] = pts[i - 1], [x1, h1] = pts[i];
+    if (v <= x1) return h0 + (v - x0) / (x1 - x0) * (h1 - h0);
+  }
+  return pts[pts.length - 1][1];
+}
+
 // 外側のリングは「燃料の食い方」を 30 個の区切りの点灯数で表す。多いほど・赤いほど食っている。
 //   km/L: 点灯数 = 30 - km/L (1 個 = 1 km/L)。30 km/L 以上 (燃料カット中を含む) は 1 個
 //   L/h : 点灯数 = L/h ÷ 0.1 (1 個 = 0.1 L/h)
@@ -321,17 +347,18 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
   } else if (fe === 0) {
-    // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
+    // 停車・低速。少ないほど水色、多いほど赤 (km/L と同じく「水色・緑が良い」)
     mode = 'L/h';
     text = instLH(all).toFixed(2);
-    const frac = Math.min(instLH(arcOk ? arc : all) / INST_ARC_MAX_LH, 1);
-    col = `hsl(${(1 - frac) * 153}, 100%, 55%)`;
+    const lh = instLH(arcOk ? arc : all);
+    const frac = Math.min(lh / INST_ARC_MAX_LH, 1);
+    col = `hsl(${instHue(INST_HUE_LH, lh)}, 100%, 55%)`;
     if (arcOk) lit = Math.max(1, Math.round(frac * INST_SEGS));
   } else {
     mode = 'km/L';
     text = instKmL(all).toFixed(2);
     const kmL = instKmL(arcOk ? arc : all);
-    col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
+    col = `hsl(${instHue(INST_HUE_KML, kmL)}, 100%, 55%)`;
     if (arcOk) lit = Math.max(1, Math.round((1 - Math.min(kmL / INST_ARC_MAX_KML, 1)) * INST_SEGS));
   }
   instValEl.setAttribute('fill', col);
