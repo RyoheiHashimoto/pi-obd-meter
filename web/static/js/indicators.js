@@ -194,13 +194,22 @@ function lerpMap() {
 // --- 瞬間燃費 (バキューム計の中、針の付け根の上) ---
 //
 // 値は 50 ms ごとに届くが、届いた瞬間燃費をそのまま出すと読めない。
-// 直近2秒の距離と燃料をそれぞれ合計してから割り、数字は1秒ごとに書き換える。
+// 直近 0.6 秒の距離と燃料をそれぞれ合計してから割り、数字は 0.6 秒ごとに書き換える。
+// 0.6 秒は LOCK・ギアの点滅の周期 (meter.css) にそろえた (2026-10-16 にユーザーと決めた)。
+// 外側のリングも 0.6 秒の合計なので、数字とリングは同じ値から動く。
 //
-// 2026-09-17〜28 の走行ログ (10 km/h 以上で約20時間) で、2秒平均を小数2桁で
-// 出したときに数字が1秒あたり何回変わるかを数えた。0.4秒ごとの書き換えなら
-// 2.4回、1秒ごとなら 0.9回。MIL-STD-1472F 5.14.3.4.1 は「確実に読ませたい
-// 数字は毎秒1回より速く更新しない」としている。マツダ純正 (DJ デミオ) と
-// ScanGauge は約2秒ごと。踏み方の良し悪しは、すぐ動くアークと色で追える。
+// 以前は直近 2 秒の合計を 1 秒ごとに書き換えていた (MIL-STD-1472F 5.14.3.4.1 の
+// 「確実に読ませたい数字は毎秒1回より速く更新しない」と、純正 DJ デミオ・ScanGauge の
+// 約 2 秒ごとに合わせた)。アクセルを離してから 99.99 になるまでが遅く、LOCK などに
+// 比べてもたつく。2026-09-01〜10-14 の走行ログ (232 本、0.2 秒刻み) で表示を再現すると、
+//
+//	                      離して 99.99 まで  数字が変わる回数 (km/L 表示中)
+//	2 秒の合計・1 秒ごと      中央 1.8 秒        1 秒に 0.6 回
+//	2 秒の合計・0.6 秒ごと    中央 1.6 秒        1 秒に 1.0 回
+//	0.6 秒の合計・0.6 秒ごと  中央 0.6 秒        1 秒に 0.9 回
+//
+// 遅れの大半は合計する長さから来ている。書き換えだけ 0.6 秒にしても速くならず、
+// 合計も 0.6 秒にすると、数字の変わる回数はほぼ同じまま反応が 1 秒速くなる。
 //
 // 出し分け:
 //   fuel_economy = 0  → L/h  (停車・10 km/h 未満。アイドリングでも 0.87 L/h 流れている)
@@ -213,23 +222,46 @@ function lerpMap() {
 // 入れ替わる場面が 65% あった。燃料カット中は燃料が 0 なので 99.99 に張り付き、
 // 「離すと数字が上がる」一続きの動きになる。市販の燃費計 (テクトム 99.9 km/L、
 // ScanGauge 9999 MPG) も燃料カット中は上限に張り付ける。
-const INST_WINDOW_MS = 2000;  // 数字のために合計する長さ
-const INST_TEXT_MS = 1000;    // 数字を書き換える間隔
-const INST_MIN_MS = 500;      // 合計できた長さがこれ未満なら出さない (始動直後など)
+const INST_WINDOW_MS = 600;   // 数字のために合計する長さ
+const INST_TEXT_MS = 600;     // 数字を書き換える間隔
+const INST_MIN_MS = 300;      // 合計できた長さがこれ未満なら出さない (始動直後など。リングと同じ)
 // 届く間隔がこれより空いたら合計をやり直す。同じ内容の配信は省かれて
 // 1秒ごとの heartbeat だけになる (ws_hub.go) ので、それより長くとる。
 const INST_GAP_MS = 1500;
 const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
 
+// 色は数字とリングで共通で、リングの点き具合 (0〜1) だけで決める。バキュームと同じく
+// 全部点いていれば赤で、減るほど色相を回す (2026-10-17)。バキュームは青 (210) まで回すが、
+// こちらは水色 (180) で止める。燃料カット中のバキュームのリングは色相 154〜175 (吸気圧
+// 18〜28 kPa) なので、99.99 のときに 2 本がそろう。
+//   km/L: 0 で赤 → 30 以上 (99.99 を含む) で水色
+//   L/h : 1.5 以上で赤 → 0 で水色
+// 2026-09-01〜10-14 の走行ログ (0.6 秒の合計) で、10/16 の決め方 (km/L は 5 赤 → 20 緑
+// → 30 水色、L/h は 0.6 水色 → 0.95 黄 → 1.5 赤) と比べると
+//                              10/16    今
+//   走行中に色の名前が変わる回数   0.61     0.53 (1 秒あたり)
+//   停車中に色の名前が変わる回数   0.38     0.24
+//   走行中にバキュームと色相差 30 未満の時間  64%  76%
+// 赤になるのは 2.5 km/L 未満だけで、全開加速 (4〜5 km/L) は赤寄りの橙になる (そのときの
+// バキュームも同じ)。停車中は、水温 75℃ 以上でエアコン OFF が中央 0.62 L/h で黄緑〜緑、
+// ON が中央 0.94 L/h で黄、冷えたとき (水温 60℃ 未満) が中央 1.24 L/h で橙。
+// ECO 行 (平均燃費) の色は別の決め方 (eco_gradient_max_kmpl)。
+const INST_HUE_TOP = 180;
+const instCol = (frac) => `hsl(${(1 - frac) * INST_HUE_TOP}, 100%, 55%)`;
+
 // 外側のリングは「燃料の食い方」を 30 個の区切りの点灯数で表す。多いほど・赤いほど食っている。
 //   km/L: 点灯数 = 30 - km/L (1 個 = 1 km/L)。30 km/L 以上 (燃料カット中を含む) は 1 個
-//   L/h : 点灯数 = L/h ÷ 0.1 (1 個 = 0.1 L/h)
+//   L/h : 点灯数 = L/h ÷ 0.05 (1 個 = 0.05 L/h)。1.5 L/h 以上は 30 個 (振り切り)
 // 消えている区切りが目盛りの代わりになるので、目盛りの線は置かない。
 // 振り切りは 2026-09-17〜28 の走行ログ (2秒平均) で決めた。
 //   km/L (アクセルを踏んでいる走行中): 中央値 12.0・75% 点 17.9・90% 点 29.8
 //   L/h  (10 km/h 未満): 停車の中央値 0.88・99% 点 1.76、低速の 99% 点 2.90
+// L/h は 2026-10-17 に 3 から 1.5 に縮めた。3 では停車中に 6〜12 個しか点かず、エアコンの
+// 入り切り (中央 0.62 → 0.94 L/h) で 3 個しか変わらなかった。1.5 なら 12 → 19 個。
+// 2026-09-01〜10-14 のログ (0.6 秒の合計) で、停車中に 1.5 を超えるのは 1〜2%。発進で踏むと
+// 振り切るが、10 km/h を超えて km/L に替わると 3〜5 km/L で 25〜27 個なので、ほぼ続いて見える。
 //
-// 点灯数と色は 0.6 秒の合計で決める (数字の 2 秒より短い)。同じログで、踏み込んで
+// 点灯数と色は 0.6 秒の合計で決める (2026-10-16 から数字も同じ長さ)。同じログで、踏み込んで
 // から点灯数が落ち着くまでの中央値は 2 秒で 1.4 秒、0.6 秒で 0.8 秒。0.4 秒にしても
 // 0.8 秒のまま。区切りが粗いので、短くしても点灯数の変わる回数は増えない
 // (走行中 1 秒に 1.7 回前後。停車中は 0.6 秒で 0.85 回)。
@@ -237,7 +269,7 @@ const INST_MAX_KML = 99.99;   // 平均燃費と同じ上限
 const INST_ARC_WINDOW_MS = 600;
 const INST_ARC_MIN_MS = 300;     // 合計できた長さがこれ未満なら点灯数を動かさない
 const INST_ARC_MAX_KML = 30;
-const INST_ARC_MAX_LH = 3;
+const INST_ARC_MAX_LH = 1.5;
 const INST_SEGS = 30;
 const INST_SEG_GAP_DEG = 2.2;    // 区切りの隙間 (角度)
 const INST_SEG_DOWN_MS = 1000 / 15;
@@ -308,22 +340,22 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     col = '#333';
     lit = null;
   } else if (all.ms < INST_MIN_MS) {
-    // 始動直後などで 2 秒平均がまだたまっていない
+    // 始動直後などで合計がまだたまっていない
     mode = 'none';
     col = `hsl(${vacHueOf(mapKpa)}, 100%, 55%)`;
   } else if (fe === 0) {
-    // 停車・低速。少ないほど緑、多いほど赤 (km/L と同じく「緑が良い」)
+    // 停車・低速。少ないほど水色、多いほど赤 (km/L と同じく「水色が良い」)
     mode = 'L/h';
     text = instLH(all).toFixed(2);
     const frac = Math.min(instLH(arcOk ? arc : all) / INST_ARC_MAX_LH, 1);
-    col = `hsl(${(1 - frac) * 153}, 100%, 55%)`;
+    col = instCol(frac);
     if (arcOk) lit = Math.max(1, Math.round(frac * INST_SEGS));
   } else {
     mode = 'km/L';
     text = instKmL(all).toFixed(2);
-    const kmL = instKmL(arcOk ? arc : all);
-    col = `hsl(${Math.min(kmL / ecoGradientMax, 1) * 153}, 100%, 55%)`;
-    if (arcOk) lit = Math.max(1, Math.round((1 - Math.min(kmL / INST_ARC_MAX_KML, 1)) * INST_SEGS));
+    const frac = 1 - Math.min(instKmL(arcOk ? arc : all) / INST_ARC_MAX_KML, 1);
+    col = instCol(frac);
+    if (arcOk) lit = Math.max(1, Math.round(frac * INST_SEGS));
   }
   instValEl.setAttribute('fill', col);
   if (lit === null) {
@@ -334,7 +366,7 @@ function updateInstantEco(d, obdOn, mapKpa, now) {
     instLitCol = col;
     if (!instArcRaf) instArcRaf = requestAnimationFrame(stepInstArc);
   }
-  // 出し方が変わったとき (止まった、走り出した) は1秒を待たずに書き換える
+  // 出し方が変わったとき (止まった、走り出した) は 0.6 秒を待たずに書き換える
   if (mode !== instMode || now - instTextAt >= INST_TEXT_MS) {
     instValEl.textContent = text;
     instUnitEl.textContent = mode === 'L/h' ? 'L/h' : 'km/L';
@@ -625,7 +657,8 @@ export function updateIndicators(dom, d, conf) {
   const rngKm = d.range_to_empty_km || 0;
   if (rngKm > 0) {
     rngValEl.textContent = rngKm.toFixed(1);
-    // TRIP (350/400/450) と等価な閾値、満タン 500km 想定
+    // 残り 150/100/50km で黄・橙・赤。満タン 500km 想定で TRIP の 350/400/450 と
+    // そろえていたが、TRIP は 2026-10-18 に 400/450/500 へずらした (こちらはそのまま)
     const rngCol = rngKm >= 150 ? '#69f0ae' : rngKm >= 100 ? '#fdd835' : rngKm >= 50 ? '#ff9800' : '#f44336';
     rngValEl.setAttribute('fill', rngCol);
     rngIconEl.setAttribute('fill', rngCol);
@@ -635,10 +668,15 @@ export function updateIndicators(dom, d, conf) {
     rngIconEl.setAttribute('fill', '#fff');
   }
 
-  // TRIP
+  // TRIP — 色は給油の目安。400km で黄、450km で橙、500km で赤。
+  //
+  // 2026-10-18 までは 350/400/450 だった。10/12→10/14 のタンクでは給油の警告灯が
+  // 504.8km で点き (残り約 7.5L、平均 13.9km/L)、350km ではまだ約 17L 残る計算で
+  // 早すぎた。燃費の悪いタンクでは赤より先に警告灯が点くが、残りの距離は RNG が出す。
+  // /api/config の trip_warn_km / trip_danger_km はここでは使っていない
   const tripKm = d.trip_km || 0;
   tripValEl.textContent = tripKm >= 0.1 ? tripKm.toFixed(1) : '0';
-  const tripCol = tripKm < 350 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 450 ? '#ff9800' : '#f44336';
+  const tripCol = tripKm < 400 ? '#69f0ae' : tripKm < 450 ? '#fdd835' : tripKm < 500 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
   setFilter(tripIconEl.parentNode, 'url(#glow-mid)');

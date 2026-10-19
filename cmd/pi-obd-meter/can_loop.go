@@ -17,7 +17,7 @@ const (
 	slotMAF   = iota // 0x10 MAF
 	slotMAP          // 0x0B MAP
 	slotBrake        // Mode22 0x1101 ブレーキ・ファン
-	slotGrade        // Mode22 0x3201 勾配
+	slotGrade        // Mode22 0x3201 ヨーレート相当 (名前は勾配と誤認していたときのまま)
 	slotAC           // Mode22 0x1103 エアコン
 	slotAux          // 機関系の診断値 (auxPIDs を巡回)
 	slotProbe        // 未同定 Mode22 PID (PID22Probe を巡回)
@@ -27,7 +27,7 @@ const (
 // sendSchedule は要求を出す順番。送信できたときだけ次へ進む (slotIdx)。
 //
 // tick の番号で引いてはいけない。応答が返らない要求があると、その直後の
-// スロットが毎回飛ばされる。1周に1回しかない勾配やエアコンがそこに来ると、
+// スロットが毎回飛ばされる。1周に1回しかないヨーレートやエアコンがそこに来ると、
 // 走行中まったく取れなくなる。
 //
 // 【1 tick に 2 つ投げてはいけない】
@@ -49,7 +49,7 @@ const (
 // MAF/MAP が無事だったのは、常にその tick の1つ目だったからにすぎない。
 //
 // intervalMs=50 のとき 20 スロットで 1 秒。1周あたりの回数は
-// MAF 5 / MAP 5 / ブレーキ 4 / 勾配 1 / エアコン 1 / aux 2 / probe 1 / slow 1。
+// MAF 5 / MAP 5 / ブレーキ 4 / ヨーレート 1 / エアコン 1 / aux 2 / probe 1 / slow 1。
 // MAF と MAP は 100ms から 200ms 周期に落ちるが、燃料の積算は毎 tick
 // 直近値を使うので定常走行では差が出ない。取りこぼしが無くなる分、
 // 実効では以前より多く取れる。
@@ -518,7 +518,7 @@ func canReaderLoop(ctx context.Context, ifname string, intervalMs int, ch chan<-
 			if !busy {
 				// 【スケジュールは送ったときだけ進める】
 				// tickCount で引くと、応答の無い要求の直後のスロットが
-				// 毎回スキップされる。1周に1回しかない勾配やエアコンが
+				// 毎回スキップされる。1周に1回しかないヨーレートやエアコンが
 				// その位置に来ると、走行中まったく取れなくなる。
 				var req can.Frame
 				var key uint32
