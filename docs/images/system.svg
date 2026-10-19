@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" font-family="'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic',Meiryo,sans-serif">
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#94a3b8"/></marker>
+    <marker id="ac" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#22d3ee"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#4ade80"/></marker>
+    <marker id="av" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><path d="M0,0 L9,3.5 L0,7 z" fill="#c4b5fd"/></marker>
+    <style>
+      .grp{fill:#0f172a;stroke-width:1.5;stroke-dasharray:6 4}
+      .box{fill:#111827;stroke:#475569;stroke-width:1.5}
+      .t{fill:#f1f5f9;font-size:15px;font-weight:600}
+      .s{fill:#94a3b8;font-size:12px}
+      .g{font-size:16px;font-weight:700}
+      .l{fill:#cbd5e1;font-size:12px}
+    </style>
+  </defs>
+  <rect width="900" height="500" rx="14" fill="#070b12"/>
+
+  <!-- 車 -->
+  <rect class="grp" x="16" y="16" width="222" height="468" rx="10" stroke="#f59e0b"/>
+  <text class="g" x="32" y="42" fill="#fbbf24">車</text>
+  <rect class="box" x="32" y="64" width="190" height="58" rx="8"/>
+  <text class="t" x="127" y="89" text-anchor="middle" font-size="14">エンジンのコンピューター</text>
+  <text class="s" x="127" y="108" text-anchor="middle">回転・車速・吸気・燃料</text>
+  <rect class="box" x="32" y="136" width="190" height="58" rx="8"/>
+  <text class="t" x="127" y="161" text-anchor="middle" font-size="14">AT のコンピューター</text>
+  <text class="s" x="127" y="180" text-anchor="middle">ギア・レンジ・ロックアップ</text>
+  <line x1="127" y1="194" x2="127" y2="282" stroke="#f59e0b" stroke-width="4"/>
+  <text class="l" x="136" y="230">車の中の通信線</text>
+  <text class="l" x="136" y="247">（CAN）</text>
+  <rect class="box" x="32" y="282" width="190" height="58" rx="8"/>
+  <text class="t" x="127" y="307" text-anchor="middle">OBD 端子</text>
+  <text class="s" x="127" y="327" text-anchor="middle">運転席の足元の差し込み口</text>
+  <text class="s" x="127" y="374" text-anchor="middle">データを読むだけで、</text>
+  <text class="s" x="127" y="392" text-anchor="middle">車には何も書き込まない</text>
+
+  <!-- 車に載せたもの -->
+  <rect class="grp" x="252" y="16" width="356" height="468" rx="10" stroke="#22d3ee"/>
+  <text class="g" x="268" y="42" fill="#67e8f9">車に載せたもの</text>
+  <rect class="box" x="268" y="64" width="146" height="58" rx="8"/>
+  <text class="t" x="341" y="89" text-anchor="middle">5 インチの画面</text>
+  <text class="s" x="341" y="108" text-anchor="middle">メーター（上の画像）</text>
+  <rect class="box" x="436" y="64" width="156" height="58" rx="8"/>
+  <text class="t" x="514" y="89" text-anchor="middle">車の WiFi ルーター</text>
+  <text class="s" x="514" y="108" text-anchor="middle">インターネットへ</text>
+  <rect class="box" x="268" y="282" width="146" height="58" rx="8"/>
+  <text class="t" x="341" y="307" text-anchor="middle">CAN を読む基板</text>
+  <text class="s" x="341" y="327" text-anchor="middle">CAN HAT</text>
+  <line x1="222" y1="311" x2="266" y2="311" stroke="#22d3ee" stroke-width="2.5" marker-end="url(#ac)"/>
+  <rect class="box" x="436" y="272" width="156" height="78" rx="8" stroke="#22d3ee"/>
+  <text class="t" x="514" y="302" text-anchor="middle">Raspberry Pi 4</text>
+  <text class="s" x="514" y="322" text-anchor="middle">pi-obd-meter</text>
+  <text class="s" x="514" y="339" text-anchor="middle">計算・表示・記録</text>
+  <line x1="414" y1="311" x2="434" y2="311" stroke="#22d3ee" stroke-width="2.5" marker-end="url(#ac)"/>
+  <line x1="470" y1="270" x2="372" y2="125" stroke="#22d3ee" stroke-width="2.5" marker-end="url(#ac)"/>
+  <line x1="548" y1="270" x2="548" y2="125" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="566" y1="125" x2="566" y2="270" stroke="#c4b5fd" stroke-width="2" marker-end="url(#av)"/>
+  <rect class="box" x="268" y="392" width="100" height="58" rx="8"/>
+  <text class="t" x="318" y="417" text-anchor="middle">GPS</text>
+  <text class="s" x="318" y="436" text-anchor="middle">位置・高さ</text>
+  <rect class="box" x="380" y="392" width="100" height="58" rx="8"/>
+  <text class="t" x="430" y="417" text-anchor="middle" font-size="14">傾きセンサー</text>
+  <text class="s" x="430" y="436" text-anchor="middle" font-size="11">坂・横 G（IMU）</text>
+  <rect class="box" x="492" y="392" width="100" height="58" rx="8"/>
+  <text class="t" x="542" y="417" text-anchor="middle">SSD</text>
+  <text class="s" x="542" y="436" text-anchor="middle" font-size="11">走行データの記録</text>
+  <line x1="318" y1="392" x2="460" y2="353" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="430" y1="392" x2="486" y2="353" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+  <line x1="542" y1="352" x2="542" y2="390" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)"/>
+
+  <!-- インターネット -->
+  <rect class="grp" x="622" y="16" width="262" height="468" rx="10" stroke="#a78bfa"/>
+  <text class="g" x="638" y="42" fill="#c4b5fd">インターネット</text>
+  <rect class="box" x="638" y="64" width="230" height="58" rx="8"/>
+  <text class="t" x="753" y="89" text-anchor="middle">Google スプレッドシート</text>
+  <text class="s" x="753" y="108" text-anchor="middle">走行・給油・整備の記録</text>
+  <line x1="592" y1="93" x2="636" y2="93" stroke="#4ade80" stroke-width="2" marker-end="url(#ag)"/>
+  <rect class="box" x="638" y="160" width="230" height="58" rx="8"/>
+  <text class="t" x="753" y="185" text-anchor="middle">スマホ</text>
+  <text class="s" x="753" y="204" text-anchor="middle">記録を見る・整備の管理</text>
+  <line x1="753" y1="124" x2="753" y2="158" stroke="#4ade80" stroke-width="2" marker-end="url(#ag)"/>
+  <rect class="box" x="638" y="282" width="230" height="58" rx="8"/>
+  <text class="t" x="753" y="307" text-anchor="middle">GitHub</text>
+  <text class="s" x="753" y="326" text-anchor="middle">新しい版を置く場所</text>
+  <path d="M638,300 C612,250 606,170 594,124" fill="none" stroke="#c4b5fd" stroke-width="2" marker-end="url(#av)"/>
+  <rect class="box" x="638" y="392" width="230" height="58" rx="8"/>
+  <text class="t" x="753" y="417" text-anchor="middle">自宅の Mac</text>
+  <text class="s" x="753" y="436" text-anchor="middle">開発・走行データの回収</text>
+  <line x1="636" y1="421" x2="594" y2="352" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#a)"/>
+
+  <!-- 凡例 -->
+  <line x1="36" y1="434" x2="60" y2="434" stroke="#22d3ee" stroke-width="2.5"/><text class="l" x="66" y="438">車のデータ</text>
+  <line x1="36" y1="454" x2="60" y2="454" stroke="#4ade80" stroke-width="2"/><text class="l" x="66" y="458">記録を送る</text>
+  <line x1="36" y1="474" x2="60" y2="474" stroke="#c4b5fd" stroke-width="2"/><text class="l" x="66" y="478">起動のたびに自動で更新</text>
+</svg>
