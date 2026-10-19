@@ -1,352 +1,129 @@
 # pi-obd-meter
 
-**OBD-2 / CAN 直結 車載メーター + 走行記録 + スマホダッシュボード**
+<p align="center">
+  <img src="docs/images/meter-demo.gif" width="800" alt="メーターが動いている様子。停止から発進し、ギアを上げながら 110km/h まで加速する">
+</p>
 
-Raspberry Pi 4 + CAN HAT で速度・RPM・スロットル・インマニ圧・瞬間燃費を5インチLCDにリアルタイム表示。
-走行距離・メンテナンス状態を Google Sheets に自動記録し、スマホから給油記録・ODO補正・メンテナンス管理ができる。
+**車のコンピューターが流しているデータを読んで、速度・エンジン回転・ギア・燃費をその場で表示する自作のデジタルメーター。**
+Raspberry Pi と 5 インチの画面で動き、走った記録を自動で残す。
 
-描画は **WPE WebKit (cog)** を Wayland コンポジタ **labwc** 上で実行するキオスク構成。SVG `<use>` ベースの fake bloom で
-軽量かつグローのある質感、オープニングアニメ Phase 1〜3、ACC 時の全体消灯、フリーズ自動復帰の watchdog 内蔵。
+上の動画は、実際の走行ログ（止まった状態から 110km/h までの全開加速）をメーターに 2 倍速で流し直したもの。
+針・数字・ギアの動きはログのとおりで、右下の平均燃費・給油までの距離・オイルの 3 つだけ固定の値にしている。
 
-## 対応車種
+## 何ができる？
 
-**CAN 11bit 500kbaud (標準的な OBD-2 CAN) の車ならほぼ全車対応。** 2000年代半ば以降の国産車であれば大抵動く（日本車のOBD-2義務化は2010年、CAN 義務化は2008年）。ELM327 Bluetooth モードはフォールバック。
+**走りながら見られるもの**
 
-### 推奨: CAN 直結 (SocketCAN)
+- 速度、エンジンの回転、アクセルの踏み込み
+- 今入っているギアと、AT の状態（ギアを固定しているか、エンジンとタイヤが直結しているか）
+- 今の燃費（色でひと目で分かる）と、エンジンが空気を吸い込む強さ
+- 給油してからの平均燃費、あと何 km 走れるか、給油してから何 km 走ったか、オイル交換まであと何 km か
 
-CAN HAT (例: Waveshare RS485 CAN HAT, PiCAN2 等) を Pi の GPIO に接続し、OBD ポートから CAN High/Low を直結。SocketCAN (`can0`) でカーネルが全フレームをパッシブ受信する。
+**勝手にやってくれること**
 
-- **レイテンシ極低** (Bluetooth なし = 数ms で値更新)
-- **全 CAN フレーム可視** (ECU 間通信、AT 制御、BCM 等も取れる)
-- **対応 PID が多い** (OBD クエリに頼らず CAN 生フレーム直読み)
+- 給油したことに自分で気づいて、距離と燃費を数え直す
+- 走った記録・給油・整備の状態を Google スプレッドシートに送る（スマホで見られる）
+- エンジンをかけるたびに新しい版があるか確かめて、自分で更新する
+- 走りのデータ（車の通信・位置・坂）を記録して、あとで分析できるようにする
+- エンジンを切ると画面が暗くなり、かけると起動のアニメーションから戻る
+- 電源をいきなり切られても壊れにくい（車ではキーを抜くと電源も一緒に落ちるため）
 
-DYデミオ (DBA-DY3W) での検出内訳:
+## 画面の見方
 
-| CAN ID | 内容 | 周期 |
+<p align="center">
+  <img src="docs/images/meter-guide.png" width="800" alt="メーターの各部に 1〜12 の番号を付けた画像">
+</p>
+
+| | 表示 | 意味 |
 |---|---|---|
-| 0x201 | RPM + 車速 + エンジン負荷 | 100Hz |
-| 0x230 | ギア + ギア比 + トルク要求 | 40Hz |
-| 0x231 | レンジ (P/R/N/D/S/L) + HOLD + TC ロックアップ + 変速中 | 40Hz |
-| 0x420 | 水温 + 距離パルス | 10Hz |
-| 0x430 | オルタ負荷 + 電圧 + 大気圧 | 20Hz |
-| 0x4B0 | 4輪個別速度 | 71Hz |
-| OBD PID | MAF / 燃料トリム / 点火タイミング / 吸気温度 / O2 等 18 種 | クエリ時 |
+| 1 | 速度 | km/h。真ん中の大きい数字 |
+| 2 | 速度の帯 | いちばん外側。速いほど伸び、色も変わる（街中は水色、100km/h を超えると黄色、130km/h から赤） |
+| 3 | エンジンの回転 | 数字と針。目盛りは 1,000 回転ごと。6,000 回転で赤になる（変速の目安）。左右の ▼▲ は回転が下がっている／上がっている印 |
+| 4 | アクセル | 内側の短い帯。踏むほど伸びる |
+| 5 | レンジ | P・R・N・D・S・L。HOLD はギアを固定しているとき |
+| 6 | ギア | 今入っている段（1〜4）。変速の途中は点滅する。LOCK はエンジンとタイヤが直結していて、滑りが無く燃費が良い状態 |
+| 7 | 今の燃費 | 中の数字が km/L（止まっているときは 1 時間に使う燃料 L/h）。外側の点の数と色が燃料の使い方で、多く赤いほど使っている。アクセルを離すと燃料が止まり、水色になる |
+| 8 | 吸い込む強さ | 針・内側の帯・下の数字。アクセルを離すほど強く吸い（−1 に近づく）、踏むほど 0 に近づく |
+| 9 | 平均燃費 | 給油してからの平均（km/L） |
+| 10 | 給油までの距離 | 燃料の残りと平均燃費から、あと何 km 走れるか |
+| 11 | トリップ | 給油してから走った距離。400km で黄、450km で橙、500km で赤 |
+| 12 | オイル | オイル交換まであと何 km か |
 
-### フォールバック: ELM327 Bluetooth
+詳しい決まり（色の境目、数字を書き換える間隔など）は [docs/meter-indicators.md](docs/meter-indicators.md)。
 
-Classic Bluetooth (SPP) で `/dev/rfcomm0` 経由。CAN HAT がない環境での簡易構成。対応 PID は少なく、レイテンシは 50-100ms/PID。
+## どう動いているか
 
-### 対応できない車
+<p align="center">
+  <img src="docs/images/system.svg" width="900" alt="車のコンピューターから OBD 端子・CAN を読む基板・Raspberry Pi・画面へデータが流れ、WiFi ルーター経由で Google スプレッドシートやスマホ、GitHub とつながる図">
+</p>
 
-- EV / HV の電動走行モード（エンジン回転なし）
-- 1996年以前の旧車（OBD-2未搭載）
+車の中では、エンジンや AT のコンピューターが CAN という通信線でデータをやりとりしている。運転席の足元にある
+OBD 端子からそれを読み取り、Raspberry Pi が計算して画面に出す。**読むだけで、車には何も書き込まない。**
+記録は車の WiFi ルーターを通して Google スプレッドシートへ送り、新しい版はエンジンをかけたときに GitHub から取ってくる。
 
-### 動作確認済み車種
+## この車でわかったこと
 
-| 車種 | 型式 | エンジン | プロトコル | 検出PID数 |
-|------|------|----------|---------------|-----------|
-| マツダ DYデミオ | DBA-DY3W | ZJ-VE 1.3L | CAN 11bit 500kbaud | 28 |
+記録したデータを分析して分かったことの例。
 
-> **エンジン油温 (OBD PID 0x5C) は非対応**（2026-06-13 実機確認）。can0 経由で `7DF#02015C` を送出しても ECU から応答なし。対応PID[41-60] ビットマップ (`41 40 68 00 00 00`) でも 0x5C ビットは立っていない。同時に水温 (0x05→84℃) は正常応答するため通信経路は正常。AT油温の CAN 生フレーム候補は `.serena/memories/can_id_map.md` の 0x210 B4 を参照（こちらも未確定）。
-
-## 機能
-
-### 車載メーター (5インチ LCD)
-- 速度の270° SVGアークゲージ（速度帯で色が変化）
-- スロットル開度アーク（内側、HSLグラデーション）
-- RPMアーク（外側、レッドゾーン背景付き）
-- ゲージ左上にレンジ、右上にギア番号、HOLD/LOCKラベル
-- 右パネル: バキューム計 (-1.0〜0 Bar) + 4行インジケーター (ECO/TEMP/TRIP/OIL)
-- **fake bloom** による軽量な光の尾 (針は 0.6s 残像追従、アークは静的幅広グロー)
-- 大数値 (speed/RPM/MAP) にオフセット影で立体感
-- **オープニングアニメ** Phase 1 (針 sweep out) → Phase 2 (sweep back) → Phase 3 (テキストフェードイン) → 通常
-- **ACC 検出** (CAN エンジン ECU 1秒無通信) で全体フェードアウト、再接続で自動復帰
-- **フリーズ watchdog** (rAF 3秒停止で `location.reload()`) + エラー自動ロギング
-- WebSocket 優先 (/ws/realtime) + HTTP フォールバック
-- 60fps、時刻ベース自動輝度調整
-- 画面3秒長押しでキオスク終了
-
-### 自動記録 (Google Sheets)
-- **トリップ記録**: 走行距離・最高速度・平均速度・走行時間・アイドル時間・燃料消費量
-- **メンテナンス状態**: 走行距離/日付ベースのリマインダー（エンジン始動時 + 5分間隔で送信）
-- **燃費推定**: MAF > MAP (Speed-Density) > 負荷×RPM の優先順位で自動選択
-
-### スマホダッシュボード (GAS Webアプリ)
-- 給油記録（日付・距離・給油量 → 燃費自動算出）
-- ODO補正（メーター実値との差分を補正）
-- メンテナンス進捗確認・リセット
-- ダークテーマ、ホーム画面追加対応
-
-## アーキテクチャ
-
-![アーキテクチャ](docs/architecture.svg)
-
-### データフロー
-
-```
-ECU ──CAN──> CAN HAT ──SocketCAN──> pi-obd-meter (Go)
-                                      ├──WebSocket──> meter.html (cog/WPE WebKit on labwc)
-                                      └──HTTPS──────> GAS Webhook ──> Google Sheets
-                                                        ↕
-                                   スマホブラウザ ──> GAS doGet (給油記録/ODO補正/メンテ管理)
-```
-
-### キオスク構成
-
-```
-systemd ──> greetd (autologin as laurel)
-              └─> labwc (Wayland compositor)
-                   ├─> swaybg (黒背景)
-                   └─> cog --ozone-platform=wayland --kiosk http://localhost:9090/meter.html
-```
-
-- `greetd` がユーザー自動ログイン、`labwc` が Wayland コンポジタ、`cog` が WPE WebKit ランチャ
-- X11/lightdm/Chromium は使わない (Wayland 白フラッシュ回避、低メモリ)
-- フロントは HTML+CSS+SVG+JS、埋め込み (go:embed) で単一バイナリ配信
-
-### 通信構成
-
-![通信構成図](docs/communication-diagram-v2.svg)
-
-## ハードウェア
-
-### パーツリスト (CAN 直結構成)
-
-| # | パーツ | 選定品 | 目安価格 |
-|---|--------|--------|---------|
-| 1 | CAN HAT | Waveshare RS485 CAN HAT (MCP2515) | ~2,000 |
-| 2 | Raspberry Pi | Pi 4 Model B 2GB (技適あり) | ~7,000-9,200 |
-| 3 | ケース | GeeekPi アルミケース (デュアルファン) | ~2,000 |
-| 4 | ディスプレイ | ELECROW 5インチ IPS HDMI (800x480) | ~5,699 |
-| 5 | microSD | SanDisk MAX ENDURANCE 32GB | ~1,200 |
-| 6 | モニター固定 | スマホホルダー | ~300-1,000 |
-| - | 電源 | シガーソケット USB-C (5V/3A) | - |
-| - | OBD ケーブル | OBD-II to DB9 or 直結線 | ~500 |
-
-**合計: 約18,000-20,000円**
-
-### 選定理由
-
-- **CAN HAT MCP2515**: SPI 接続、12MHz クリスタル (実装差に注意、詳細 [docs/configuration.md](docs/configuration.md))。BT より遥かに低レイテンシ・高情報量
-- **Pi 4 2GB**: ARM64, WiFi/BT内蔵。WPE WebKit + labwc の常駐負荷に耐える
-- **アルミケース+デュアルファン**: ダッシュボード上は79-85°Cに達するため
-- **MAX ENDURANCE**: 書込耐久15,000時間。journald/状態ファイル/auto-update での摩耗に耐える
-- **ELECROW 5インチ IPS**: HDMI接続、IPSパネル(178°広視野角)、Pi USBから給電可
-
-## セットアップ
-
-詳細は [docs/setup-guide.md](docs/setup-guide.md) を参照。
-
-### クイックスタート (CAN 直結)
-
-```bash
-# 1. CAN HAT 有効化 (Pi 側)
-# /boot/firmware/config.txt に:
-#   dtparam=spi=on
-#   dtoverlay=mcp2515-can0,oscillator=12000000,interrupt=25
-# /etc/network/interfaces.d/can0 で ip link up can0 bitrate 500000 を設定
-
-# 2. 初回セットアップ（ディレクトリ作成 + systemd登録 + swap無効化）
-./scripts/deploy.sh setup
-
-# 3. Google Apps Script のセットアップ
-#    GASエディタでwebhook.gsを貼り付けてデプロイ
-#    → URLをconfigs/config.json の webhook_url に設定
-#    ※ 以降の更新は make deploy-gas または git push で自動反映
-
-# 4. デプロイ
-make deploy
-```
-
-### キオスク関連パッケージ
-
-```bash
-sudo apt install -y greetd labwc cog swaybg wlr-randr
-```
-
-### ディスプレイ設定
-
-ELECROW 5インチ用に `/boot/firmware/config.txt` へ追記:
-
-```
-hdmi_force_hotplug=1
-max_usb_current=1
-hdmi_drive=1
-hdmi_group=2
-hdmi_mode=87
-hdmi_cvt 800 480 60 6 0 0 0
-```
-
-## 車両設定
-
-初回セットアップ:
-```bash
-cp configs/config.json.example configs/config.json
-cp configs/config.mac.json.example configs/config.mac.json  # Mac demo 用 (任意)
-# webhook_url を実際の GAS Webhook URL に書き換える
-```
-
-`configs/config.json` は **.gitignore で除外**されている (実 URL を含むため)。全パラメータの詳細は [docs/configuration.md](docs/configuration.md) を参照。
-
-```json
-{
-  "can_interface": "can0",
-  "serial_port": "/dev/rfcomm0",
-  "webhook_url": "https://script.google.com/macros/s/XXXXXX/exec",
-  "engine_displacement_l": 1.3,
-  "max_speed_kmh": 180,
-  "initial_odometer_km": 98000,
-  "fuel_rate_correction": 1.3,
-  "throttle_idle_pct": 1,
-  "throttle_max_pct": 197,
-  "fuel_tank_l": 40,
-  "obd_protocol": "6",
-  "poll_interval_ms": 50,
-  "local_api_port": 9090,
-  "maintenance_reminders": [
-    { "id": "oil_change", "name": "エンジンオイル交換", "type": "distance", "interval_km": 3000, "warning_pct": 0.8 }
-  ]
-}
-```
-
-`can_interface` が空文字列だと ELM327 (`serial_port`) フォールバック。CAN 直結時は `"can0"` を指定。
-
-他車種への適用時に必要なチューニング項目は [docs/calculation-logic.md](docs/calculation-logic.md) を参照。
-
-## プロジェクト構成
-
-```
-pi-obd-meter/
-├── cmd/
-│   ├── pi-obd-meter/         # メインアプリ（車載）
-│   │   ├── main.go           #   エントリポイント + graceful shutdown + SSH 復旧
-│   │   ├── app.go            #   アプリケーションロジック
-│   │   ├── api.go            #   ローカル HTTP API (/api/realtime, /api/client-error 等)
-│   │   ├── can_loop.go       #   CAN 直結ループ (SocketCAN)
-│   │   ├── obd_loop.go       #   ELM327 ループ (フォールバック)
-│   │   ├── config.go         #   設定読み込み + バリデーション
-│   │   ├── fuel.go           #   燃費計算 (MAF / MAP / 負荷×RPM)
-│   │   ├── filter.go         #   OBDスパイク除去フィルター
-│   │   └── update.go         #   自動更新 (go-selfupdate)
-│   └── pi-obd-scanner/       # PIDスキャナー（診断用）
-├── internal/
-│   ├── can/                  # SocketCAN ラッパ + フレームデコーダ
-│   ├── obd/                  # ELM327通信、PID定義、DTC
-│   ├── trip/                 # トリップ追跡（車速積分、燃料積算、状態永続化）
-│   ├── sender/               # GAS Webhook送信（リトライキュー）
-│   ├── display/              # 画面輝度制御（時刻ベース、wlr-randr）
-│   ├── maintenance/          # メンテナンスリマインダー
-│   └── atomicfile/           # アトミックファイル書き込み
-├── web/
-│   ├── embed.go              # go:embed でstatic/をバイナリに埋め込み
-│   └── static/
-│       ├── meter.html        # メーター画面HTML
-│       ├── meter.css         # CSS (Custom Properties + ACC フェード + 起動アニメ)
-│       ├── js/
-│       │   ├── main.js       # エントリ + WebSocket + watchdog + エラー通知
-│       │   ├── gauge.js      # 速度ゲージ + fake bloom + 針残像 + オフセット影
-│       │   └── indicators.js # 右パネル バキューム + 4行インジケーター + アイコン bloom
-│       └── fonts/            # Orbitron, ShareTechMono
-├── gas/
-│   ├── webhook.gs            # Google Apps Script（記録 + Webダッシュボード）
-│   ├── .clasp.json
-│   └── appsscript.json
-├── configs/
-│   ├── config.json           # 実機 config
-│   ├── config.mac.json       # Mac ローカル demo 用
-│   ├── pi-obd-meter.service  # systemd メインサービス
-│   ├── cog-kiosk.sh          # cog キオスク起動スクリプト (labwc autostart から)
-│   ├── kiosk.sh              # (互換: 旧 Chromium 版)
-│   ├── auto-update.service   # systemd 自動更新 (oneshot)
-│   └── auto-update.timer     # systemd 自動更新タイマー (2分間隔)
-├── scripts/
-│   ├── deploy.sh             # 開発・デプロイスクリプト
-│   ├── auto-update.sh        # Pi 自動更新スクリプト
-│   ├── capture-screenshots.sh
-│   └── drive-test.sh         # 実走テスト (candump + スクショ)
-├── docs/                     # ドキュメント
-├── .github/workflows/        # CI/CD (ci.yml, deploy-dev.yml, release.yml, deploy-gas.yml)
-├── CLAUDE.md                 # AI開発支援用プロジェクト説明
-└── go.mod
-```
-
-## 開発
-
-詳細は [docs/development.md](docs/development.md) を参照。
-
-### ローカル Demo (Mac)
-
-```bash
-# CAN 接続を disable した Mac 用 config を使用
-go run ./cmd/pi-obd-meter -demo -config configs/config.mac.json
-
-# Safari で開く (WPE WebKit と同じエンジン = 実機に近い挙動)
-open -a Safari http://localhost:9090/meter.html
-```
-
-### Make ターゲット
-
-```bash
-make deploy          # ビルド + rsync転送 + サービス再起動
-make logs            # リアルタイムログ表示
-make ssh             # ラズパイにSSH接続
-make status          # サービス状態確認
-make restart         # サービス再起動（転送なし）
-
-make test            # テスト実行
-make lint            # golangci-lint
-make check           # lint + test
-make build           # ローカルビルド
-
-make deploy-gas      # gas/webhook.gs を GAS に push
-make release         # パッチ自動インクリメント (develop → main PR)
-make release V=v1.1.0  # バージョン明示指定
-```
-
-### CI/CD
-
-![CI/CD パイプライン](docs/cicd.svg)
-
-| ワークフロー | トリガー | 内容 |
+| 何を | 結果 | 詳しく |
 |---|---|---|
-| **CI** | push / PR (main, develop) | lint + test + build (host + ARM64) |
-| **Deploy Dev** | CI成功 (develop) | ARM64ビルド → `dev-latest` pre-release |
-| **Release** | タグ `v*` push | ARM64ビルド → GitHub Release |
-| **Deploy GAS** | push (main, develop) + `gas/` 変更 | ESLint → clasp push → clasp deploy |
-| **Claude Review** | PR open / `@claude` メンション | AIコードレビュー |
+| 燃費の表示の正確さ | 1 タンク（384km）でレシートとの差 −1.5% | [calculation-logic.md](docs/calculation-logic.md) |
+| 距離の正確さ | GPS との差 +0.4% | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| 加速 | 0→100km/h は平らな道で約 15 秒 | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| エンジンの力 | 最大トルク約 120 N·m・最大馬力約 85PS（カタログの 97%・93%） | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| 高速の燃費 | 105km/h で 12.8km/L、132km/h で 9.6km/L | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| AT の変速 | S レンジで床まで踏むと 5,820 回転で勝手に上がる。手で上げるなら 6,000 回転でレバー | [at-shift-points.md](docs/at-shift-points.md) |
+| 給油の検出 | 燃料計の跳ね上がりで給油に気づく | [refuel-detection.md](docs/refuel-detection.md) |
 
-**main ブランチは保護されており**、CI (`test` ジョブ) の通過が必須。
+## 対応している車
 
-### Pi 自動更新
+今は **マツダ DY デミオ（DBA-DY3W、1.3L・4AT）** で動かしている。CAN のどこに何が入っているかは車種ごとに違うので、
+ほかの車ではそのままでは動かない。
 
-`auto-update.timer` (systemd) が 2分間隔で GitHub Releases をポーリング。
-新ビルド検出時にダウンロード → バイナリ + `web/static/` 差し替え → サービス再起動を自動実行。
+## 使っている部品
 
-1. Stable release (`latest`) を優先チェック
-2. なければ dev build (`dev-latest` pre-release) をチェック
-
-### 起動時間
-
-NetworkManager 遅延起動 (10s timer) + plymouth 削除 + 不要サービス停止で、
-`systemd-analyze` 上 **約 7 秒 (kernel 2.2s + userspace 4.8s)**。
-
-メーター表示完了まで ~9-10s (cog + WebKit 起動含む)。詳細は #109。
-
-## ドキュメント
-
-| ドキュメント | 内容 |
+| 役割 | 部品 |
 |---|---|
-| [docs/setup-guide.md](docs/setup-guide.md) | Raspberry Pi 初期セットアップ、CAN HAT 設定、ディスプレイ、GAS設定 |
-| [docs/development.md](docs/development.md) | ブランチ戦略、CI/CD、リリースフロー、デプロイ |
-| [docs/configuration.md](docs/configuration.md) | config.json 全パラメータ、車種チューニング |
-| [docs/calculation-logic.md](docs/calculation-logic.md) | 燃費推定・インジケーター・閾値の算出ロジック |
-| [docs/wifi-troubleshooting.md](docs/wifi-troubleshooting.md) | Wi-Fi 接続問題の診断・復旧手順 |
+| 本体 | Raspberry Pi 4 Model B（2GB） |
+| 車とつなぐ | CAN HAT（Waveshare RS485 CAN HAT、MCP2515）と OBD-II ケーブル |
+| 画面 | ELECROW 5 インチ IPS（800×480、HDMI） |
+| 位置・高さ | USB の GPS（u-blox 7） |
+| 坂・横 G | 傾きセンサー GY-521（MPU-6050） |
+| 記録 | USB の SSD（走行データ）、microSD（起動用） |
+| ケース | GeeekPi アルミケース（ファン 2 つ。夏のダッシュボードの上では 80℃ を超えるため） |
+| 電源 | シガーソケットの USB-C（5V/3A） |
 
-## ⚠ Disclaimer
+## 動かしてみる
+
+Mac で、車につながずにデモを見られる。
+
+```bash
+cp configs/config.mac.json.example configs/config.mac.json
+go run ./cmd/pi-obd-meter -demo -config configs/config.mac.json
+open -a Safari http://localhost:9090/meter.html   # 車の画面と同じ WebKit で表示される
+```
+
+車に載せる手順は [docs/setup-guide.md](docs/setup-guide.md)、設定の一覧は [docs/configuration.md](docs/configuration.md)。
+
+## 開発者向け
+
+- 開発の流れ・CI/CD・リリース・自動更新: [docs/development.md](docs/development.md)
+- コードの構成と設計の決まり事: [CLAUDE.md](CLAUDE.md)
+
+**docs の一覧**
+
+| 分類 | ドキュメント |
+|---|---|
+| 使い方・設定 | [setup-guide](docs/setup-guide.md)（セットアップ）・[configuration](docs/configuration.md)（設定）・[development](docs/development.md)（開発）・[wifi-troubleshooting](docs/wifi-troubleshooting.md)（WiFi の不具合）・[rtc-ds3231](docs/rtc-ds3231.md)（時計の追加） |
+| 表示と計算 | [meter-indicators](docs/meter-indicators.md)（表示の意味）・[calculation-logic](docs/calculation-logic.md)（燃費などの計算）・[refuel-detection](docs/refuel-detection.md)（給油の検出）・[data-logging](docs/data-logging.md)（データの記録） |
+| この車の実測 | [vehicle-baseline](docs/vehicle-baseline.md)（正常値・加速・力）・[at-shift-points](docs/at-shift-points.md)（AT の変速）・[atf-thermal](docs/atf-thermal.md)（AT の油温）・[map-vs-load](docs/map-vs-load.md)（吸気とアクセル）・[imu](docs/imu.md)（傾きセンサー）・[can-pid-map](docs/can-pid-map.md)（CAN の中身）・[can-gear-ratio-analysis](docs/can-gear-ratio-analysis.md)（ギア比） |
+| 試験・運用の記録 | [drive-test-plan](docs/drive-test-plan.md)・[can-capture-test](docs/can-capture-test.md)・[boot-resilience](docs/boot-resilience.md)（電源断への備え）・[incident-2026-09-07](docs/incident-2026-09-07.md)（障害記録）・[upstream-report-status16](docs/upstream-report-status16.md)（WiFi の不具合の報告文） |
+
+## ⚠ 注意
 
 - 本ソフトウェアは MIT License のもと「無保証 (AS IS)」で提供されます。使用により生じた車両故障・事故・データ消失等について、作者はいかなる責任も負いません
 - OBD-2 ポート / CAN バスへの接続および本ソフトウェアの導入は、**すべて利用者の自己責任**で行ってください
-- 本ソフトウェアは ECU/ATCU への**書き込み系コマンド (Mode 04 / 08 / 27 / 2E 等) を一切実装していません**。受動受信および読み出し (Mode 01 / 03) のみ
+- 本ソフトウェアは ECU/ATCU への**書き込み系コマンド (Mode 04 / 08 / 27 / 2E 等) を一切実装していません**。受動受信および読み出し (Mode 01 / 03 / 22) のみ
 - 受動受信であっても CAN HAT 経由で誤った接続をするとバス通信に影響を与え得るため、**OBD-2 ピン配列・電気仕様を理解した上で接続**してください
 - 動作確認は **マツダ DY デミオ (DBA-DY3W, ZJ-VE 1.3L, 4AT)** のみ。他車種では CAN フレーム ID / バイト位置・スケーリングが異なるため、想定外の表示・動作が起こり得ます
 - 公道走行中の操作は最低限に。**画面の凝視および長押し操作 (キオスク終了) は安全な停車中**に行ってください
