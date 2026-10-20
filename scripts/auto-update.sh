@@ -35,7 +35,7 @@ STATE_DIR="${STATE_DIR:-$APP_DIR}"
 # 展開した scripts/ の保管先。ここも永続層に置く (#191)。
 #
 # 【なぜ /opt に置いてはいけないか】
-# 2026-09-09 にバイナリだけ APP_DIR へ移した (3676a6f) が、scripts の
+# 2026-09-09 にバイナリだけ APP_DIR へ移した (6c5cd17) が、scripts の
 # 保管先は /opt のままだった。/opt は overlayfs の上層 (tmpfs) なので
 # 再起動で消える。一方 dev-version はバイナリと一緒に /data に残るため、
 # 次の起動では「同じバージョン」と判定されて install_scripts が呼ばれず、

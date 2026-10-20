@@ -35,7 +35,7 @@ Raspberry Pi 4 + CAN HAT 直結で速度・RPM・スロットル・インマニ�
 `git commit -a` は禁止。`git add <path>` で自分が触ったファイルだけを staging する。
 
 2026-09-09、ops 修正のコミットが別セッションの作業中だった
-`internal/trip/tracker.go` を巻き込んで push した（`07299a6`）。今回は完成品
+`internal/trip/tracker.go` を巻き込んで push した（`3ac98f1`）。今回は完成品
 だったので無害だったが、書きかけを拾えばそのまま CI を通り、dev-latest として
 **走行中の車のメーターに OTA で配られる。**
 
