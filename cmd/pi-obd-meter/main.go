@@ -103,9 +103,6 @@ func main() {
 
 	app := newApp(cfg)
 
-	// --- 自動更新（バックグラウンド） ---
-	go tryAutoUpdate(ctx)
-
 	// --- ローカルAPI + Web UI（OBD接続前に起動） ---
 	go app.startLocalAPI(ctx)
 	slog.Info("ローカルAPI起動", "meter_url", fmt.Sprintf("http://localhost:%d/meter.html", cfg.LocalAPIPort))

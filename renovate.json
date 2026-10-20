@@ -12,12 +12,16 @@
     "という受け入れ窓でしかない。Mend のホスト版の巡回が窓に当たらなければ PR は立たない。",
     "2026-09-20 に \"* 0-6 * * 1\" (月曜 0-6時) を入れたところ、4日間 PR が 0 件のまま",
     "ダッシュボードの更新も止まった。月曜終日に広げても状況は変わらなかったため、",
-    "窓そのものを外す。依存は直接4つ・間接22で、prConcurrentLimit 3 があれば溢れない。"
+    "窓そのものを外す。依存は直接4つ・間接22で、prConcurrentLimit 3 があれば溢れない。",
+    "postUpdateOptions の gomodTidy: 更新後に go mod tidy をかける。かけないと古い go.sum の行が",
+    "残り、CI の tidy 確認で落ちる (2026-10-19 の #201〜#203 は 3 本ともこれで落ちていた)。"
   ],
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
   "labels": ["dependencies"],
   "commitMessagePrefix": "chore(deps):",
+
+  "postUpdateOptions": ["gomodTidy"],
 
   "packageRules": [
     {

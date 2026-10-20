@@ -106,7 +106,6 @@ cmd/
     config.go                 設定読み込み + バリデーション
     fuel.go                   燃費計算 (MAF / MAP Speed-Density / 負荷×RPM)
     filter.go                 OBDスパイク除去フィルター
-    update.go                 自動更新 (go-selfupdate)
   pi-obd-scanner/main.go     対応PIDスキャナー（診断・初期確認用、DTC読取含む）
 
 internal/
@@ -306,10 +305,10 @@ hdmi_cvt 800 480 60 6 0 0 0
 - 本番: 埋め込みファイルから配信（バイナリ1つで完結）
 - 開発: `-web-dir <path>` を渡せばファイルシステムから配信（例: `-web-dir ./web/static`）
 
-### 自動更新（2系統）
-- **起動時 (go-selfupdate)**: `cmd/pi-obd-meter/update.go` でGitHub Releasesをチェック、バイナリ差し替え
-- **起動時 (auto-update.sh)**: `scripts/auto-update.sh` (systemd timer) でstable/devビルドをチェック、バイナリ + web/static 差し替え
-- リリースアセット: `pi-obd-meter_linux_arm64.tar.gz`（selfupdate 互換命名）
+### 自動更新
+- **起動時 (auto-update.sh)**: `scripts/auto-update.sh` (`configs/auto-update.service`) が stable/dev ビルドをチェックし、バイナリなどを差し替える。起動に失敗したら `.bak` に戻す
+- Go 側の自己更新 (go-selfupdate、`update.go`) は 2026-10-21 に外した。auto-update.sh と同じ仕事を、安定版のバイナリだけ・ロールバック無しで二重にやっていたため
+- リリースアセット: `pi-obd-meter_linux_arm64.tar.gz`（auto-update.sh がこの名前で取る。旧 go-selfupdate と同じ命名）
 
 ### GAS 自動デプロイ（clasp）
 - `gas/` 配下の変更を main/develop に push → GitHub Actions が自動実行
