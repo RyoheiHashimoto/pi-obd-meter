@@ -1,32 +1,45 @@
 # pi-obd-meter
 
 <p align="center">
-  <img src="docs/images/meter-demo.gif" width="800" alt="メーターが動いている様子。停止から発進し、ギアを上げながら 110km/h まで加速する">
+  <img src="docs/images/meter-drive.gif" width="800" alt="街乗りの走行。停止から発進して 1〜4 速へシフトアップし、ロックアップ・惰性走行・ブレーキを経て停止する">
 </p>
 
-**車のコンピューターが流しているデータを読んで、速度・エンジン回転・ギア・燃費をその場で表示する自作のデジタルメーター。**
-Raspberry Pi と 5 インチの画面で動き、走った記録を自動で残す。
+**ECU・ATCU が CAN バスに流しているデータを OBD-II ポートから読み、車速・回転数・ギア・燃費をリアルタイムに表示する自作のデジタルメーター。**
+Raspberry Pi 4 と 5 インチ液晶で動き、走行ログを自動で残す。
 
-上の動画は、実際の走行ログ（止まった状態から 110km/h までの全開加速）をメーターに 2 倍速で流し直したもの。
-針・数字・ギアの動きはログのとおりで、右下の平均燃費・給油までの距離・オイルの 3 つだけ固定の値にしている。
+上の GIF は、実際の走行ログ（街乗りの発進から停止まで 35 秒）を等速でメーターに流し直したもの。
+ログは 0.2 秒ごとなので、実車と同じ 50ms ごとになるよう行の間を補間している。
+航続可能距離はログの燃料計から計算し直した値で、オイル交換までの距離だけ固定値。
 
-## 何ができる？
+## できること
 
-**走りながら見られるもの**
+**走行中に見られるもの**
 
-- 速度、エンジンの回転、アクセルの踏み込み
-- 今入っているギアと、AT の状態（ギアを固定しているか、エンジンとタイヤが直結しているか）
-- 今の燃費（色でひと目で分かる）と、エンジンが空気を吸い込む強さ
-- 給油してからの平均燃費、あと何 km 走れるか、給油してから何 km 走ったか、オイル交換まであと何 km か
+- 車速・回転数・スロットル開度
+- 実ギア（変速中は点滅）・レンジ・HOLD・トルコンのロックアップ
+- 瞬間燃費（停車中は L/h）とバキューム（インマニ負圧）
+- 給油からの平均燃費・航続可能距離・トリップ・オイル交換までの距離
 
-**勝手にやってくれること**
+**自動でやること**
 
-- 給油したことに自分で気づいて、距離と燃費を数え直す
-- 走った記録・給油・整備の状態を Google スプレッドシートに送る（スマホで見られる）
-- エンジンをかけるたびに新しい版があるか確かめて、自分で更新する
-- 走りのデータ（車の通信・位置・坂）を記録して、あとで分析できるようにする
-- エンジンを切ると画面が暗くなり、かけると起動のアニメーションから戻る
-- 電源をいきなり切られても壊れにくい（車ではキーを抜くと電源も一緒に落ちるため）
+- 燃料計の跳ね上がりから給油を検出し、トリップと平均燃費をリセット
+- 走行・給油・整備の記録を Google スプレッドシートへ送信（スマホで見られる）
+- 起動のたびに GitHub の新しいリリースを確かめて OTA 更新
+- CAN・GPS・IMU のログを SSD に記録
+- エンジン停止（CAN が止まる）で画面を暗くし、始動すると起動アニメーションから復帰
+- キーオフで電源ごと落ちても壊れにくい（ルートは overlayfs で読み取り専用）
+
+## 起動と給油
+
+<p align="center">
+  <img src="docs/images/meter-boot.gif" width="400" alt="起動アニメーション。針が 0 から最大まで振れて戻り、表示が現れる">
+  <img src="docs/images/meter-refuel.gif" width="400" alt="給油ダイアログ。WiFi 未接続の表示から、接続後に記録とトリップリセットが済み、前のタンクの距離と燃費が出る">
+</p>
+
+- **起動**: 針を 0 → 最大 → 0 とスイープしてから表示を出す（約 2.8 秒）
+- **給油**: 満タン給油後の始動時の流れを、実際の給油（10/12）の時刻どおりに再現したもの。
+  検出 → 記録 → トリップリセットの進み具合を停車中だけ出す。この日は WiFi の接続を待ってから
+  GAS に記録し、前のタンク（422.2km・12.5km/L）を表示した
 
 ## 画面の見方
 
@@ -36,60 +49,60 @@ Raspberry Pi と 5 インチの画面で動き、走った記録を自動で残�
 
 | | 表示 | 意味 |
 |---|---|---|
-| 1 | 速度 | km/h。真ん中の大きい数字 |
-| 2 | 速度の帯 | いちばん外側。速いほど伸び、色も変わる（街中は水色、100km/h を超えると黄色、130km/h から赤） |
-| 3 | エンジンの回転 | 数字と針。目盛りは 1,000 回転ごと。6,000 回転で赤になる（変速の目安）。左右の ▼▲ は回転が下がっている／上がっている印 |
-| 4 | アクセル | 内側の短い帯。踏むほど伸びる |
-| 5 | レンジ | P・R・N・D・S・L。HOLD はギアを固定しているとき |
-| 6 | ギア | 今入っている段（1〜4）。変速の途中は点滅する。LOCK はエンジンとタイヤが直結していて、滑りが無く燃費が良い状態 |
-| 7 | 今の燃費 | 中の数字が km/L（止まっているときは 1 時間に使う燃料 L/h）。外側の点の数と色が燃料の使い方で、多く赤いほど使っている。アクセルを離すと燃料が止まり、水色になる |
-| 8 | 吸い込む強さ | 針・内側の帯・下の数字。アクセルを離すほど強く吸い（−1 に近づく）、踏むほど 0 に近づく |
-| 9 | 平均燃費 | 給油してからの平均（km/L） |
-| 10 | 給油までの距離 | 燃料の残りと平均燃費から、あと何 km 走れるか |
-| 11 | トリップ | 給油してから走った距離。400km で黄、450km で橙、500km で赤 |
-| 12 | オイル | オイル交換まであと何 km か |
+| 1 | 車速 | km/h。中央の大きい数字 |
+| 2 | 車速バー | 最外周。速いほど伸び、色も変わる（10km/h から青、30 水色、60 緑、80 黄緑、100 黄、120 橙、130 赤） |
+| 3 | タコメーター | 回転数と針。目盛りは 1,000rpm ごと、6,000rpm から赤（シフトアップの目安）。左右の ▼▲ は回転の下降・上昇 |
+| 4 | スロットル | 内側の短いバー。踏むほど伸びる |
+| 5 | レンジ | P・R・N・D・S・L。HOLD は HOLD スイッチでギアを固定しているとき |
+| 6 | ギア | 実ギア（1〜4、ギア比から判定）。変速中は次の段を点滅。LOCK はトルコンのロックアップ |
+| 7 | 瞬間燃費 | 中の数字が km/L（停車中は L/h）。外周のセグメントは燃料消費の多さで、多いほど赤い。燃料カット中は水色 |
+| 8 | バキューム | 針・内側のバー・下の数字（Bar）。インマニ負圧で、アクセルを戻すほど −1 に近づく |
+| 9 | 平均燃費 | 給油からの平均（km/L） |
+| 10 | 航続可能距離 | 推定残量 × 平均燃費 |
+| 11 | トリップ | 給油からの距離。400km で黄、450km で橙、500km で赤 |
+| 12 | オイル | オイル交換までの残距離 |
 
 詳しい決まり（色の境目、数字を書き換える間隔など）は [docs/meter-indicators.md](docs/meter-indicators.md)。
 
-## どう動いているか
+## しくみ
 
 <p align="center">
-  <img src="docs/images/system.svg" width="900" alt="車のコンピューターから OBD 端子・CAN を読む基板・Raspberry Pi・画面へデータが流れ、WiFi ルーター経由で Google スプレッドシートやスマホ、GitHub とつながる図">
+  <img src="docs/images/system.svg" width="900" alt="ECU・ATCU から CAN バス・OBD-II ポート・CAN HAT を経て Raspberry Pi と液晶へデータが流れ、車載 WiFi ルーター経由で Google スプレッドシート・スマホ・GitHub とつながる構成図">
 </p>
 
-車の中では、エンジンや AT のコンピューターが CAN という通信線でデータをやりとりしている。運転席の足元にある
-OBD 端子からそれを読み取り、Raspberry Pi が計算して画面に出す。**読むだけで、車には何も書き込まない。**
-記録は車の WiFi ルーターを通して Google スプレッドシートへ送り、新しい版はエンジンをかけたときに GitHub から取ってくる。
+ECU と ATCU は CAN バスでデータをやりとりしている。OBD-II ポートから CAN HAT（MCP2515）でそれを受信し、
+Raspberry Pi が計算して液晶に出す。**受信と読み出しだけで、ECU には何も書き込まない。**
+記録は車載 WiFi ルーター経由で Google スプレッドシート（GAS）へ送り、新しいリリースは起動時に GitHub から取ってくる。
 
 ## この車でわかったこと
 
-記録したデータを分析して分かったことの例。
+ログを分析して分かったことの例。
 
-| 何を | 結果 | 詳しく |
+| 項目 | 結果 | 詳しく |
 |---|---|---|
-| 燃費の表示の正確さ | 1 タンク（384km）でレシートとの差 −1.5% | [calculation-logic.md](docs/calculation-logic.md) |
-| 距離の正確さ | GPS との差 +0.4% | [vehicle-baseline.md](docs/vehicle-baseline.md) |
-| 加速 | 0→100km/h は平らな道で約 15 秒 | [vehicle-baseline.md](docs/vehicle-baseline.md) |
-| エンジンの力 | 最大トルク約 120 N·m・最大馬力約 85PS（カタログの 97%・93%） | [vehicle-baseline.md](docs/vehicle-baseline.md) |
-| 高速の燃費 | 105km/h で 12.8km/L、132km/h で 9.6km/L | [vehicle-baseline.md](docs/vehicle-baseline.md) |
-| AT の変速 | S レンジで床まで踏むと 5,820 回転で勝手に上がる。手で上げるなら 6,000 回転でレバー | [at-shift-points.md](docs/at-shift-points.md) |
-| 給油の検出 | 燃料計の跳ね上がりで給油に気づく | [refuel-detection.md](docs/refuel-detection.md) |
+| 燃費表示の精度 | 1 タンク（384km）でレシートとの差 −1.5% | [calculation-logic.md](docs/calculation-logic.md) |
+| 距離の精度 | GPS との差 +0.4% | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| 加速 | 0→100km/h 約 15 秒（平坦路） | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| トルク・出力 | 最大トルク約 120 N·m・最高出力約 85PS（カタログ値の 97%・93%） | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| 高速燃費 | 105km/h で 12.8km/L、132km/h で 9.6km/L | [vehicle-baseline.md](docs/vehicle-baseline.md) |
+| AT の変速点 | S レンジ・WOT では 5,820rpm で自動シフトアップ。手動なら 6,000rpm でシフト | [at-shift-points.md](docs/at-shift-points.md) |
+| 給油検出 | 燃料計の跳ね上がりで検出 | [refuel-detection.md](docs/refuel-detection.md) |
 
-## 対応している車
+## 対応車種
 
-今は **マツダ DY デミオ（DBA-DY3W、1.3L・4AT）** で動かしている。CAN のどこに何が入っているかは車種ごとに違うので、
-ほかの車ではそのままでは動かない。
+**マツダ DY デミオ（DBA-DY3W、ZJ-VE 1.3L・4AT）** で動作確認。CAN ID・バイト位置・スケーリングは車種ごとに違うので、
+他車種ではそのままでは動かない。
 
-## 使っている部品
+## 使用部品
 
 | 役割 | 部品 |
 |---|---|
 | 本体 | Raspberry Pi 4 Model B（2GB） |
-| 車とつなぐ | CAN HAT（Waveshare RS485 CAN HAT、MCP2515）と OBD-II ケーブル |
-| 画面 | ELECROW 5 インチ IPS（800×480、HDMI） |
-| 位置・高さ | USB の GPS（u-blox 7） |
-| 坂・横 G | 傾きセンサー GY-521（MPU-6050） |
-| 記録 | USB の SSD（走行データ）、microSD（起動用） |
+| CAN | Waveshare RS485 CAN HAT（MCP2515）と OBD-II ケーブル |
+| 液晶 | ELECROW 5 インチ IPS（800×480、HDMI） |
+| GPS | u-blox 7（USB） |
+| IMU | GY-521（MPU-6050） |
+| ストレージ | USB SSD（ログ）、microSD（起動用） |
 | ケース | GeeekPi アルミケース（ファン 2 つ。夏のダッシュボードの上では 80℃ を超えるため） |
 | 電源 | シガーソケットの USB-C（5V/3A） |
 
@@ -114,9 +127,9 @@ open -a Safari http://localhost:9090/meter.html   # 車の画面と同じ WebKit
 
 | 分類 | ドキュメント |
 |---|---|
-| 使い方・設定 | [setup-guide](docs/setup-guide.md)（セットアップ）・[configuration](docs/configuration.md)（設定）・[development](docs/development.md)（開発）・[wifi-troubleshooting](docs/wifi-troubleshooting.md)（WiFi の不具合）・[rtc-ds3231](docs/rtc-ds3231.md)（時計の追加） |
+| 使い方・設定 | [setup-guide](docs/setup-guide.md)（セットアップ）・[configuration](docs/configuration.md)（設定）・[development](docs/development.md)（開発）・[wifi-troubleshooting](docs/wifi-troubleshooting.md)（WiFi の不具合）・[rtc-ds3231](docs/rtc-ds3231.md)（RTC の追加） |
 | 表示と計算 | [meter-indicators](docs/meter-indicators.md)（表示の意味）・[calculation-logic](docs/calculation-logic.md)（燃費などの計算）・[refuel-detection](docs/refuel-detection.md)（給油の検出）・[data-logging](docs/data-logging.md)（データの記録） |
-| この車の実測 | [vehicle-baseline](docs/vehicle-baseline.md)（正常値・加速・力）・[at-shift-points](docs/at-shift-points.md)（AT の変速）・[atf-thermal](docs/atf-thermal.md)（AT の油温）・[map-vs-load](docs/map-vs-load.md)（吸気とアクセル）・[imu](docs/imu.md)（傾きセンサー）・[can-pid-map](docs/can-pid-map.md)（CAN の中身）・[can-gear-ratio-analysis](docs/can-gear-ratio-analysis.md)（ギア比） |
+| この車の実測 | [vehicle-baseline](docs/vehicle-baseline.md)（正常値・加速・トルク）・[at-shift-points](docs/at-shift-points.md)（AT の変速点）・[atf-thermal](docs/atf-thermal.md)（ATF 温度）・[map-vs-load](docs/map-vs-load.md)（MAP と負荷）・[imu](docs/imu.md)（IMU）・[can-pid-map](docs/can-pid-map.md)（CAN ID・PID の対応）・[can-gear-ratio-analysis](docs/can-gear-ratio-analysis.md)（ギア比） |
 | 試験・運用の記録 | [drive-test-plan](docs/drive-test-plan.md)・[can-capture-test](docs/can-capture-test.md)・[boot-resilience](docs/boot-resilience.md)（電源断への備え）・[incident-2026-09-07](docs/incident-2026-09-07.md)（障害記録）・[upstream-report-status16](docs/upstream-report-status16.md)（WiFi の不具合の報告文） |
 
 ## ⚠ 注意
