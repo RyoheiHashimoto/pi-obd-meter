@@ -657,8 +657,9 @@ export function updateIndicators(dom, d, conf) {
   const rngKm = d.range_to_empty_km || 0;
   if (rngKm > 0) {
     rngValEl.textContent = rngKm.toFixed(1);
-    // 残り 150/100/50km で黄・橙・赤。満タン 500km 想定で TRIP の 350/400/450 と
-    // そろえていたが、TRIP は 2026-10-18 に 400/450/500 へずらした (こちらはそのまま)
+    // 残り 150/100/50km で黄・橙・赤。警告灯 (残り約 7.5L) は燃費 11.5〜15.5km/L で
+    // RNG 85〜115km にあたり、橙の境目付近で点く。TRIP の色 (300/400/500) とは
+    // 燃費によって前後する (下の TRIP を参照)
     const rngCol = rngKm >= 150 ? '#69f0ae' : rngKm >= 100 ? '#fdd835' : rngKm >= 50 ? '#ff9800' : '#f44336';
     rngValEl.setAttribute('fill', rngCol);
     rngIconEl.setAttribute('fill', rngCol);
@@ -668,15 +669,23 @@ export function updateIndicators(dom, d, conf) {
     rngIconEl.setAttribute('fill', '#fff');
   }
 
-  // TRIP — 色は給油の目安。400km で黄、450km で橙、500km で赤。
+  // TRIP — 色は給油の目安。300km で黄、400km で橙、500km で赤。
   //
-  // 2026-10-18 までは 350/400/450 だった。10/12→10/14 のタンクでは給油の警告灯が
-  // 504.8km で点き (残り約 7.5L、平均 13.9km/L)、350km ではまだ約 17L 残る計算で
-  // 早すぎた。燃費の悪いタンクでは赤より先に警告灯が点くが、残りの距離は RNG が出す。
+  // 距離で決めた色は、どこに置いてもどれかの燃費で外れる。RNG + TRIP ≒ 満タンで
+  // 走れる距離 (約 42L × そのタンクの燃費) なので、RNG とそろうのは特定の燃費だけ。
+  // そこで段ごとに意味を持たせた (警告灯は残り約 7.5L で点く):
+  //   黄 300km — 燃費の悪いタンクでも、警告灯まで 90〜100km ある
+  //   橙 400km — 燃費の悪いタンク (11.5km/L 前後、冬の街乗り) で警告灯が点く頃
+  //   赤 500km — 燃費の良いタンク (10/14 は 13.9km/L・504.8km) でも警告灯が点く頃
+  // 燃費の悪いタンクでは橙のあたりで RNG が先に進み、赤は計算上空になった後。
+  // 色が食い違ったら RNG が正しい。
+  //
+  // 〜2026-10-18 は 350/400/450 (13.9km/L のタンクで早すぎた)。〜2026-11-04 は
+  // 400/450/500 (11.85km/L のタンクで、黄になる前に警告灯が点く見込みになった)。
   // /api/config の trip_warn_km / trip_danger_km はここでは使っていない
   const tripKm = d.trip_km || 0;
   tripValEl.textContent = tripKm >= 0.1 ? tripKm.toFixed(1) : '0';
-  const tripCol = tripKm < 400 ? '#69f0ae' : tripKm < 450 ? '#fdd835' : tripKm < 500 ? '#ff9800' : '#f44336';
+  const tripCol = tripKm < 300 ? '#69f0ae' : tripKm < 400 ? '#fdd835' : tripKm < 500 ? '#ff9800' : '#f44336';
   tripValEl.setAttribute('fill', tripCol);
   tripIconEl.setAttribute('fill', tripCol);
   setFilter(tripIconEl.parentNode, 'url(#glow-mid)');
