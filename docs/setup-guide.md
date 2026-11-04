@@ -127,6 +127,9 @@ cp configs/config.json.example configs/config.json
 
 ⚠ **`webhook_url` は実 URL を含むため絶対に git commit しないこと**。.gitignore で除外済みだが、誤って `git add -f configs/config.json` 等しないよう注意。
 
+⚠ **`fuel_rate_correction` は書き足さないこと。** 燃料モデルの一部としてバイナリが既定値を持っており、
+config.json に書くとそちらが優先され、モデルを直しても車に届かなくなる ([configuration.md](configuration.md#fuel_rate_correction-について))。
+
 ---
 
 ## 2B. ELM327 Bluetooth (フォールバック)
@@ -204,9 +207,12 @@ hdmi_cvt 800 480 60 6 0 0 0
 2. swap無効化（SD書き込み削減）
 3. systemdサービスの登録・有効化:
    - `pi-obd-meter.service` — メインアプリ
-   - `kiosk.service` — Chromium キオスクモード
-   - `auto-update.timer` — 自動更新（2分間隔）
+   - `auto-update.timer` — 自動更新（起動 10 秒後に 1 回だけ）
 4. ARM64 クロスコンパイル + rsync転送
+
+**キオスク (画面表示) は setup では入らない。** 「6. キオスクモード」に従って greetd / labwc を設定する。
+以前の setup は `configs/kiosk.service` (cage + Chromium) を有効にしていたが、今の構成では使わない
+(greetd と画面を取り合う)。
 
 ---
 
@@ -299,7 +305,7 @@ Wayland では `unclutter` (X11 専用) は効かない。代わりに:
 - **アトミック書き込み**: maintenance.json / trip_state.json は tmp + rename + fsync で保存。電源断でファイルが壊れない
 - **GAS復元**: 起動時に GAS から累計走行距離を取得。万一ローカル状態が失われても復旧可能
 - **メモリ内キュー**: 送信失敗データはメモリ上で保持（指数バックオフ 5分→30分で再送、最大100件）
-- **距離ベース保存**: トリップ状態は0.1km（100m）走行ごとに保存。時間ベースより電源断時の距離ロスが少ない
+- **トリップ状態の保存**: 0.1km 走行・燃料 0.02L・30秒 のいずれかで保存。距離だけだとアイドリング中の燃料が保存されず、電源断で消える (2026-09-06 に発生)
 
 ---
 
@@ -350,22 +356,28 @@ pi-obd-meter/
 └── docs/                  # ドキュメント
 
 Raspberry Pi (車載)
-/opt/pi-obd-meter/
-├── pi-obd-meter           # バイナリ（Web UI埋め込み済み）
+/opt/pi-obd-meter/         # SD 側。make deploy が書く (/ は overlayfs なので下層まで書く)
+├── pi-obd-meter           # バイナリ（Web UI埋め込み済み）。SSD 側が使えないときの予備
 ├── pi-obd-scanner         # バイナリ
 ├── configs/
 │   ├── config.json        # 車両設定
-│   └── kiosk.sh           # キオスク起動スクリプト
-├── scripts/
-│   └── auto-update.sh     # 自動更新スクリプト
-└── web/static/            # 開発用: web_static_dir 指定時のみ使用
+│   ├── run.sh             # 起動スクリプト (SSD 側のバイナリが使えればそちらを起動)
+│   └── cog-kiosk.sh       # キオスク起動スクリプト (labwc の autostart から実行)
+└── scripts/               # auto-update.sh, ops/ など
 
-/var/lib/pi-obd-meter/
-├── maintenance.json       # メンテナンス状態（アトミック書き込み）
-├── trip_state.json        # トリップ状態（0.1kmごと保存）
+/data/pi-obd-meter/app/    # SSD 側。OTA (auto-update.sh) の設置先 (永続)
+├── pi-obd-meter           # OTA で入れたバイナリ
 ├── release-version        # インストール済み stable バージョン
 └── dev-version            # インストール済み dev ビルドの published_at
+
+/var/lib/pi-obd-meter/     # 状態ファイル (maintenance_path のディレクトリ)
+├── maintenance.json       # メンテナンス状態（アトミック書き込み）
+├── trip_state.json        # トリップ状態（0.1km / 0.02L / 30秒 のいずれかで保存）
+└── fuel_state.json ほか   # 給油検出・燃料推定・ヘルスの状態
 ```
+
+UI (web/static) は Pi に置かない。バイナリに埋め込まれており、ファイルから配るのは開発時に
+`-web-dir` を渡したときだけ。
 
 ---
 
@@ -392,7 +404,7 @@ Bluetooth接続が不安定な場合は `rfcomm release 0 && rfcomm bind 0 XX:XX
 ```bash
 make logs              # メインアプリのログ
 make status            # サービス状態
-./scripts/deploy.sh kiosk-logs  # キオスクのログ
+./scripts/deploy.sh kiosk-logs  # キオスクのログ (greetd セッション)
 ```
 
 ### WiFi問題

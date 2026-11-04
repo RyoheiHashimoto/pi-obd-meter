@@ -15,8 +15,11 @@ ssh laurel@pi-obd-meter.local "journalctl -u pi-obd-meter -f --no-pager -n 30"
 
 **restart** — サービス + キオスク再起動:
 ```bash
-ssh laurel@pi-obd-meter.local "sudo systemctl restart pi-obd-meter && sudo systemctl restart kiosk"
+ssh laurel@pi-obd-meter.local "sudo systemctl restart pi-obd-meter && sudo systemctl restart greetd"
 ```
+
+キオスクは systemd の `kiosk` ユニットではなく、greetd のセッション (labwc の autostart → `cog-kiosk.sh` → cog) として動いている。
+`kiosk` ユニットは車に無いので、`systemctl restart kiosk` は何もしない。
 
 **status** — サービス状態 + ヘルスチェック:
 ```bash
@@ -24,14 +27,14 @@ ssh laurel@pi-obd-meter.local "systemctl status pi-obd-meter --no-pager -l | hea
 ssh laurel@pi-obd-meter.local "curl -s http://localhost:9090/api/health 2>/dev/null || echo 'API未応答'"
 ```
 
-**kiosk** — キオスク（Chromium）のみ再起動:
+**kiosk** — キオスク（greetd → labwc → cog）のみ再起動:
 ```bash
-ssh laurel@pi-obd-meter.local "sudo systemctl restart kiosk"
+ssh laurel@pi-obd-meter.local "sudo systemctl restart greetd"
 ```
 
 **kiosk-logs** — キオスクログ表示:
 ```bash
-ssh laurel@pi-obd-meter.local "journalctl -u kiosk -f --no-pager -n 20"
+ssh laurel@pi-obd-meter.local "journalctl -u greetd -f --no-pager -n 20"
 ```
 
 **shutdown** — Pi を安全にシャットダウン（ユーザーに確認してから実行）:

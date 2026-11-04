@@ -98,10 +98,13 @@ cmd_setup() {
   # systemd登録を先に行う（deploy 内の restart が成功するように）
   rsync -avz "$ROOT/configs/pi-obd-meter.service" "${PI}:/tmp/pi-obd-meter.service"
   ssh "$PI" "sudo cp /tmp/pi-obd-meter.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable ${SERVICE}"
-  # キオスクサービス登録
-  echo "Installing kiosk service..."
-  rsync -avz "$ROOT/configs/kiosk.service" "${PI}:/tmp/kiosk.service"
-  ssh "$PI" "sudo cp /tmp/kiosk.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable kiosk"
+  # キオスクはここでは入れない。
+  #
+  # 以前は configs/kiosk.service (cage + Chromium) を登録・有効化していたが、
+  # 車は greetd → labwc → cog (configs/cog-kiosk.sh) で画面を出している。
+  # setup をやり直すと使っていない Chromium 版が有効になり、greetd と画面を
+  # 取り合う。greetd / labwc の設定は手順書に従って手で入れる。
+  echo "キオスク (greetd + labwc + cog) は docs/setup-guide.md の「6. キオスクモード」に従って設定してください"
   # 自動更新タイマー登録
   echo "Installing auto-update timer..."
   rsync -avz "$ROOT/scripts/auto-update.sh" "${PI}:${DEST}/scripts/auto-update.sh"
@@ -117,8 +120,10 @@ cmd_ssh()           { ssh "$PI"; }
 cmd_logs()          { ssh "$PI" "journalctl -u ${SERVICE} -f"; }
 cmd_status()        { ssh "$PI" "systemctl status ${SERVICE}"; }
 cmd_restart()       { ssh "$PI" "sudo systemctl restart ${SERVICE}"; }
-cmd_kiosk_logs()    { ssh "$PI" "journalctl -u kiosk -f"; }
-cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart kiosk"; }
+# キオスクは systemd の kiosk ユニットではなく、greetd のセッション
+# (labwc の autostart → cog-kiosk.sh → cog) として動いている。
+cmd_kiosk_logs()    { ssh "$PI" "journalctl -u greetd -f"; }
+cmd_kiosk_restart() { ssh "$PI" "sudo systemctl restart greetd"; }
 cmd_shutdown()      { ssh "$PI" "sudo shutdown -h now"; echo "✓ シャットダウン送信済み。LEDが消えたら電源を抜いてOK"; }
 cmd_reboot()        { ssh "$PI" "sudo reboot"; echo "✓ 再起動中...30秒ほどお待ちください"; }
 
@@ -177,8 +182,8 @@ Usage: ./scripts/deploy.sh <command> [args]
   logs             リアルタイムログ表示
   status           サービス状態確認
   restart          サービス再起動 (転送なし)
-  kiosk-logs       キオスク (Chromium) ログ表示
-  kiosk-restart    キオスク (Chromium) 再起動
+  kiosk-logs       キオスク (greetd セッション: labwc + cog) ログ表示
+  kiosk-restart    キオスク再起動 (greetd を再起動 → labwc → cog)
   shutdown         ラズパイを安全にシャットダウン
   reboot           ラズパイを再起動
 
