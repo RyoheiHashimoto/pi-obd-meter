@@ -18,11 +18,9 @@
   "throttle_idle_pct": 1,
   "throttle_max_pct": 197,
   "fuel_tank_l": 40,
-  "fuel_rate_correction": 1.3,
   "oil_change": {"interval_km": 3000, "warning_km": 2500, "danger_km": 4000},
   "coolant_temp": {"cold_max": 60, "normal_max": 100, "warning_max": 104},
-  "eco_gradient_max_kmpl": 15,
-  "brightness": {...}
+  "eco_gradient_max_kmpl": 15
 }
 ```
 
@@ -49,7 +47,7 @@
 | `max_speed_kmh` | int | `180` | 速度メーターの最大表示値 (km/h) |
 | `initial_odometer_km` | float | `0` | 初期累積走行距離 (km)。メーター実値に合わせて設定 |
 | `fuel_tank_l` | float | `40` | 燃料タンク容量 (L)。TRIP 警告閾値の導出に使用 |
-| `fuel_rate_correction` | float | `1.3` | 燃料レート補正係数。理論値と実燃費の乖離を補正 |
+| `fuel_rate_correction` | float | バイナリ既定 (`1.12`) | 燃料レート補正係数。**config.json には書かない** (下記「`fuel_rate_correction` について」) |
 
 ### スロットル表示
 
@@ -201,7 +199,7 @@ OTA からも更新できないため、UI の更新が車に届かない状態�
 | スロットルアイドル (CAN LOAD 生値) | `throttle_idle_pct` | 1 | 車種による |
 | スロットル最大 (CAN LOAD 生値) | `throttle_max_pct` | 197 | 車種による |
 | 燃料タンク容量 | `fuel_tank_l` | 40 | 60 |
-| 燃料レート補正係数 | `fuel_rate_correction` | 1.3 | 給油燃費と比較して調整 |
+| 燃料レート補正係数 | `fuel_rate_correction` | (書かない。バイナリ既定 1.12) | 別の車で較正し直すときだけ |
 | メーター最大速度 | `max_speed_kmh` | 180 | 260 |
 | OBDプロトコル | `obd_protocol` | "6" (CAN 11bit) | "0" (自動検出) |
 | オイル交換間隔 | `oil_change` | 3000 km | 車種推奨間隔に合わせる |
@@ -216,14 +214,26 @@ OTA からも更新できないため、UI の更新が車に届かない状態�
 | TRIP 警告 (km) | `tank × ecoGradientMax × 0.5` | 300 | 450 |
 | TRIP 危険 (km) | `tank × ecoGradientMax × 0.85` | 510 | 765 |
 
-### `fuel_rate_correction` の調整方法
+### `fuel_rate_correction` について
 
-1. 給油時に満タン法で実燃費を計算
-2. メーターの ECO 表示値（平均燃費）と比較
-3. 補正係数 = 理論燃費 / 実燃費
-4. 例: 理論値 16 km/L に対して実燃費 12 km/L → `fuel_rate_correction = 1.33`
+この係数は車両の設定ではなく**燃料モデルの一部**で、既定値はバイナリに入っている
+(`cmd/pi-obd-meter/config.go` の `defaultFuelRateCorrection`、現在 1.12)。
+燃料モデルを直すと係数も一緒に変わるため、config.json に書くとバイナリとずれる。
+2026-08-31 に、既定を 1.07→1.12 に上げたのに Pi の config.json が 1.07 のままで
+そちらが優先されかけた。そのため**配布するテンプレートにはこのキーを入れない**
+(`config_example_test.go` が検査する)。
 
-数回の給油で傾向を見て調整するとよい。
+較正は「理論燃費 / 実燃費」ではなく、**アプリの燃料積算とレシートの給油量を直接比べて**行う。
+走行距離を使わないので、距離の誤差に左右されない。
+
+1. 給油〜給油の区間で、アプリの燃料積算 (L) とレシートの給油量 (L) を記録する
+   (ジャーナルの `給油によるトリップリセット prev_fuel_l=...` の行に出る)
+2. 比 = アプリ積算 / レシート を、**複数の区間**で求める。1区間では動かさない
+3. 新しい係数 = 現在の係数 ÷ 比の平均
+4. `defaultFuelRateCorrection` を書き換え、根拠をそのコメントに追記する
+
+経緯と各区間の数字は `defaultFuelRateCorrection` のコメントにある。
+現在の Pi で実際に使われている値は、GAS の設定シートの `pi_fuel_rate_correction` で確かめられる。
 
 ### ハードコード値（ソース変更が必要）
 

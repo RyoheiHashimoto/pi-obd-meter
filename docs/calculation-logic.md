@@ -28,7 +28,7 @@
 | パラメータ | 現在値 | 設定方法 | 備考 |
 |---|---|---|---|
 | エンジン排気量 | 1.3 L | **config** (`engine_displacement_l`) | 燃費推定の基本パラメータ |
-| 燃料レート補正係数 | 1.3 | **config** (`fuel_rate_correction`) | 理論値と実燃費の乖離を補正（暖機増量・過渡補正等） |
+| 燃料レート補正係数 | 1.12 | **バイナリ既定** (`defaultFuelRateCorrection`)。config.json には書かない | MAF の系統誤差・燃料密度と理論空燃比の取り違え・平均λのずれの合計。レシートとの突き合わせで決める ([configuration.md](configuration.md#fuel_rate_correction-について)) |
 | アイドル燃料消費量 | 0.6 × 排気量 L/h | **排気量から導出** (`idleFuelRateCoeff * displacementL`) | 1.3L→0.78, 2.0L→1.2 L/h |
 | エンブレ負荷閾値 | 5.0% | **ハードコード** (`load < 5.0`) | 走行中の極低負荷を燃料カットと判定 |
 | エンブレMAP閾値 | 30.0 kPa | **ハードコード** (`engineBrakeMAPKPa`) | MAPセンサーがある場合の強い負圧による判定 |
@@ -51,7 +51,7 @@
 │
 ├─ RPM < 100 or 負荷 < 0.1% → fuelRate = 0.6 × 排気量 L/h（アイドル最低値）
 │
-├─ 補正係数を適用 ──→  fuelRate *= fuel_rate_correction (デフォルト 1.3)
+├─ 補正係数を適用 ──→  fuelRate *= fuel_rate_correction (バイナリ既定 1.12)
 │
 └─ 燃費 = 速度(km/h) / fuelRate(L/h)  [km/L]
 ```
