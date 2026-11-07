@@ -4,22 +4,44 @@
 
 ## 投稿済み
 
-**linux-wireless — brcmfmac のパッチ**
-2026-09-09 15:41 JST 送信。SMTP 受理 (250)。
+**linux-wireless — brcmfmac のパッチ — 取り込まれた**
+
+| 日付 (JST) | 出来事 |
+|---|---|
+| 2026-09-09 15:41 | v1 を送信。SMTP 受理 (250) |
+| 2026-09-14 01:55 | v2 を送信 (`wireless-next` 宛て)。中身は `v2-0001-*.patch` |
+| — | Arend van Spriel (Broadcom、brcmfmac 担当) が `Acked-by` |
+| — | Johannes Berg (wireless の管理者) が取り込み。本人も取り込みの通知らしきメールを見ている |
+| 2026-11-03 | 他人のカーネルツリー (`unifreq/linux-6.18.y`) にも入っているのを確認 |
 
 ```
-Message-ID: <20260909064125.67844-1-laurel.medalist12@gmail.com>
-Subject:    [PATCH] wifi: brcmfmac: log the firmware status when a connect fails
-To:         linux-wireless@vger.kernel.org
-Cc:         Arend van Spriel, brcm80211@lists.linux.dev,
-            brcm80211-dev-list.pdl@broadcom.com, linux-kernel@vger.kernel.org
-lore:       https://lore.kernel.org/linux-wireless/20260909064125.67844-1-laurel.medalist12@gmail.com/
-patchwork:  https://patchwork.kernel.org/project/linux-wireless/list/?submitter=&q=brcmfmac+firmware+status
+v1:  Message-ID <20260909064125.67844-1-laurel.medalist12@gmail.com>
+     Subject    [PATCH] wifi: brcmfmac: log the firmware status when a connect fails
+     lore       https://lore.kernel.org/linux-wireless/20260909064125.67844-1-laurel.medalist12@gmail.com/
+v2:  Message-ID <20260913165526.4426-1-laurel.medalist12@gmail.com>
+     Subject    [PATCH wireless-next v2] wifi: brcmfmac: log the firmware status when a connect fails
+     Link       https://patch.msgid.link/20260913165526.4426-1-laurel.medalist12@gmail.com
+To:  linux-wireless@vger.kernel.org
+Cc:  Arend van Spriel, brcm80211@lists.linux.dev,
+     brcm80211-dev-list.pdl@broadcom.com, linux-kernel@vger.kernel.org
 ```
 
-返信が来たら v2 で対応する。指摘されそうな点は本文で先回りしてある
-(なぜ `brcmf_dbg`/`brcmf_info` でないか、`@status` が有効なのはどちらの
-経路かの2点)。
+取り込まれたコミットは Johannes Berg がコミッタの `42aa76b3fd92`。本文と差分が
+v2 と一致する (`bphy_err()`、`brcmf_is_linkdown()` の説明が `@flags`)。
+
+**確認の出どころ (2026-11-07):** #38 のスレッドに GitHub が自動で付けた
+コミットへのリンクから辿った
+([CodeLinaro のミラー](https://github.com/CodeLinaro-mirror/la_kernel_msm-4.19/commit/42aa76b3fd9278a8504dbfaf0a449993104d2a48)、
+[unifreq/linux-6.18.y](https://github.com/unifreq/linux-6.18.y/commit/2c3e9842d6fda68180ebe78c0b79d6994620e0b8))。
+lore / patchwork / git.kernel.org はクラウド作業環境から開けなかったので、
+**どのブランチに入ったか、mainline に入ったかは見ていない。**
+`42aa76b3fd92` が kernel.org 側と同じ SHA であることも未確認。
+
+2026-11-08 に、別の人の brcmfmac パッチ (SAE PWE、`cfg80211.c`) の Cc に入った。
+このファイルを触った人として拾われたもので、返信は不要。
+
+**このリポジトリの記録は v1 送信で止まっていた。** v2 のファイルは無関係の
+コミット (`b269201`、#187) に混ざって入り、送った記録は残っていなかった。
 
 
 **RPi-Distro/firmware-nonfree#38 — `status_code=16` の正体**
@@ -28,6 +50,10 @@ patchwork:  https://patchwork.kernel.org/project/linux-wireless/list/?submitter=
 3年間・21コメント誰も答えていなかった「status 16 とは何か」に、
 ドライバのソースと実機のトレースで回答した。本文は
 [../docs/upstream-report-status16.md](../docs/upstream-report-status16.md)。
+
+2026-11-07 時点で、このコメントへの返信は無く、issue は open のまま。
+上の brcmfmac パッチのコミットがこのスレッドに自動でリンクされている。
+取り込まれたことを一言書けば、同じ症状の人に伝わる (未投稿)。
 
 ## 未送付
 
@@ -126,6 +152,11 @@ scripts/ops/xcheck-dbc.py
 
 
 ### `0001-brcmfmac-log-firmware-status-on-failed-connect.patch`
+
+> **送付済み・取り込み済み。** 上の「投稿済み」を見ること。
+> ここから下は v1 を送る前の検証と準備の記録として残している。
+> `scripts/verify-brcmfmac-patch.sh` は v1 のファイル名を決め打ちしていて、
+> 送った v2 はこのスクリプトでは確かめていない。
 
 `brcmf_bss_connect_done()` が、ファームウェアから受け取った失敗理由
 (`e->status`) を捨てて `WLAN_STATUS_AUTH_TIMEOUT`(16) 固定で報告している。
