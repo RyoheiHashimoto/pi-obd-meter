@@ -56,7 +56,11 @@ mkdir -p "$REC_DIR" 2>/dev/null
 TRIES=$(cat "${REC}.tries" 2>/dev/null)
 case "$TRIES" in '' | *[!0-9]*) TRIES=0 ;; esac
 
-if ping -c1 -W2 $GW >/dev/null 2>&1; then
+# 3 発送って 1 発でも返れば繋がっている扱い (iputils の ping は 1 発でも
+# 返れば 0 で終わる)。1 発だけだと、取りこぼし 1 回で下の復旧に入る。
+if ping -c3 -W2 $GW >/dev/null 2>&1; then
+  # 不達が続いた数 (下の HOLD) は、繋がった時点で数え直す
+  rm -f "${REC}.held" 2>/dev/null
   # 繋がった。最初の1回だけ書く。以後の周期では何もしない。
   if [ ! -e "${REC}.ok" ]; then
     printf 'up=%s tries=%s iface=%s rssi=%s\n' \
@@ -66,8 +70,9 @@ if ping -c1 -W2 $GW >/dev/null 2>&1; then
       "$(iw dev wlan0 link 2>/dev/null | awk '/signal:/{print $2}')" \
       > "${REC}.ok" 2>/dev/null
     log "接続を記録: $(cat "${REC}.ok" 2>/dev/null)"
-    # 古い起動の記録を間引く。1起動あたり最大3ファイル (.ok/.tries/.dmesg)
-    # なので 900 個残す = 300 起動ぶん (1日10起動として1か月)。
+    # 古い起動の記録を間引く。1起動あたり3ファイル (.ok/.tries/.dmesg) なので
+    # 900 個残す = 300 起動ぶん (1日10起動として1か月)。.held は繋がると消えるが、
+    # 不達の途中で電源が切れると残る。そのときは 4 ファイルで、少し早く間引かれるだけ。
     # 1ファイル数十バイトなので容量は問題にならない。消せなくても失敗させない。
     ls -t "$REC_DIR" 2>/dev/null | tail -n +901 | while read -r f; do
       rm -f "$REC_DIR/$f" 2>/dev/null
@@ -80,6 +85,33 @@ fi
 # brcmfmac の行は上書きで良い (最後の状態だけ分かればよい)。
 echo $((TRIES + 1)) > "${REC}.tries" 2>/dev/null
 dmesg 2>/dev/null | grep -i brcmf | tail -5 > "${REC}.dmesg" 2>/dev/null
+
+# --- 関連付けが生きている間は切らない ---
+#
+# 下の `nmcli con up` は、繋がっている接続も一度切ってから繋ぎ直す。
+# 2026-11-15 の走行では、ping が 1 回返らなかっただけでこれが走り、
+# 繋がっていた wlan0 を自分で切った (NM: activated -> deactivating
+# (new-activation)、supplicant: DISCONNECTED reason=3 locally_generated=1)。
+# 切った後の繋ぎ直しは起動時と同じ join の失敗 (#184) を踏むので、
+# 4 回の切断のうち 3 回がこれで、2 分・11 分・走行の終わりまで不通になった。
+#
+# 関連付けが残っているなら、不達は一時的なものとして HOLD 周期 (毎分) 待つ。
+# 関連付けたまま本当に通じない状態 (IP が取れない等) は、待った後に従来どおり
+# 繋ぎ直す。関連付けが無い (起動直後・切れた後) ときの動きは変えていない。
+# 見るのは wlan0 だけ。ドングル (wlan1) は撤去済み (#183)。
+HOLD=3
+if iw dev wlan0 link 2>/dev/null | grep -q '^Connected to'; then
+  HELD=$(cat "${REC}.held" 2>/dev/null)
+  case "$HELD" in '' | *[!0-9]*) HELD=0 ;; esac
+  HELD=$((HELD + 1))
+  if [ "$HELD" -lt "$HOLD" ]; then
+    echo "$HELD" > "${REC}.held" 2>/dev/null
+    log "ゲートウェイ不達。wlan0 は関連付けが残っているので切らずに待つ ($HELD/$HOLD)"
+    exit 0
+  fi
+  log "ゲートウェイ不達が関連付けたまま $HOLD 周期続いた"
+fi
+rm -f "${REC}.held" 2>/dev/null
 
 log "ゲートウェイ不達。復旧を試みます"
 nmcli radio wifi on 2>/dev/null
