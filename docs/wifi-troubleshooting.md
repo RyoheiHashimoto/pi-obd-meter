@@ -337,3 +337,27 @@ lsmod | grep brcmfmac                        # brcmfmac + brcmfmac_cyw の2モ�
 無線だけを見ずに `dmesg` を**全部**読むこと。
 
 詳細と経緯: [incident-2026-09-07.md](incident-2026-09-07.md)
+
+## 6. 走行中の切断は watchdog が起こしていた (2026-11-18)
+
+上の「繋がった後は安定」は、つながっている接続に誰も手を出さない場合の話だった。
+2026-11-15 の走行 (約 5 時間) では走行中に 4 回切れ、うち 3 回は直前に
+`wifi-watchdog.sh` が動いていた。残る 1 回も、その復旧動作の最中だった。
+
+```
+wifi-watchdog.sh: ゲートウェイ不達。復旧を試みます       ← ping -c1 -W2 が 1 回返らなかった
+wifi-watchdog.sh:   Laurel-Wi-Fi を起動                   ← nmcli con up
+NetworkManager: wlan0: activated -> deactivating (reason 'new-activation')
+wpa_supplicant: CTRL-EVENT-DISCONNECTED reason=3 locally_generated=1
+```
+
+`nmcli con up` は、つながっている接続も一度切ってから繋ぎ直す。切った後の
+繋ぎ直しは起動時と同じ join の失敗 (§5) を踏み、2 分・11 分・走行の終わりまで
+不通になった。同じ夜の GAS 送信の失敗 (DNS の connection refused) と時間が合う。
+
+**対処:** ping を 3 発にし、wlan0 の関連付けが残っている間は 3 周期 (約 3 分)
+切らずに待つようにした。関連付けが無いとき (起動直後・切れた後) の動きは変えていない。
+テストは `bash scripts/ops/test-wifi-watchdog.sh`。
+
+起動時の遅さ (§5) はこれでは直らない。2026-11-18 の起動は 48 回失敗し、
+つながるまで 11 分 17 秒かかった (それまでの最長は 11 回・153 秒)。
