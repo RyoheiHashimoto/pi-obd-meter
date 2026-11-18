@@ -16,7 +16,7 @@
 # 【このスクリプトがやること】
 #   1. fsck を preen (自動修復できるものだけ直して先へ進む) に変更
 #   2. fsck が失敗しても起動を続行させる
-#   3. journald を SSD へ永続化する (上限512M)
+#   3. journald を SSD へ永続化する (上限8G)
 #   4. swap を無効化 (SD書き込みの最大要因)
 #   5. noatime で読み込みのたびの書き込みを止める
 #
@@ -144,9 +144,15 @@ cat > /etc/systemd/journald.conf.d/zz-pi-obd-journal.conf <<'CONF'
 # 上限を 64M から 512M へ上げる。起動時の WiFi association 失敗 (#184) は
 # 複数の起動を並べないと傾向が見えないが、64M では4ブート分しか残らなかった。
 # /data は 222GB 空いているので 512M は誤差。
+#
+# 2026-11-18 に 8G へ上げた。512M は 11/18 に埋まり (507M)、新しい起動の記録から
+# 消えていた。RTC が無いので、電断の後の改名で付く時刻が毎回 9/6 になり、
+# いちばん古いファイルとして先に消されるため (docs/boot-resilience.md)。
+# 消える順番は RTC を付けるまで直らないので、上限に届かないようにする。
+# /data は 206G 空いている。
 [Journal]
 Storage=persistent
-SystemMaxUse=512M
+SystemMaxUse=8G
 SystemMaxFileSize=64M
 Compress=yes
 
@@ -157,11 +163,21 @@ Compress=yes
 # association 失敗はバーストで出る (2026-09-07 の記録では1回の起動で31回)
 # ので、間引かれると肝心なところが残らない。
 #
-# 車載機のログ量は限られており、上限 512M とローテーションで抑えられる。
+# 車載機のログ量は限られており、上限 8G とローテーションで抑えられる。
 RateLimitIntervalSec=0
 RateLimitBurst=0
+
+# ユーザー (laurel) の記録を別ファイルに分けない。
+#
+# 分けると、電断のたびに user-1000.journal が改名され、次の起動で新しい
+# ファイルが 8M 確保される。中身は起動 1 回で 100 行ほどしかない。
+# 2026-11-18 の時点で 48 個・384M あり、当時の上限 512M の 3/4 を占めていた。
+# その分システムの記録が押し出され、上限に達したときに消されていた。
+# 分けないと laurel が journalctl --user で読めなくなるが、このリポジトリでは
+# 使っていない (sudo journalctl _UID=1000 で読める)。
+SplitMode=none
 CONF
-note "journald: 永続化を1本に統合 (Storage=persistent, 上限512M)"
+note "journald: 永続化を1本に統合 (Storage=persistent, 上限8G, SplitMode=none)"
 
 # 保存先が SSD を向いていることを確かめる。
 #

@@ -21,10 +21,12 @@ check_file() { # path expected_content label
     ok "$3"
 }
 
-# systemctl の代わり。呼ばれても何もしない。
+# systemctl の代わり。呼ばれた引数を記録するだけで、何もしない。
 mkdir -p "$T/bin"
+export SYSTEMCTL_LOG="$T/systemctl.log"
 cat > "$T/bin/systemctl" <<'EOF'
 #!/bin/sh
+echo "$*" >> "$SYSTEMCTL_LOG"
 exit 0
 EOF
 chmod +x "$T/bin/systemctl"
@@ -117,6 +119,24 @@ done
 if [ "$found" -eq 0 ]; then
     ng "ExecStart から配布先を導けるユニットが1つも無い。検査が空振りしている"
 fi
+
+echo "7) 中身が同じタイマーも有効にする (deploy.sh persist で下層に置いた場合)"
+# persist はユニットを下層へ写すが enable はしない。cmp が一致すると配り直しを
+# 素通りするので、ここで enable --now しないとタイマーが一度も動かない。
+rm -rf "$T/root"
+install_scripts "$T/pkg" > /dev/null
+printf '[Timer]\nOnBootSec=1s\n' > "$SCRIPTS_DIR/ops/systemd/demo.timer"
+mkdir -p "$SYSTEMD_DIR"
+cp "$SCRIPTS_DIR/ops/systemd/demo.timer" "$SYSTEMD_DIR/demo.timer"   # 下層に同じ中身がある状態
+: > "$SYSTEMCTL_LOG"
+deploy_scripts > /dev/null
+if grep -qx "enable --now demo.timer" "$SYSTEMCTL_LOG"; then
+    ok "中身が同じでも enable --now した"
+else
+    ng "中身が同じタイマーを有効にしなかった ($(tr '\n' ';' < "$SYSTEMCTL_LOG"))"
+fi
+grep -q "enable --now drive-verify.service" "$SYSTEMCTL_LOG" \
+    && ng "service まで enable した" || ok "service は enable しない"
 
 if [ "$fail" -ne 0 ]; then
     echo "FAIL"

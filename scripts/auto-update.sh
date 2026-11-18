@@ -161,12 +161,19 @@ deploy_scripts() {
             if cp "$u" "${SYSTEMD_DIR}/${name}.new" && mv -f "${SYSTEMD_DIR}/${name}.new" "${SYSTEMD_DIR}/$name"; then
                 log "ユニット更新: $name"
                 systemctl daemon-reload 2>/dev/null || true
-                case "$name" in *.timer) systemctl enable --now "$name" 2>/dev/null || true;; esac
             else
                 rm -f "${SYSTEMD_DIR}/${name}.new"
                 log_warn "ユニット更新失敗: $name"
             fi
         fi
+        # タイマーは中身が同じでも毎回 enable --now する。
+        #
+        # 以前は上の「中身が違う」分岐の中でだけ有効にしていた。ふだんは上層が
+        # 再起動で消えるので毎回この分岐に入るが、`deploy.sh persist` で同じ中身を
+        # SD 側 (下層) に置くと cmp が一致して素通りする。persist は enable しない
+        # ので、新しく足したタイマーが一度も動かなくなる (2026-11-18 の
+        # クロスレビューで指摘)。enable --now は、動いているタイマーには何もしない。
+        case "$name" in *.timer) systemctl enable --now "$name" 2>/dev/null || true;; esac
     done
 
     # スクリプトの配布先は systemd ユニットの ExecStart から導く。

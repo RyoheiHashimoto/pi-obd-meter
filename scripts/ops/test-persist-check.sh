@@ -59,9 +59,11 @@ run() {
 }
 
 echo "persist-check.sh"
-export FAKE_MAX=512M FAKE_BOOTS=3 FAKE_PREV=yes FAKE_JOURNAL_FS=ext4 FAKE_LOWER_OPTS=ro,relatime
+export FAKE_MAX=8G FAKE_BOOTS=3 FAKE_PREV=yes FAKE_JOURNAL_FS=ext4 FAKE_LOWER_OPTS=ro,relatime
 run "すべて正常" 0 true ""
 
+FAKE_MAX=8.0G run "journald が 8.0G と書いても正常" 0 true ""
+FAKE_MAX=512M run "上限が 512M のまま (2026-11-18 に埋まった値)" 1 false "journal の上限が 512M"
 FAKE_MAX=64M run "上限が 64M に戻っている (2026-10-02 の状態)" 1 false "journal の上限が 64M"
 FAKE_PREV=no run "前回の起動のシステム記録が無い (2026-10-02 の状態)" 1 false "前回の起動のシステム記録が残っていない"
 FAKE_BOOTS=1 FAKE_PREV=no run "初回起動なら前回分は問わない" 0 true ""

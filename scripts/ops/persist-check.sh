@@ -23,7 +23,7 @@ set -uo pipefail
 
 # テストから差し替えられるようにしておく。本番では既定値のまま。
 OUT=${OUT:-/data/pi-obd-meter/persist-check.json}
-EXPECT_JOURNAL_MAX=${EXPECT_JOURNAL_MAX:-512M}
+EXPECT_JOURNAL_MAX=${EXPECT_JOURNAL_MAX:-8G}
 LOWER=${LOWER:-/media/root-ro}
 BOOT_ID_FILE=${BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
 
@@ -39,7 +39,9 @@ ok() { echo "OK: $1"; }
 # 9/6 の名前が付き、いちばん古いファイルとして扱われるため)。
 max=$(journalctl -b -q --no-pager -t systemd-journald 2>/dev/null \
       | grep -o 'System Journal (/var/log/journal[^)]*) is [^,]*, max [0-9.]*[KMGT]' \
-      | tail -1 | grep -o 'max [0-9.]*[KMGT]' | cut -d' ' -f2)
+      | tail -1 | grep -o 'max [0-9.]*[KMGT]' | cut -d' ' -f2 | sed 's/\.0\([KMGT]\)$/\1/')
+# journald の書き方は 512M・36.9M・8.9M と小数が付いたり付かなかったりする。
+# 割り切れる値に「.0」が付いても期待値と比べられるよう、「.0」は落とす。
 if [ -z "$max" ]; then
     ng "journal が SSD に書かれていない (journald の起動メッセージに System Journal が無い)"
 elif [ "$max" != "$EXPECT_JOURNAL_MAX" ]; then
