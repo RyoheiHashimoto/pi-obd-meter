@@ -158,13 +158,22 @@ deploy_scripts() {
         [ -f "$u" ] || continue
         name=$(basename "$u")
         if ! cmp -s "$u" "${SYSTEMD_DIR}/$name"; then
-            if cp "$u" "${SYSTEMD_DIR}/${name}.new" && mv -f "${SYSTEMD_DIR}/${name}.new" "${SYSTEMD_DIR}/$name"; then
+            # 保管先 (stage_scripts) では全ファイルに実行権が付く。ユニットにそれが
+            # 残ると、systemd が読み込むたびに「marked executable」と警告を出す
+            # (2026-11-18 の起動で persist-check のユニットに出ていた)。644 にそろえる。
+            if cp "$u" "${SYSTEMD_DIR}/${name}.new" && chmod 644 "${SYSTEMD_DIR}/${name}.new" \
+                && mv -f "${SYSTEMD_DIR}/${name}.new" "${SYSTEMD_DIR}/$name"; then
                 log "ユニット更新: $name"
                 systemctl daemon-reload 2>/dev/null || true
             else
                 rm -f "${SYSTEMD_DIR}/${name}.new"
                 log_warn "ユニット更新失敗: $name"
             fi
+        fi
+        # 中身が同じでも、実行権が付いていれば外す。上の分岐は中身しか比べないので、
+        # 下層に実行権つきで同じ中身があると素通りして警告が残る (クロスレビューの指摘)。
+        if [ -x "${SYSTEMD_DIR}/$name" ]; then
+            chmod 644 "${SYSTEMD_DIR}/$name" 2>/dev/null || true
         fi
         # タイマーは中身が同じでも毎回 enable --now する。
         #

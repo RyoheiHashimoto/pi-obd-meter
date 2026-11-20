@@ -138,6 +138,25 @@ fi
 grep -q "enable --now drive-verify.service" "$SYSTEMCTL_LOG" \
     && ng "service まで enable した" || ok "service は enable しない"
 
+echo "8) 配ったユニットに実行権を付けない (systemd が警告を出す)"
+rm -rf "$T/root"
+install_scripts "$T/pkg" > /dev/null   # 保管先では実行権が付く
+[ -x "$SCRIPTS_DIR/ops/systemd/drive-verify.service" ] || ng "前提が崩れた: 保管先のユニットに実行権が無い"
+deploy_scripts > /dev/null
+if [ -x "$SYSTEMD_DIR/drive-verify.service" ]; then
+    ng "配ったユニットに実行権が付いている"
+else
+    ok "配ったユニットは実行権なし"
+fi
+# 中身が同じで実行権だけ付いたユニットが既にある (下層に persist した場合)
+chmod +x "$SYSTEMD_DIR/drive-verify.service"
+deploy_scripts > /dev/null
+if [ -x "$SYSTEMD_DIR/drive-verify.service" ]; then
+    ng "中身が同じ既存のユニットの実行権が残った"
+else
+    ok "中身が同じ既存のユニットも実行権を外した"
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "FAIL"
     exit 1
