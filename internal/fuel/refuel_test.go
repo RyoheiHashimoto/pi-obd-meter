@@ -1,10 +1,12 @@
 package fuel
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func feed(d *Detector, pt float64, n int) {
@@ -497,5 +499,29 @@ func TestMarkTripFoldedSurvivesRestart(t *testing.T) {
 	}
 	if d2.MarkTripFolded(0.3, 9.0) {
 		t.Fatal("復元後に畳み直せてしまう")
+	}
+}
+
+// ID は保存して読み戻しても変わらない。GAS はこれで同じ給油の送り直しを見分ける。
+// 送れなかった給油は fuel.state に保存され、次の起動で復元されて送り直される。
+func TestEventID_StableAcrossSave(t *testing.T) {
+	ev := &Event{DetectedAt: time.Date(2026, 11, 18, 20, 30, 36, 123456789, time.Local), BeforePt: 11.96}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Event
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	if ev.ID() == "" || back.ID() != ev.ID() {
+		t.Errorf("ID が変わった: %q -> %q", ev.ID(), back.ID())
+	}
+	other := &Event{DetectedAt: ev.DetectedAt.Add(time.Nanosecond)}
+	if other.ID() == ev.ID() {
+		t.Error("別の給油と同じ ID になった")
+	}
+	if (*Event)(nil).ID() != "" {
+		t.Error("nil の ID が空でない")
 	}
 }

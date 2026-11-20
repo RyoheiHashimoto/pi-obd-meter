@@ -83,12 +83,46 @@ function handleMaintenance(data) {
   // 満タン時はセンダーが上限に張り付き給油量を出せないため、量ではなく
   // refuel_detected を起点にする。量を条件にすると満タン給油が記録されず、
   // トリップのリセットも失われる。
+  //
+  // 同じ給油の送り直しは記録しない。Pi は給油ごとの ID (refuel_event_id) を送る。
+  // こちらが記録した後に応答だけ失われると、Pi は送れていないと判断して同じ給油を
+  // 送り直す (2026-11-18、Pi の自動更新の再起動で送信が途中で切れた)。
+  // ID は桁の多い数字なので、そのままセルに入れると数値になって桁が落ちる。
+  // "ev:" を付けて文字列のまま比べる。ID の無い古い Pi からの送信は従来どおり記録する。
+  let refuelDeferred = false;
   if (data.refuel_detected || (data.refuel_amount_l != null && data.refuel_amount_l > 0)) {
+    // 確認・記録・ID の保存を 1 本ずつにする。同じ給油の送信が同時に 2 本届くと、
+    // 両方が古い ID を読んでから記録し、2 行できる。保存はロックを放す前に flush して、
+    // 次の実行に見せる。ロックが取れなければ記録を見送り、refuel_deferred を返す。
+    // Pi は給油イベントを残して次の送信で送り直す (ID の無い古い Pi はロックなしで記録)。
+    const refuelKey = data.refuel_event_id ? 'ev:' + data.refuel_event_id : null;
+    const lock = LockService.getScriptLock();
+    let locked = false;
+    if (refuelKey) {
+      try {
+        lock.waitLock(20000);
+        locked = true;
+      } catch (e) {
+        refuelDeferred = true;
+      }
+    }
     try {
-      recordManualRefuel({ amount: data.refuel_amount_l, auto: true,
-                           deltaPt: data.refuel_delta_pt, fullTank: data.refuel_full_tank });
+      if (refuelDeferred) {
+        // 次の送信に任せる
+      } else if (!(refuelKey && String(getSettingValue('last_refuel_event_id')) === refuelKey)) {
+        recordManualRefuel({ amount: data.refuel_amount_l, auto: true,
+                             deltaPt: data.refuel_delta_pt, fullTank: data.refuel_full_tank });
+        if (refuelKey) upsertSetting('last_refuel_event_id', refuelKey);
+        SpreadsheetApp.flush();
+      }
     } catch (e) {
-      // 給油記録に失敗しても他の更新は続ける
+      // 給油記録に失敗しても他の更新は続ける。Pi には見送りとして返し、
+      // 給油イベントを残して送り直させる (成功と返すと給油が失われる)。
+      // 行を足した後に ID の保存で落ちた場合は送り直しで 2 行になりうるが、
+      // 失うよりはまし。
+      refuelDeferred = true;
+    } finally {
+      if (locked) lock.releaseLock();
     }
   }
 
@@ -132,6 +166,7 @@ function handleMaintenance(data) {
     pending_resets: pendingResets,
     odometer_correction: odoCorrection != null ? parseFloat(odoCorrection) : null,
     trip_correction_km: tripCorrectionKm != null ? parseFloat(tripCorrectionKm) : null,
+    refuel_deferred: refuelDeferred,
   });
 }
 

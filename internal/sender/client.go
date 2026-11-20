@@ -74,6 +74,24 @@ func (c *Client) SendWithResponse(ctx context.Context, payloadType string, data 
 	return respBody, nil
 }
 
+// SendWithResponseNoQueue は SendWithResponse と同じだが、失敗してもリトライキューに入れない。
+//
+// 中身が別の場所に残っていて、次の送信が必ず運ぶものに使う (給油イベントを載せた
+// メンテナンス送信)。キューに入れると、次の送信で記録された後にキューからも
+// 再送され、GAS に同じ給油が 2 行できる (webhook.gs は受けた分だけ記録する)。
+func (c *Client) SendWithResponseNoQueue(ctx context.Context, payloadType string, data any) ([]byte, error) {
+	payload := GASPayload{Type: payloadType, Data: data}
+	respBody, err := c.doPost(ctx, payload)
+	if err != nil {
+		slog.Warn("データ送信失敗 (キューに入れず次の送信に任せる)",
+			"type", payloadType,
+			"error", err)
+		return nil, err
+	}
+	slog.Info("データ送信完了", "type", payloadType)
+	return respBody, nil
+}
+
 // doPost はHTTP POSTを実行し、レスポンスボディを返す。リトライキューには追加しない。
 func (c *Client) doPost(ctx context.Context, payload GASPayload) ([]byte, error) {
 	body, err := json.Marshal(payload)

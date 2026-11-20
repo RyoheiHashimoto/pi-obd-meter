@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -383,6 +384,19 @@ type Event struct {
 	TripFolded  bool    `json:"trip_folded,omitempty"`
 	PrevTripKm  float64 `json:"prev_trip_km,omitempty"`
 	PrevEcoKmpl float64 `json:"prev_eco_kmpl,omitempty"`
+}
+
+// ID は給油ごとの識別子。GAS が同じ給油を 2 回記録しないために送る。
+//
+// 検出時刻 (ナノ秒) から作る。イベントは送れるまで fuel.state に保存され、
+// 再起動しても同じ時刻で復元されるので、送り直しでも同じ ID になる。
+// 時計が 9/6 のままの起動で検出しても、起動からの経過がナノ秒で違うので
+// 別の給油と重ならない。
+func (e *Event) ID() string {
+	if e == nil {
+		return ""
+	}
+	return strconv.FormatInt(e.DetectedAt.UnixNano(), 10)
 }
 
 // MarkTripFolded は、いま検出している給油についてトリップを畳んだ記録を

@@ -47,6 +47,10 @@ type oilStatusPayload struct {
 	RefuelAmountL  float64 `json:"refuel_amount_l,omitempty"`  // 跳躍量 × fuel.LitersPerPoint
 	RefuelDeltaPt  float64 `json:"refuel_delta_pt,omitempty"`  // 燃料残量の跳躍量 (ポイント)
 	RefuelFullTank bool    `json:"refuel_full_tank,omitempty"` // 満タンに達したか (燃費検算の可否)
+	// 給油ごとの識別子 (fuel.Event.ID)。GAS は同じ ID を 2 回記録しない。
+	// GAS が記録した後に応答だけ失われると、Pi は送れていないと判断して
+	// 送り直す (2026-11-18、自動更新の再起動で送信が途中で切れた)。
+	RefuelEventID string `json:"refuel_event_id,omitempty"`
 }
 
 // gasMaintenanceResponse はGASからのメンテナンスレスポンス
@@ -55,6 +59,9 @@ type gasMaintenanceResponse struct {
 	OdometerCorrection *float64 `json:"odometer_correction"`
 	TripCorrectionKm   *float64 `json:"trip_correction_km"`
 	TripReset          bool     `json:"trip_reset"`
+	// GAS が給油の記録を見送った (重複確認のロックを取れなかった)。
+	// Pi は給油イベントを残し、次の送信で送り直す。
+	RefuelDeferred bool `json:"refuel_deferred"`
 }
 
 // App はアプリケーション全体の状態を管理する
@@ -84,6 +91,16 @@ type App struct {
 
 	maintSending atomic.Bool
 	retrySending atomic.Bool
+
+	// メンテナンス送信を1本ずつにする。
+	//
+	// 起動時の送信 (initializeFromGAS) と、給油を検出した瞬間の送信
+	// (sendMaintenanceStatusAsync) は別のゴルーチンから来る。maintSending は
+	// 後者どうしの重なりしか防がないので、両方が同じ給油イベントを読んで
+	// 載せ、GAS に給油が 2 行記録されうる (2026-11-18、起動 45 秒と 48 秒に
+	// 同じ給油を 2 回送った)。給油イベントは送信が通った時点で消すので、
+	// 1本ずつにすれば後の送信には載らない。
+	maintSendMu sync.Mutex
 
 	// この走行（電源ON〜OFF）の ATF 油温の最高値 (#178)。
 	// 給油をまたいで持ち越す tracker ではなく App に置く。
@@ -235,6 +252,9 @@ func (app *App) retryPendingAsync(ctx context.Context) {
 
 // sendMaintenanceStatus はメンテナンス状態をGASに送信し、レスポンスを処理する。
 func (app *App) sendMaintenanceStatus(ctx context.Context) {
+	app.maintSendMu.Lock()
+	defer app.maintSendMu.Unlock()
+
 	const maxRetries = 3
 
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -294,6 +314,7 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 			payload.RefuelAmountL = refuelEvent.AmountL
 			payload.RefuelDeltaPt = refuelEvent.DeltaPt
 			payload.RefuelFullTank = refuelEvent.FullTank
+			payload.RefuelEventID = refuelEvent.ID()
 			slog.Info("給油を自動検出",
 				"before_pt", refuelEvent.BeforePt,
 				"after_pt", refuelEvent.AfterPt,
@@ -302,28 +323,60 @@ func (app *App) sendMaintenanceStatus(ctx context.Context) {
 				"full_tank", refuelEvent.FullTank)
 		}
 
-		respBody, err := app.client.SendWithResponse(ctx, "maintenance", payload)
+		// 給油を載せた送信は、失敗しても再送キューに入れない。給油イベントは
+		// 送れるまで検出器に残り (fuel.state にも保存される)、次の送信が必ず運ぶ。
+		// キューに入れると、次の送信で記録された後にキューからも再送され、
+		// 同じ給油が GAS に 2 行できる (2026-11-18 のクロスレビューの指摘)。
+		send := app.client.SendWithResponse
+		if refuelEvent != nil {
+			send = app.client.SendWithResponseNoQueue
+		}
+		respBody, err := send(ctx, "maintenance", payload)
 		if err != nil {
 			return
 		}
 		slog.Info("メンテナンス状態送信完了")
 
+		// 応答は給油イベントを消す前に読む。GAS が給油の記録を見送ったとき
+		// (refuel_deferred) はイベントを残し、次の送信で送り直すため。
+		var gasResp gasMaintenanceResponse
+		parsed := false
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &gasResp); err != nil {
+				slog.Warn("GASレスポンスJSON解析失敗", "error", err)
+			} else {
+				parsed = true
+			}
+		}
+
 		// 送信できた給油イベントは消す。重複記録を防ぐ。
-		if refuelEvent != nil {
+		if refuelEvent != nil && parsed && gasResp.RefuelDeferred {
+			// GAS が重複確認のロックを取れず、記録を見送った。記録せずに
+			// 「済み」にすると給油が失われるので、イベントを残して次の送信
+			// (最長 5 分後) に任せる。
+			slog.Warn("給油の記録を GAS が見送った。次の送信で送り直す",
+				"refuel_event_id", refuelEvent.ID())
+		} else if refuelEvent != nil {
 			app.refuel.ClearEvent()
 			app.noteRefuelRecorded()
+			// 検出時にトリップを畳んであれば、ダイアログはここで完了まで進める。
+			//
+			// 以前は GAS の応答の trip_correction_km=0 を見て初めて進めていた。
+			// 2026-11-18 の給油では、送信中に自動更新でメーターが再起動し、
+			// 前のプロセスの送信は途中で切れ、新しいプロセスの応答では最後まで
+			// 進まなかった。ダイアログは「記録」で止まり、停車のたびに 15 分
+			// 出続けた。畳むのは検出時に済んでおり、記録もいま通ったので、
+			// 応答を待つ理由が無い。下の trip_correction_km=0 の分岐は、
+			// 既に進んでいれば何もしない (noteRefuelTripReset は false を返す)。
+			if refuelEvent.TripFolded {
+				_ = app.noteRefuelTripReset(refuelEvent.PrevTripKm, refuelEvent.PrevEcoKmpl)
+			}
 			// 畳んだ記録はここでは落とさない。この下でレスポンスの
 			// TripReset を見るまで持つ。先に落とすと claimTripReset が
 			// また通り、給油から通信までに走った分を消してしまう。
 		}
 
-		if len(respBody) == 0 {
-			return
-		}
-
-		var gasResp gasMaintenanceResponse
-		if err := json.Unmarshal(respBody, &gasResp); err != nil {
-			slog.Warn("GASレスポンスJSON解析失敗", "error", err)
+		if !parsed {
 			return
 		}
 
