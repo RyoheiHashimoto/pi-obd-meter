@@ -16,9 +16,14 @@ func TestCalcRangeToEmpty(t *testing.T) {
 		remainingL float64
 		want       float64
 	}{
-		// 実残量があればトリップ距離に依存しない。
-		{"実残量ベース", 15.0, 300, 6.7, 100.5},
-		{"実残量ベース・トリップが違っても同じ", 15.0, 0, 6.7, 100.5},
+		// 実残量があればトリップ距離に依存しない。10L 以上は差し引かない。
+		{"実残量ベース", 15.0, 300, 20, 300},
+		{"実残量ベース・トリップが違っても同じ", 15.0, 0, 20, 300},
+		// 空に近いところでは差し引く (rangeReserveL)。
+		{"10L ちょうどは差し引かない", 15.0, 0, 10, 150},
+		{"8.5L は 1.5L 差し引く", 15.0, 0, 8.5, 7.0 * 15},
+		{"7L 以下は 3L 差し引く", 15.0, 0, 6.7, 3.7 * 15},
+		{"3L 以下は 0", 15.0, 0, 2.5, 0},
 		// 実残量が無ければ従来式に落ちる。
 		{"代用式", 15.0, 300, 0, 46*15 - 300},
 		{"代用式・満タン超過は0でクリップ", 15.0, 10000, 0, 0},
@@ -46,9 +51,10 @@ func TestCalcRangeToEmpty_警告灯点灯時の実測(t *testing.T) {
 		t.Fatalf("残量 %.2f L。DYデミオの警告灯は残り6〜7Lで点くので、この範囲を外れたら換算が疑わしい", remainingL)
 	}
 	// 当時の平均燃費 309.5km / 29.87L = 10.36 km/L
+	// 2026-11-18 から空に近いところは 3L 差し引く (rangeReserveL)。
 	got := calcRangeToEmpty(tank, 309.5/29.87, 309.5, remainingL)
-	if got < 50 || got > 90 {
-		t.Errorf("航続 %.0f km。6.7L × 10.4km/L ≒ 70km を大きく外れている", got)
+	if got < 25 || got > 50 {
+		t.Errorf("航続 %.0f km。(6.7L − 3L) × 10.4km/L ≒ 38km を大きく外れている", got)
 	}
 	// 従来式なら 46×10.36−309.5 ≒ 167km と、実残量ベースの倍以上を表示していた。
 	old := calcRangeToEmpty(tank, 309.5/29.87, 309.5, 0)
@@ -95,5 +101,17 @@ func TestHighMAPIsNotFuelCut(t *testing.T) {
 	_, rate := calcFuelEconomy(60, 2500, 3, 5.0, true, 95, true, 1.3, 1.0)
 	if rate <= 0 {
 		t.Errorf("MAP 95kPa はスロットルが開いている。燃料カットにしてはいけない: rate=%v", rate)
+	}
+}
+
+// 差し引いた後の量は、推定残量が増えれば必ず増える (表示が逆戻りしない)。
+func TestRangeReserve_Monotonic(t *testing.T) {
+	prev := math.Inf(-1)
+	for l := 0.0; l <= 15; l += 0.05 {
+		usable := l - rangeReserveL(l)
+		if usable < prev-1e-9 {
+			t.Fatalf("推定 %.2fL で差し引き後 %.3fL が、直前の %.3fL より減った", l, usable, prev)
+		}
+		prev = usable
 	}
 }

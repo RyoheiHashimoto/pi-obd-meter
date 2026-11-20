@@ -156,7 +156,7 @@ func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm, remainingL float64) flo
 		if remainingL > fuelTankL {
 			remainingL = fuelTankL
 		}
-		rng = remainingL * avgFuelEconomy
+		rng = (remainingL - rangeReserveL(remainingL)) * avgFuelEconomy
 	} else {
 		rng = fuelTankL*avgFuelEconomy - tripKm
 	}
@@ -164,6 +164,34 @@ func calcRangeToEmpty(fuelTankL, avgFuelEconomy, tripKm, remainingL float64) flo
 		rng = 0
 	}
 	return rng
+}
+
+// 空に近いところで航続距離から差し引く燃料 (L)。
+//
+// 推定残量は底のほうで 2〜3L 外れることがある。給油のたびに満タンの量が
+// 給油機の止まり方で約 2L ばらつき (給油後に燃料計が 90pt を切るまでの
+// 消費が 1.9〜4.4L)、燃料計の換算と積算の誤差も重なるため。2026-11-18 は
+// 給油前の推定 5.6L に対し、実際は 2.5〜3.0L だった可能性がある (その回の
+// 満タン量が平均どおりなら +2.7L、多ければ +0.6L。まだ確定していない)。
+// 航続距離が長く出る誤りは路上で止まる誤りなので、外れても長く出ないよう、
+// 推定が 10L を切ったら差し引き始め、7L 以下では 3L を差し引く。
+// 間は直線でつなぐ (差し引いた後の量は推定残量に対して単調に増える)。
+// 警告灯 (推定 7.6〜8.4L) のときの航続距離は 11.5〜15.5km/L で 60〜105km になる。
+const (
+	rangeReserveMaxL   = 3.0  // 7L 以下で差し引く量
+	rangeReserveFullAt = 7.0  // これ以下は rangeReserveMaxL を差し引く
+	rangeReserveStartL = 10.0 // これ以上は差し引かない
+)
+
+func rangeReserveL(remainingL float64) float64 {
+	switch {
+	case remainingL >= rangeReserveStartL:
+		return 0
+	case remainingL <= rangeReserveFullAt:
+		return rangeReserveMaxL
+	default:
+		return rangeReserveMaxL * (rangeReserveStartL - remainingL) / (rangeReserveStartL - rangeReserveFullAt)
+	}
 }
 
 // calcDisplayFuelEco は ReadFast 時の表示用瞬間燃費を計算する。

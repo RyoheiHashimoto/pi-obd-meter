@@ -657,9 +657,10 @@ export function updateIndicators(dom, d, conf) {
   const rngKm = d.range_to_empty_km || 0;
   if (rngKm > 0) {
     rngValEl.textContent = rngKm.toFixed(1);
-    // 残り 150/100/50km で黄・橙・赤。警告灯 (残り約 7.5L) は燃費 11.5〜15.5km/L で
-    // RNG 85〜115km にあたり、橙の境目付近で点く。TRIP の色 (300/400/500) とは
-    // 燃費によって前後する (下の TRIP を参照)
+    // 残り 150/100/50km で黄・橙・赤。2026-11-18 から、空に近いところは推定残量から
+    // 差し引いて出す (推定 10L 未満で差し引き始め、7L 以下で 3L。fuel.go の
+    // rangeReserveL)。警告灯 (推定 7.6〜8.4L) は燃費 11.5〜15.5km/L で RNG 60〜105km、
+    // おおむね橙で点く。TRIP の色 (300/400/500) とは燃費によって前後する (下の TRIP を参照)
     const rngCol = rngKm >= 150 ? '#69f0ae' : rngKm >= 100 ? '#fdd835' : rngKm >= 50 ? '#ff9800' : '#f44336';
     rngValEl.setAttribute('fill', rngCol);
     rngIconEl.setAttribute('fill', rngCol);
